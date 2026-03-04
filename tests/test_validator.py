@@ -1,5 +1,6 @@
 import pytest
 
+from core.execution_loop import ExecutionCycle, ExecutionResult
 from core.kernel import ReasoningResult, ReasoningStep
 from core.validator import AdversarialValidator
 
@@ -79,3 +80,90 @@ def test_validator_remote_only_requires_live_credentials():
 
     with pytest.raises(RuntimeError):
         validator.validate(result, "Validate this API reasoning")
+
+
+def test_validator_rejects_numeric_problem_without_numeric_answer():
+    validator = AdversarialValidator(api_key="dummy_key_for_testing")
+    problem = (
+        "Find the minimum number of rounds required so that the probability of interception "
+        "falls below 0.001 under both independent and correlated models."
+    )
+    result = ReasoningResult(
+        conclusion="The system appears stable after execution, but the reasoning stayed qualitative.",
+        reasoning_chain=[ReasoningStep("1", "step 1"), ReasoningStep("2", "step 2")],
+        violated_constraints=[],
+        epistemic_confidence=0.99,
+        lens_contributions={"MockLens1": 1.0},
+        execution_result=ExecutionResult(
+            conclusion="No numeric answer",
+            cycles_used=1,
+            converged=True,
+            history=[
+                ExecutionCycle(
+                    cycle=1,
+                    hypothesis="h",
+                    code="",
+                    output='{"result": {"mode": "generic"}, "confirms_hypothesis": true}',
+                    delta=0.0,
+                    converged=True,
+                )
+            ],
+            final_code="",
+            final_output='{"result": {"mode": "generic"}, "confirms_hypothesis": true}',
+        ),
+    )
+
+    report = validator.validate(result, problem)
+
+    assert report.is_valid is False
+    assert report.recommendation == "re-reason"
+    assert "numeric answer" in report.attacks[0].lower()
+
+
+def test_validator_reduces_confidence_when_models_diverge():
+    validator = AdversarialValidator(api_key="dummy_key_for_testing")
+    problem = (
+        "Find the minimum number of rounds required so that the probability of interception "
+        "falls below 0.001 under both independent and correlated models."
+    )
+    result = ReasoningResult(
+        conclusion=(
+            "The minimum is 5 rounds. The independent model needs 4 rounds while the correlated "
+            "model needs 5."
+        ),
+        reasoning_chain=[ReasoningStep("1", "step 1"), ReasoningStep("2", "step 2")],
+        violated_constraints=[],
+        epistemic_confidence=0.95,
+        lens_contributions={"MockLens1": 1.0},
+        execution_result=ExecutionResult(
+            conclusion="Has numeric answer",
+            cycles_used=2,
+            converged=True,
+            history=[
+                ExecutionCycle(
+                    cycle=2,
+                    hypothesis="h",
+                    code="",
+                    output=(
+                        '{"result": {"mode": "probabilistic_numeric", "result": 5, '
+                        '"minimum_rounds": 5, "independent_model_result": 4, '
+                        '"correlated_model_result": 5}, "confirms_hypothesis": true}'
+                    ),
+                    delta=0.0,
+                    converged=True,
+                )
+            ],
+            final_code="",
+            final_output=(
+                '{"result": {"mode": "probabilistic_numeric", "result": 5, '
+                '"minimum_rounds": 5, "independent_model_result": 4, '
+                '"correlated_model_result": 5}, "confirms_hypothesis": true}'
+            ),
+        ),
+    )
+
+    report = validator.validate(result, problem)
+
+    assert report.is_valid is True
+    assert report.confidence_adjusted < 0.95
+    assert any("diverged" in edge_case.lower() for edge_case in report.edge_cases)

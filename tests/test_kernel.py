@@ -37,6 +37,9 @@ def test_kernel_synthesis_uses_local_fallback():
     assert result.generated_designs
     assert result.generated_designs[0].composite_score >= 0.0
     assert result.generated_designs[0].artifacts
+    assert result.execution_result is not None
+    assert result.execution_result.cycles_used >= 1
+    assert result.execution_result.final_output.startswith("{")
     assert "lead design" in result.conclusion.lower()
 
 
@@ -65,9 +68,12 @@ def test_kernel_parses_live_json_and_falls_back_if_needed():
 
     result = kernel.synthesize("Analyze this system", lenses)
 
-    assert result.conclusion == "Parsed result"
-    assert len(result.reasoning_chain) == 1
-    assert result.epistemic_confidence == 0.7
+    assert result.execution_result is not None
+    assert result.execution_result.converged is True
+    assert "Parsed result" not in result.conclusion
+    assert "dominant framing" in result.conclusion.lower()
+    assert len(result.reasoning_chain) >= 2
+    assert result.epistemic_confidence >= 0.7
     assert result.generated_designs
 
 
@@ -102,12 +108,15 @@ def test_kernel_runs_exact_topology_search_for_structured_query():
     result = kernel.synthesize(EXACT_QUERY, lenses)
 
     assert result.topology_search is not None
+    assert result.execution_result is not None
+    assert result.execution_result.cycles_used >= 2
     assert result.topology_search.evaluated_topologies > 0
     assert len(result.topology_search.satisfiable_topologies) == 3
     assert result.generated_designs
     assert result.generated_designs[0].title.endswith("T001")
     assert any(artifact.language == "json" for artifact in result.generated_designs[0].artifacts)
     assert any(artifact.artifact_type == "quantum_circuit" for artifact in result.generated_designs[0].artifacts)
+    assert any(artifact.artifact_type == "execution_verification" for artifact in result.generated_designs[0].artifacts)
     assert "Exact exhaustive search found 3 satisfiable topology configuration(s)" in result.conclusion
 
 

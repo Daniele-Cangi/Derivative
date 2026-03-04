@@ -5,8 +5,10 @@ from typing import Dict, List, Optional
 
 import anthropic
 
+from audit.trail import AuditTrail
 from core.artifacts import DesignArtifact
 from core.designs import EmergentDesign
+from core.execution_loop import ExecutionLoop, ExecutionResult
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
 from core.runtime_mode import normalize_execution_mode
 from core.topology_solver import (
@@ -34,6 +36,7 @@ class ReasoningResult:
     lens_contributions: Dict[str, float]
     generated_designs: List[EmergentDesign] = field(default_factory=list)
     topology_search: Optional[TopologySearchResult] = None
+    execution_result: Optional[ExecutionResult] = None
 
 
 class ReasoningKernel:
@@ -48,12 +51,14 @@ class ReasoningKernel:
             and resolved_key != "dummy_key_for_testing"
         )
         self.client = anthropic.Anthropic(api_key=resolved_key) if self.use_live_model else None
+        self.execution_loop = ExecutionLoop()
 
     def synthesize(
         self,
         problem: str,
         lenses: List[CognitiveLens],
         design_context: Optional[List[Dict[str, object]]] = None,
+        audit: Optional[AuditTrail] = None,
     ) -> ReasoningResult:
         if not lenses:
             raise ValueError("No cognitive lenses provided for synthesis.")
@@ -65,15 +70,37 @@ class ReasoningKernel:
             design_context=design_context or [],
             topology_query=topology_query,
         )
-        if topology_query is not None:
-            return local_result
-        if self.execution_mode == "local-only":
-            return local_result
-        if not self.use_live_model:
-            if self.allow_local_fallback:
-                return local_result
-            raise RuntimeError("ReasoningKernel requires remote mode with a valid ANTHROPIC_API_KEY.")
+        draft_result = local_result
+        if topology_query is None:
+            if self.execution_mode == "local-only":
+                draft_result = local_result
+            elif not self.use_live_model:
+                if self.allow_local_fallback:
+                    draft_result = local_result
+                else:
+                    raise RuntimeError("ReasoningKernel requires remote mode with a valid ANTHROPIC_API_KEY.")
+            else:
+                draft_result = self._synthesize_with_live_model(
+                    problem,
+                    lenses,
+                    design_context or [],
+                    local_result,
+                )
 
+        return self._ground_result_in_execution(
+            problem,
+            lenses,
+            draft_result,
+            audit=audit,
+        )
+
+    def _synthesize_with_live_model(
+        self,
+        problem: str,
+        lenses: List[CognitiveLens],
+        design_context: List[Dict[str, object]],
+        local_result: ReasoningResult,
+    ) -> ReasoningResult:
         framing_texts = []
         for lens in lenses:
             framing_texts.append(
@@ -85,7 +112,7 @@ class ReasoningKernel:
                 f"Design Affordances: {', '.join(lens.design_affordances)}\n"
             )
         framings_str = "\n".join(framing_texts)
-        context_str = self._format_design_context(design_context or [])
+        context_str = self._format_design_context(design_context)
 
         system_prompt = """You are the generative engineering kernel of the Derivative architecture.
 You do not merely explain. You synthesize new engineering paths by composing multiple computational lenses.
@@ -123,7 +150,7 @@ Do not remove the idea of invention: prefer executable design moves over comment
             )
             data = extract_json_object(response.content[0].text)
             return ReasoningResult(
-                conclusion=str(data.get("conclusion") or local_result.conclusion).strip(),
+                conclusion=local_result.conclusion,
                 reasoning_chain=self._coerce_steps(
                     data.get("reasoning_chain"),
                     fallback=local_result.reasoning_chain,
@@ -147,6 +174,57 @@ Do not remove the idea of invention: prefer executable design moves over comment
             if self.allow_local_fallback:
                 return local_result
             raise
+
+    def _ground_result_in_execution(
+        self,
+        problem: str,
+        lenses: List[CognitiveLens],
+        draft_result: ReasoningResult,
+        audit: Optional[AuditTrail] = None,
+    ) -> ReasoningResult:
+        execution_result = self.execution_loop.run(problem, lenses, audit=audit)
+        execution_confidence = (
+            1.0 - execution_result.history[-1].delta
+            if execution_result.history
+            else 0.0
+        )
+        if execution_result.converged:
+            epistemic_confidence = clamp_float(
+                max(draft_result.epistemic_confidence, execution_confidence),
+                default=draft_result.epistemic_confidence,
+                minimum=0.0,
+                maximum=0.99,
+            )
+        else:
+            epistemic_confidence = clamp_float(
+                (draft_result.epistemic_confidence + execution_confidence) / 2,
+                default=draft_result.epistemic_confidence,
+                minimum=0.0,
+                maximum=0.95,
+            )
+
+        generated_designs = self._attach_execution_artifact(
+            draft_result.generated_designs,
+            execution_result,
+        )
+        reasoning_chain = list(draft_result.reasoning_chain)
+        reasoning_chain.extend(self._build_execution_reasoning_steps(execution_result))
+        combined_conclusion = " ".join(
+            part.strip()
+            for part in (execution_result.conclusion, draft_result.conclusion)
+            if part and part.strip()
+        )
+
+        return ReasoningResult(
+            conclusion=combined_conclusion,
+            reasoning_chain=reasoning_chain,
+            violated_constraints=list(draft_result.violated_constraints),
+            epistemic_confidence=epistemic_confidence,
+            lens_contributions=dict(draft_result.lens_contributions),
+            generated_designs=generated_designs,
+            topology_search=draft_result.topology_search,
+            execution_result=execution_result,
+        )
 
     def _synthesize_locally(
         self,
@@ -1018,6 +1096,50 @@ Do not remove the idea of invention: prefer executable design moves over comment
             f"Executable artifacts: {artifact_summary}. "
             f"Novelty {best_design.novelty_score:.2f}, feasibility {best_design.feasibility_score:.2f}."
         )
+
+    def _attach_execution_artifact(
+        self,
+        designs: List[EmergentDesign],
+        execution_result: ExecutionResult,
+    ) -> List[EmergentDesign]:
+        attached_designs = list(designs)
+        if not attached_designs or not execution_result.converged or not execution_result.final_code:
+            return attached_designs
+
+        lead_design = attached_designs[0]
+        filename = f"{lead_design.title.lower().replace(' ', '_')}_execution_loop.py"
+        if any(artifact.filename == filename for artifact in lead_design.artifacts):
+            return attached_designs
+
+        lead_design.artifacts.append(
+            DesignArtifact(
+                artifact_id=f"{lead_design.design_id}-AX",
+                artifact_type="execution_verification",
+                filename=filename,
+                language="python",
+                content=execution_result.final_code,
+                execution_note="Final converged verification script from the Phase 4 execution loop.",
+            )
+        )
+        return attached_designs
+
+    def _build_execution_reasoning_steps(
+        self,
+        execution_result: ExecutionResult,
+    ) -> List[ReasoningStep]:
+        steps: List[ReasoningStep] = []
+        for cycle in execution_result.history:
+            validation_text = "converged" if cycle.converged else "required revision"
+            steps.append(
+                ReasoningStep(
+                    step_id=f"E{cycle.cycle}",
+                    description=(
+                        f"Execution cycle {cycle.cycle} ran a generated verification program, returned delta "
+                        f"{cycle.delta:.2f}, and {validation_text}."
+                    ),
+                )
+            )
+        return steps
 
     def _coerce_steps(
         self,

@@ -8,6 +8,7 @@ import anthropic
 
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
 from core.kernel import ReasoningResult
+from core.problem_classifier import ProblemClassification, ProblemClassifier, ProblemType
 from core.runtime_mode import normalize_execution_mode
 
 
@@ -18,6 +19,51 @@ class ValidationReport:
     edge_cases: List[str]
     confidence_adjusted: float
     recommendation: str
+
+
+class NumericAnswerCheck:
+    """
+    If the problem requires a numeric answer, the conclusion must contain
+    at least one concrete number that directly addresses the question.
+    Fails validation if no numeric answer is present.
+    """
+
+    def check(
+        self,
+        classification: ProblemClassification,
+        conclusion: str,
+        execution_output: str,
+    ) -> tuple[bool, str]:
+        if not classification.requires_numeric_answer:
+            return True, ""
+
+        import re
+
+        conclusion_pattern = re.compile(
+            r"\b(?:minimum|maximum|result|answer|requires|rounds?|steps?|hops?|probability|count)\b[^.:\n]*?\b\d+\.?\d*\b",
+            re.IGNORECASE,
+        )
+        generic_number_pattern = re.compile(r"\b\d+\.?\d*\b")
+        output_pattern = re.compile(
+            r'"(?:minimum(?:_rounds)?|maximum|result|answer|count|rounds|steps|hops|satisfiable_count|independent_model_result|correlated_model_result)"\s*:\s*-?\d+\.?\d*',
+            re.IGNORECASE,
+        )
+        if classification.primary_type == ProblemType.HYBRID:
+            number_in_conclusion = bool(generic_number_pattern.search(conclusion))
+        else:
+            number_in_conclusion = bool(conclusion_pattern.search(conclusion))
+        number_in_output = bool(output_pattern.search(execution_output))
+
+        if not number_in_conclusion and not number_in_output:
+            return (
+                False,
+                (
+                    f"Problem requires a numeric answer (triggered by: {classification.numeric_keywords}) "
+                    "but conclusion contains no concrete number. Validation failed regardless of reasoning confidence."
+                ),
+            )
+
+        return True, ""
 
 
 class AdversarialValidator:
@@ -38,6 +84,23 @@ class AdversarialValidator:
             return ValidationReport(
                 is_valid=False,
                 attacks=["Hard constraint violation detected by kernel."],
+                edge_cases=[],
+                confidence_adjusted=0.0,
+                recommendation="re-reason",
+            )
+
+        classification = ProblemClassifier().classify(original_problem)
+        numeric_check = NumericAnswerCheck()
+        execution_output = result.execution_result.final_output if result.execution_result is not None else ""
+        numeric_ok, numeric_failure = numeric_check.check(
+            classification,
+            result.conclusion,
+            execution_output,
+        )
+        if not numeric_ok:
+            return ValidationReport(
+                is_valid=False,
+                attacks=[numeric_failure],
                 edge_cases=[],
                 confidence_adjusted=0.0,
                 recommendation="re-reason",
@@ -112,6 +175,7 @@ Return one JSON object only."""
         attacks: List[str] = []
         edge_cases: List[str] = []
         normalized_problem = original_problem.lower()
+        model_divergence_penalty = 0.0
 
         if not result.reasoning_chain:
             attacks.append("No reasoning chain was produced, so the conclusion is not auditable.")
@@ -131,8 +195,30 @@ Return one JSON object only."""
         if any(token in normalized_problem for token in ("distributed", "parallel", "concurrent", "thread")):
             edge_cases.append("Concurrency can surface race conditions, stale reads, or partial failures.")
 
+        execution_output = result.execution_result.final_output if result.execution_result is not None else ""
+        try:
+            execution_payload = json.loads(execution_output) if execution_output else {}
+        except json.JSONDecodeError:
+            execution_payload = {}
+        execution_result = execution_payload.get("result", {}) if isinstance(execution_payload, dict) else {}
+        if isinstance(execution_result, dict):
+            independent = execution_result.get("independent_model_result")
+            correlated = execution_result.get("correlated_model_result")
+            if isinstance(independent, (int, float)) and isinstance(correlated, (int, float)):
+                if abs(float(independent) - float(correlated)) > 0:
+                    edge_cases.append(
+                        "Independent and correlated model results diverged, so confidence was reduced to reflect model sensitivity."
+                    )
+                    model_divergence_penalty = min(
+                        0.18,
+                        0.05 + (0.04 * abs(float(independent) - float(correlated))),
+                    )
+
         confidence_adjusted = clamp_float(
-            result.epistemic_confidence - (0.12 * len(attacks)) - (0.03 * len(edge_cases)),
+            result.epistemic_confidence
+            - (0.12 * len(attacks))
+            - (0.03 * len(edge_cases))
+            - model_divergence_penalty,
             default=0.0,
             minimum=0.0,
             maximum=1.0,

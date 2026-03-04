@@ -6,6 +6,7 @@ generated_artifacts/
 
 audit_trail.json
 memory_deltas.json
+verified_gene_pool.json
 
 output*.txt
 runtime_output.txt

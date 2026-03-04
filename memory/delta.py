@@ -19,6 +19,8 @@ class MemoryDelta:
     conclusion_snapshot: str = ""
     top_design_titles: List[str] = dataclasses.field(default_factory=list)
     top_design_primitives: List[str] = dataclasses.field(default_factory=list)
+    execution_cycle_summaries: List[str] = dataclasses.field(default_factory=list)
+    verified_hypotheses: List[str] = dataclasses.field(default_factory=list)
 
 
 class DeltaMemory:
@@ -45,6 +47,8 @@ class DeltaMemory:
             normalized.setdefault("conclusion_snapshot", normalized.get("reasoning_delta", ""))
             normalized.setdefault("top_design_titles", [])
             normalized.setdefault("top_design_primitives", [])
+            normalized.setdefault("execution_cycle_summaries", [])
+            normalized.setdefault("verified_hypotheses", [])
             try:
                 history.append(MemoryDelta(**normalized))
             except TypeError:
@@ -78,6 +82,8 @@ class DeltaMemory:
             conclusion_snapshot=result.conclusion,
             top_design_titles=[design.title for design in result.generated_designs[:3]],
             top_design_primitives=self._collect_design_primitives(result),
+            execution_cycle_summaries=self._collect_execution_summaries(result),
+            verified_hypotheses=self._collect_verified_hypotheses(result),
         )
 
         self.history.append(delta)
@@ -135,3 +141,20 @@ class DeltaMemory:
                 if primitive not in primitives:
                     primitives.append(primitive)
         return primitives
+
+    def _collect_execution_summaries(self, result: ReasoningResult) -> List[str]:
+        if result.execution_result is None:
+            return []
+        return [
+            f"cycle {cycle.cycle}: delta {cycle.delta:.2f} :: {'converged' if cycle.converged else 'revised'}"
+            for cycle in result.execution_result.history
+        ]
+
+    def _collect_verified_hypotheses(self, result: ReasoningResult) -> List[str]:
+        if result.execution_result is None or not result.execution_result.converged:
+            return []
+        deduplicated: List[str] = []
+        for cycle in result.execution_result.history:
+            if cycle.converged and cycle.hypothesis not in deduplicated:
+                deduplicated.append(cycle.hypothesis)
+        return deduplicated

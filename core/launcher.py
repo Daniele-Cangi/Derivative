@@ -43,7 +43,7 @@ class GeneratedArtifactLauncher:
         for index, design in enumerate(designs, start=1):
             reports: List[ArtifactLaunchReport] = []
             for artifact in design.artifacts:
-                if artifact.language != "python":
+                if artifact.language != "python" or artifact.artifact_type == "execution_verification":
                     continue
                 reports.append(self._launch_python_artifact(artifact, artifact_paths))
 

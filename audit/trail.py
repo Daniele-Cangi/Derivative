@@ -18,6 +18,11 @@ class AuditEntry:
     artifact_workspace_path: str = ""
     execution_session_summaries: List[str] = field(default_factory=list)
     launch_session_summaries: List[str] = field(default_factory=list)
+    execution_code: str = ""
+    execution_prediction: str = ""
+    execution_output: str = ""
+    execution_delta: float = 0.0
+    execution_residual: float = 0.0
     
 class AuditTrail:
     def __init__(self, log_file: str = "audit_trail.json"):
