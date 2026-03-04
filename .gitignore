@@ -1,0 +1,15 @@
+__pycache__/
+.pytest_cache/
+generated_artifacts/
+
+.env
+
+audit_trail.json
+memory_deltas.json
+
+output*.txt
+runtime_output.txt
+runtime_error.txt
+test_out.txt
+
+*.pyc
