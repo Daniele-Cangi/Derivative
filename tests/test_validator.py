@@ -2,7 +2,8 @@ import pytest
 
 from core.execution_loop import ExecutionCycle, ExecutionResult
 from core.kernel import ReasoningResult, ReasoningStep
-from core.validator import AdversarialValidator
+from core.problem_classifier import ProblemClassifier
+from core.validator import AdversarialValidator, NumericAnswerCheck
 
 
 def test_validator_accepts_strong_local_result():
@@ -167,3 +168,85 @@ def test_validator_reduces_confidence_when_models_diverge():
     assert report.is_valid is True
     assert report.confidence_adjusted < 0.95
     assert any("diverged" in edge_case.lower() for edge_case in report.edge_cases)
+
+
+def test_validator_rejects_numeric_token_without_objective_coverage():
+    validator = AdversarialValidator(api_key="dummy_key_for_testing")
+    problem = (
+        "Given the linear recurrence f(n) = 3f(n-1) - f(n-2), with f(0)=1 and f(1)=2, "
+        "find the closed-form formula, verify it satisfies the recurrence, determine the first n "
+        "such that f(n) > 10^6, and compute the limit of f(n+1)/f(n)."
+    )
+    result = ReasoningResult(
+        conclusion="The answer is 1.",
+        reasoning_chain=[ReasoningStep("1", "step 1"), ReasoningStep("2", "step 2")],
+        violated_constraints=[],
+        epistemic_confidence=0.99,
+        lens_contributions={"MockLens1": 1.0},
+        execution_result=ExecutionResult(
+            conclusion="Only initial token surfaced",
+            cycles_used=1,
+            converged=True,
+            history=[
+                ExecutionCycle(
+                    cycle=1,
+                    hypothesis="h",
+                    code="",
+                    output='{"result": {"mode": "numeric", "result": 1}, "confirms_hypothesis": true}',
+                    delta=0.0,
+                    converged=True,
+                )
+            ],
+            final_code="",
+            final_output='{"result": {"mode": "numeric", "result": 1}, "confirms_hypothesis": true}',
+        ),
+    )
+
+    report = validator.validate(result, problem)
+
+    assert report.is_valid is False
+    assert report.recommendation == "re-reason"
+    assert "unresolved objectives" in report.attacks[0].lower()
+
+
+def test_numeric_check_accepts_symbolic_numeric_payload_with_objective_coverage():
+    checker = NumericAnswerCheck()
+    classifier = ProblemClassifier()
+    problem = (
+        "Given the linear recurrence f(n) = 3f(n-1) - f(n-2), with f(0)=1 and f(1)=2, "
+        "find the closed-form formula, verify it satisfies the recurrence, determine the first n "
+        "such that f(n) > 10^6, and compute the limit of f(n+1)/f(n)."
+    )
+    classification = classifier.classify(problem)
+    conclusion = (
+        "SymPy derived f(n)=((3-sqrt(5))**n*(5-sqrt(5)) + (3+sqrt(5))**n*(5+sqrt(5)))/(10*2**n), "
+        "verified the recurrence on the verification window, found threshold 10^6 at n=15, and computed "
+        "the ratio limit as sqrt(5)/2 + 3/2."
+    )
+    execution_output = (
+        '{"result": {"mode": "symbolic_numeric", "closed_form": "expr", "recurrence_verified": true, '
+        '"threshold_target": 1000000, "threshold_index": 15, "ratio_limit": "sqrt(5)/2 + 3/2", '
+        '"result_count": 4, "verification_window": 10}, "confirms_hypothesis": true}'
+    )
+
+    ok, failure = checker.check(classification, conclusion, execution_output, problem)
+
+    assert ok is True
+    assert failure == ""
+
+
+def test_numeric_check_accepts_infeasible_payload():
+    checker = NumericAnswerCheck()
+    classifier = ProblemClassifier()
+    problem = "Find x such that x > 2 and x <= 2."
+    classification = classifier.classify(problem)
+    conclusion = "The constraints are contradictory, so no satisfiable solution exists."
+    execution_output = (
+        '{"result": {"mode": "infeasible", "is_satisfiable": false, "contradiction_count": 1}, '
+        '"confirms_hypothesis": true}'
+    )
+
+    ok, failure = checker.check(classification, conclusion, execution_output, problem)
+
+    assert ok is True
+    assert failure == ""

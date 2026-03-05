@@ -8,6 +8,7 @@ from core.execution_loop import (
     ExecutionLoop,
     ExecutionObservation,
 )
+from core.problem_classifier import ProblemClassifier, ProblemType
 from lenses.base import CognitiveLens
 
 
@@ -36,6 +37,35 @@ CRYPTO_QUERY = (
     "probability of at least one undetected interception across the full ring falls below 0.001. "
     "Then verify that your answer satisfies the constraint under both independent and correlated "
     "channel failure models."
+)
+
+SURVIVAL_QUERY = (
+    "A reliability network has 5 channels with per-hour failure probability p=0.03. "
+    "Compute the probability the system survives 8 hours, and compute the expected number "
+    "of hours before failure under independent and correlated failure models."
+)
+
+RECURRENCE_QUERY = (
+    "Given the linear recurrence f(n) = 3f(n-1) - f(n-2), with f(0)=1 and f(1)=2, "
+    "find the closed-form formula, verify it satisfies the recurrence, determine the first n "
+    "such that f(n) > 10^6, and compute the limit of f(n+1)/f(n)."
+)
+
+RECURRENCE_QUERY_FOR_CLAUSE = (
+    "A recursive function f(n) is defined as f(0)=1, f(1)=2, f(n)=3*f(n-1) - f(n-2) for n>=2. "
+    "Find the closed-form expression for f(n), verify it satisfies the recurrence for n=0 through n=10, "
+    "and determine for which values of n the function exceeds 10^6. Then prove that the ratio f(n+1)/f(n) "
+    "converges and find the limit."
+)
+
+REGULAR_ENUMERATION_QUERY = (
+    "Enumerate all connected 3-regular graph topologies on 6 nodes and report the total count. "
+    "Then return the canonical best configuration."
+)
+
+IMPOSSIBLE_QUERY = (
+    "Find a distributed architecture where circuit depth is strictly greater than 2 and at most 2, "
+    "while preserving all listed constraints."
 )
 
 
@@ -91,11 +121,337 @@ def test_execution_loop_computes_numeric_probabilistic_answer():
     assert "minimum of 5 rounds" in result.conclusion
 
 
+def test_execution_loop_computes_survival_and_expected_probabilistic_answer():
+    loop = ExecutionLoop()
+    lenses = [
+        CognitiveLens("Probabilistic", "framing", ["constraint1"], ["spot1"], 0.9, "probabilistic"),
+        CognitiveLens("Topological", "framing", ["constraint2"], ["spot2"], 0.7, "deductive"),
+    ]
+
+    result = loop.run(SURVIVAL_QUERY, lenses)
+    output = json.loads(result.final_output)
+    computed = output["result"]
+
+    assert result.converged is True
+    assert computed["mode"] == "probabilistic_numeric"
+    assert computed["template"] == "survival"
+    assert 0.0 <= computed["survival_probability"] <= 1.0
+    assert computed["expected_hours"] > 0.0
+    assert "survival probability" in result.conclusion
+    assert "expected runtime" in result.conclusion
+
+
+def test_execution_loop_enumerates_regular_graph_topologies():
+    loop = ExecutionLoop()
+    lenses = [
+        CognitiveLens("Topological", "framing", ["constraint1"], ["spot1"], 0.9, "deductive"),
+        CognitiveLens("Physical", "framing", ["constraint2"], ["spot2"], 0.8, "physical"),
+        CognitiveLens("Quantum", "framing", ["constraint3"], ["spot3"], 0.85, "quantum"),
+    ]
+
+    result = loop.run(REGULAR_ENUMERATION_QUERY, lenses)
+    output = json.loads(result.final_output)
+    computed = output["result"]
+
+    assert result.converged is True
+    assert computed["mode"] == "topology"
+    assert computed["enumeration_mode"] == "degree_regular"
+    assert computed["node_count"] == 6
+    assert computed["regular_degree"] == 3
+    assert computed["satisfiable_count"] == 2
+    assert computed["optimal_candidate"] == "G001"
+    assert "3-regular" in result.conclusion
+
+
+def test_execution_loop_detects_contradictory_constraints_as_infeasible():
+    loop = ExecutionLoop()
+    lenses = [
+        CognitiveLens("Topological", "framing", ["constraint1"], ["spot1"], 0.9, "deductive"),
+        CognitiveLens("Probabilistic", "framing", ["constraint2"], ["spot2"], 0.7, "probabilistic"),
+    ]
+
+    result = loop.run(IMPOSSIBLE_QUERY, lenses)
+    payload = json.loads(result.final_output)
+    computed = payload["result"]
+
+    assert result.converged is True
+    assert result.cycles_used == 1
+    assert computed["mode"] == "infeasible"
+    assert computed["is_satisfiable"] is False
+    assert computed["contradiction_count"] >= 1
+    assert "unsatisfiable" in result.conclusion
+
+
+def test_execution_loop_routes_linear_recurrence_to_symbolic_mode():
+    from sympy import N, sqrt, sympify
+
+    loop = ExecutionLoop()
+    classifier = ProblemClassifier()
+    classification = classifier.classify(RECURRENCE_QUERY)
+    lenses = [
+        CognitiveLens("Quantum Logic", "framing", ["constraint1"], ["spot1"], 0.95, "quantum"),
+        CognitiveLens("Symbolic Logic", "framing", ["constraint2"], ["spot2"], 0.72, "symbolic"),
+        CognitiveLens("Formal Verification", "framing", ["constraint3"], ["spot3"], 0.65, "formal"),
+    ]
+
+    assert classification.primary_type == ProblemType.SYMBOLIC
+    hypothesis = loop._form_initial_hypothesis(RECURRENCE_QUERY, lenses, classification)
+    prediction = json.loads(hypothesis.prediction)
+    assert prediction["mode"] == "symbolic_numeric"
+    assert hypothesis.dominant_lens == "Symbolic Logic"
+
+    code = loop._hypothesis_to_code(RECURRENCE_QUERY, hypothesis, lenses, classification)
+    observation = loop._execute(code)
+    payload = json.loads(observation.output)
+    result = payload["result"]
+
+    assert observation.exit_code == 0
+    assert result["mode"] == "symbolic_numeric"
+    assert result["closed_form"]
+    assert result["closed_form"].replace(" ", "") != "n+1"
+    assert result["recurrence_verified"] is True
+    assert result["verification_window"] == 10
+    assert result["verification_mismatches"] == []
+    assert isinstance(result["threshold_index"], int)
+    assert result["ratio_limit"]
+    expected_limit = (3 + sqrt(5)) / 2
+    observed_limit = sympify(result["ratio_limit"])
+    assert abs(float(N(observed_limit - expected_limit))) < 1e-8
+
+
+def test_execution_loop_parses_for_clause_recurrence_without_fallback():
+    from sympy import N, sqrt, sympify
+
+    loop = ExecutionLoop()
+    classifier = ProblemClassifier()
+    classification = classifier.classify(RECURRENCE_QUERY_FOR_CLAUSE)
+    lenses = [
+        CognitiveLens("Quantum Logic", "framing", ["constraint1"], ["spot1"], 0.95, "quantum"),
+        CognitiveLens("Symbolic Logic", "framing", ["constraint2"], ["spot2"], 0.72, "symbolic"),
+        CognitiveLens("Formal Verification", "framing", ["constraint3"], ["spot3"], 0.65, "formal"),
+    ]
+
+    assert classification.primary_type == ProblemType.SYMBOLIC
+    hypothesis = loop._form_initial_hypothesis(RECURRENCE_QUERY_FOR_CLAUSE, lenses, classification)
+    code = loop._hypothesis_to_code(RECURRENCE_QUERY_FOR_CLAUSE, hypothesis, lenses, classification)
+    observation = loop._execute(code)
+    payload = json.loads(observation.output)
+    result = payload["result"]
+
+    assert observation.exit_code == 0
+    assert result["mode"] == "symbolic_numeric"
+    assert result["closed_form"]
+    assert result["closed_form"].replace(" ", "") != "n+1"
+    assert result["recurrence_verified"] is True
+    assert isinstance(result["threshold_index"], int)
+    expected_limit = (3 + sqrt(5)) / 2
+    observed_limit = sympify(result["ratio_limit"])
+    assert abs(float(N(observed_limit - expected_limit))) < 1e-8
+
+
+def test_execution_loop_forces_revision_when_closed_form_is_wrong():
+    class SymbolicObligationStubLoop(ExecutionLoop):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def _execute(self, code: str) -> ExecutionObservation:
+            self.calls += 1
+            if self.calls == 1:
+                return ExecutionObservation(
+                    output=json.dumps(
+                        {
+                            "result": {
+                                "mode": "symbolic_numeric",
+                                "closed_form": "n + 1",
+                                "closed_form_ok": True,
+                                "verify_0_10_ok": True,
+                                "recurrence_verified": True,
+                                "result_count": 4,
+                                "threshold_index": 15,
+                                "threshold_n": 15,
+                                "ratio_limit": "1",
+                            },
+                            "confirms_hypothesis": True,
+                        },
+                        sort_keys=True,
+                    ),
+                    exit_code=0,
+                )
+            return ExecutionObservation(
+                output=json.dumps(
+                    {
+                        "result": {
+                            "mode": "symbolic_numeric",
+                            "closed_form": "((3 - sqrt(5))**n*(5 - sqrt(5)) + (sqrt(5) + 3)**n*(sqrt(5) + 5))/(10*2**n)",
+                            "closed_form_ok": True,
+                            "verify_0_10_ok": True,
+                            "recurrence_verified": True,
+                            "result_count": 4,
+                            "threshold_target": 1000000,
+                            "threshold_index": 15,
+                            "threshold_n": 15,
+                            "ratio_limit": "sqrt(5)/2 + 3/2",
+                        },
+                        "confirms_hypothesis": True,
+                    },
+                    sort_keys=True,
+                ),
+                exit_code=0,
+            )
+
+        def _revise_hypothesis(
+            self,
+            hypothesis: Hypothesis,
+            execution: ExecutionObservation,
+            delta: float,
+            history: list[ExecutionCycle],
+        ) -> Hypothesis:
+            return Hypothesis(
+                statement="Revision after failed symbolic obligation now targets characteristic-root closed form.",
+                prediction=json.dumps(
+                    {
+                        "mode": "symbolic_numeric",
+                        "expectations": {
+                            "recurrence_verified": True,
+                            "result_count": 4,
+                            "threshold_index": 15,
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                epistemic_tag=hypothesis.epistemic_tag,
+                dominant_lens=hypothesis.dominant_lens,
+            )
+
+    loop = SymbolicObligationStubLoop()
+    lenses = [
+        CognitiveLens("Quantum Logic", "framing", ["constraint1"], ["spot1"], 0.95, "quantum"),
+        CognitiveLens("Symbolic Logic", "framing", ["constraint2"], ["spot2"], 0.72, "symbolic"),
+        CognitiveLens("Formal Verification", "framing", ["constraint3"], ["spot3"], 0.65, "formal"),
+    ]
+
+    result = loop.run(RECURRENCE_QUERY, lenses)
+
+    assert result.converged is True
+    assert result.cycles_used == 2
+    assert result.history[0].converged is False
+    assert result.history[0].delta >= CONVERGENCE_THRESHOLD
+    assert "n + 1" in result.history[0].output
+    assert "sqrt(5)" in result.final_output
+
+
+def test_execution_loop_sets_delta_one_when_required_obligation_field_is_missing():
+    class MissingSchemaFieldLoop(ExecutionLoop):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def _execute(self, code: str) -> ExecutionObservation:
+            self.calls += 1
+            if self.calls == 1:
+                return ExecutionObservation(
+                    output=json.dumps(
+                        {
+                            "result": {
+                                "mode": "symbolic_numeric",
+                                "closed_form": "((3 - sqrt(5))**n*(5 - sqrt(5)) + (sqrt(5) + 3)**n*(sqrt(5) + 5))/(10*2**n)",
+                                "closed_form_ok": True,
+                                "verify_0_10_ok": True,
+                                "recurrence_verified": True,
+                                "result_count": 4,
+                                "threshold_index": 15,
+                                "ratio_limit": "sqrt(5)/2 + 3/2",
+                            },
+                            "confirms_hypothesis": True,
+                        },
+                        sort_keys=True,
+                    ),
+                    exit_code=0,
+                )
+            return ExecutionObservation(
+                output=json.dumps(
+                    {
+                        "result": {
+                            "mode": "symbolic_numeric",
+                            "closed_form": "((3 - sqrt(5))**n*(5 - sqrt(5)) + (sqrt(5) + 3)**n*(sqrt(5) + 5))/(10*2**n)",
+                            "closed_form_ok": True,
+                            "verify_0_10_ok": True,
+                            "recurrence_verified": True,
+                            "result_count": 4,
+                            "threshold_target": 1000000,
+                            "threshold_index": 15,
+                            "threshold_n": 15,
+                            "ratio_limit": "sqrt(5)/2 + 3/2",
+                        },
+                        "confirms_hypothesis": True,
+                    },
+                    sort_keys=True,
+                ),
+                exit_code=0,
+            )
+
+        def _revise_hypothesis(
+            self,
+            hypothesis: Hypothesis,
+            execution: ExecutionObservation,
+            delta: float,
+            history: list[ExecutionCycle],
+        ) -> Hypothesis:
+            return Hypothesis(
+                statement="Revision after schema-missing symbolic payload.",
+                prediction=json.dumps(
+                    {
+                        "mode": "symbolic_numeric",
+                        "expectations": {
+                            "recurrence_verified": True,
+                            "result_count": 4,
+                            "threshold_index": 15,
+                        },
+                    },
+                    sort_keys=True,
+                ),
+                epistemic_tag=hypothesis.epistemic_tag,
+                dominant_lens=hypothesis.dominant_lens,
+            )
+
+    loop = MissingSchemaFieldLoop()
+    lenses = [
+        CognitiveLens("Quantum Logic", "framing", ["constraint1"], ["spot1"], 0.95, "quantum"),
+        CognitiveLens("Symbolic Logic", "framing", ["constraint2"], ["spot2"], 0.72, "symbolic"),
+        CognitiveLens("Formal Verification", "framing", ["constraint3"], ["spot3"], 0.65, "formal"),
+    ]
+
+    result = loop.run(RECURRENCE_QUERY, lenses)
+
+    assert result.converged is True
+    assert result.history[0].delta == 1.0
+    assert result.history[0].residual == 1.0
+
+
 def test_execution_loop_continues_after_numeric_check_failure(tmp_path):
+    from core.obligation_compiler import CompiledObligations, ObligationAssessment
+
     class StubExecutionLoop(ExecutionLoop):
         def __init__(self):
             super().__init__()
             self.calls = 0
+            self.obligation_compiler = self._bypass_obligation_compiler()
+
+        class _bypass_obligation_compiler:
+            @staticmethod
+            def compile(problem, classification):
+                return CompiledObligations(mode="none", schema={}, specs=[], context={})
+
+            @staticmethod
+            def evaluate(compiled, execution_output):
+                return ObligationAssessment(
+                    schema_valid=True,
+                    all_required_passed=True,
+                    missing_or_null_fields=[],
+                    required_results={},
+                    failure_reasons=[],
+                )
 
         def _form_initial_hypothesis(self, problem, lenses, classification=None) -> Hypothesis:
             return Hypothesis(

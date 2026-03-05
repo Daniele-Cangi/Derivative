@@ -33,22 +33,33 @@ class NumericAnswerCheck:
         classification: ProblemClassification,
         conclusion: str,
         execution_output: str,
+        problem: str = "",
     ) -> tuple[bool, str]:
+        payload = self._parse_execution_payload(execution_output)
+        result_payload = payload.get("result", {}) if isinstance(payload, dict) else {}
+        if (
+            isinstance(result_payload, dict)
+            and str(result_payload.get("mode", "")).lower() == "infeasible"
+            and result_payload.get("is_satisfiable") is False
+        ):
+            return True, ""
+
         if not classification.requires_numeric_answer:
             return True, ""
 
         import re
 
         conclusion_pattern = re.compile(
-            r"\b(?:minimum|maximum|result|answer|requires|rounds?|steps?|hops?|probability|count)\b[^.:\n]*?\b\d+\.?\d*\b",
+            r"\b(?:minimum|maximum|result|answer|requires|rounds?|steps?|hops?|probability|count|threshold|limit)\b[^.:\n]*?\b\d+\.?\d*\b",
             re.IGNORECASE,
         )
         generic_number_pattern = re.compile(r"\b\d+\.?\d*\b")
+        indexed_number_pattern = re.compile(r"\b(?:n|k|step|round)\s*(?:=|>=|<=|>|<)?\s*\d+\b", re.IGNORECASE)
         output_pattern = re.compile(
-            r'"(?:minimum(?:_rounds)?|maximum|result|answer|count|rounds|steps|hops|satisfiable_count|independent_model_result|correlated_model_result)"\s*:\s*-?\d+\.?\d*',
+            r'"(?:minimum(?:_rounds)?|maximum|result|answer|count|rounds|steps|hops|satisfiable_count|independent_model_result|correlated_model_result|survival_probability|expected_hours|independent_model_survival|correlated_model_survival|independent_model_expected_hours|correlated_model_expected_hours|threshold_index|threshold_target|result_count|verification_window|qiskit_operations|contradiction_count)"\s*:\s*-?\d+\.?\d*',
             re.IGNORECASE,
         )
-        if classification.primary_type == ProblemType.HYBRID:
+        if classification.primary_type in {ProblemType.HYBRID, ProblemType.SYMBOLIC}:
             number_in_conclusion = bool(generic_number_pattern.search(conclusion))
         else:
             number_in_conclusion = bool(conclusion_pattern.search(conclusion))
@@ -63,7 +74,149 @@ class NumericAnswerCheck:
                 ),
             )
 
+        if classification.primary_type != ProblemType.HYBRID:
+            objectives = self._collect_objectives(classification, problem)
+            unresolved = [
+                objective
+                for objective in objectives
+                if not self._objective_is_answered(
+                    objective,
+                    conclusion,
+                    execution_output,
+                    generic_number_pattern,
+                    indexed_number_pattern,
+                )
+            ]
+            if unresolved:
+                return (
+                    False,
+                    (
+                        "Numeric gate detected unresolved objectives. The answer includes numbers but does not map "
+                        f"to all explicit requests. Missing objective coverage: {unresolved[:4]}."
+                    ),
+                )
+
         return True, ""
+
+    def _collect_objectives(
+        self,
+        classification: ProblemClassification,
+        problem: str,
+    ) -> list[str]:
+        objectives = list(classification.explicit_objectives)
+        if objectives:
+            return objectives
+        if not problem:
+            return []
+        return ProblemClassifier().extract_explicit_objectives(problem)
+
+    def _objective_is_answered(
+        self,
+        objective: str,
+        conclusion: str,
+        execution_output: str,
+        number_pattern,
+        indexed_number_pattern,
+    ) -> bool:
+        import re
+
+        objective_text = objective.lower()
+        response_text = f"{conclusion} {execution_output}".lower()
+        payload = self._parse_execution_payload(execution_output)
+        payload_text = self._payload_to_text(payload).lower()
+        combined_text = f"{response_text} {payload_text}"
+
+        if any(token in objective_text for token in ("closed form", "formula", "explicit expression", "recurrence")):
+            if "closed_form" in payload_text:
+                return True
+            if re.search(r"\b[a-zA-Z_][A-Za-z0-9_]*\(\s*n\s*\)\s*=", combined_text):
+                return True
+            if "characteristic" in combined_text and "root" in combined_text:
+                return True
+
+        if any(token in objective_text for token in ("verify", "prove", "show")):
+            if re.search(r'"(?:verified|recurrence_verified)"\s*:\s*true', execution_output, re.IGNORECASE):
+                return True
+            if any(token in combined_text for token in ("verified", "satisfies", "holds", "proof")):
+                return True
+
+        if any(token in objective_text for token in ("ratio", "limit")):
+            if "ratio_limit" in payload_text:
+                return True
+            if "limit" in combined_text and number_pattern.search(combined_text):
+                return True
+
+        if any(token in objective_text for token in ("threshold", "10^", "10**", "minimum n", "smallest n", "first n")):
+            if "threshold_index" in payload_text:
+                return True
+            if indexed_number_pattern.search(combined_text):
+                return True
+
+        objective_tokens = self._objective_tokens(objective_text)
+        overlap = sum(1 for token in objective_tokens if token in combined_text)
+        token_threshold = min(2, len(objective_tokens))
+        if token_threshold > 0 and overlap < token_threshold:
+            return False
+        return bool(number_pattern.search(combined_text))
+
+    def _objective_tokens(self, objective: str) -> list[str]:
+        import re
+
+        stop_tokens = {
+            "find",
+            "determine",
+            "prove",
+            "verify",
+            "show",
+            "compute",
+            "calculate",
+            "derive",
+            "the",
+            "and",
+            "that",
+            "with",
+            "under",
+            "after",
+            "then",
+            "such",
+            "which",
+            "all",
+            "for",
+            "from",
+            "into",
+            "does",
+            "not",
+            "than",
+        }
+        tokens = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", objective.lower())
+        return [token for token in tokens if token not in stop_tokens and len(token) > 2][:6]
+
+    def _parse_execution_payload(self, execution_output: str) -> dict:
+        try:
+            payload = json.loads(execution_output) if execution_output else {}
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _payload_to_text(self, payload: dict) -> str:
+        parts: List[str] = []
+
+        def walk(value: object) -> None:
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    parts.append(str(key))
+                    walk(nested)
+                return
+            if isinstance(value, list):
+                for item in value:
+                    walk(item)
+                return
+            if value is None:
+                return
+            parts.append(str(value))
+
+        walk(payload)
+        return " ".join(parts)
 
 
 class AdversarialValidator:
@@ -96,6 +249,7 @@ class AdversarialValidator:
             classification,
             result.conclusion,
             execution_output,
+            original_problem,
         )
         if not numeric_ok:
             return ValidationReport(
