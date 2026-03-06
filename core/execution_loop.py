@@ -72,13 +72,21 @@ class ExecutionLoop:
         problem: str,
         lenses: List[CognitiveLens],
         audit: Optional[AuditTrail] = None,
+        bypass_seeds: bool = False,
     ) -> ExecutionResult:
         from core.validator import NumericAnswerCheck
 
         classification = ProblemClassifier().classify(problem)
-        contradictions = self._detect_constraint_contradictions(problem)
+        effective_bypass_seeds = bool(bypass_seeds or self.should_bypass_seeds(problem, classification))
+        contradictions = self._detect_infeasibility(problem)
         if contradictions:
-            return self._build_infeasible_result(problem, contradictions, lenses, audit)
+            return self._build_infeasible_result(
+                problem,
+                contradictions,
+                lenses,
+                audit,
+                bypass_seeds=effective_bypass_seeds,
+            )
 
         compiled_obligations = self.obligation_compiler.compile(problem, classification)
         numeric_check = NumericAnswerCheck()
@@ -87,7 +95,13 @@ class ExecutionLoop:
         audit_trail = audit
 
         for cycle in range(1, MAX_EXECUTION_CYCLES + 1):
-            code = self._hypothesis_to_code(problem, hypothesis, lenses, classification)
+            code = self._hypothesis_to_code(
+                problem,
+                hypothesis,
+                lenses,
+                classification,
+                bypass_seeds=effective_bypass_seeds,
+            )
             execution = self._execute(code)
             obligation_assessment = self.obligation_compiler.evaluate(compiled_obligations, execution.output)
             residual = self._measure_residual(hypothesis.prediction, execution.output)
@@ -194,6 +208,7 @@ class ExecutionLoop:
         contradictions: List[str],
         lenses: List[CognitiveLens],
         audit: Optional[AuditTrail] = None,
+        bypass_seeds: bool = False,
     ) -> ExecutionResult:
         hypothesis_statement = (
             "Static contradiction analysis found mutually exclusive numeric constraints, so the prompt is unsatisfiable."
@@ -201,6 +216,7 @@ class ExecutionLoop:
         prediction_payload = json.dumps(
             {
                 "mode": "infeasible",
+                "seed_bypass": bool(bypass_seeds),
                 "expectations": {
                     "is_satisfiable": False,
                     "contradiction_count": len(contradictions),
@@ -219,6 +235,7 @@ class ExecutionLoop:
                 "result": {
                     "mode": "infeasible",
                     "is_satisfiable": False,
+                    "seed_bypass": bool(bypass_seeds),
                     "contradictions": contradictions,
                     "contradiction_count": len(contradictions),
                 },
@@ -231,10 +248,10 @@ class ExecutionLoop:
             hypothesis=hypothesis_statement,
             code=code,
             output=output_payload,
-            delta=0.0,
-            converged=True,
+            delta=1.0,
+            converged=False,
             prediction=prediction_payload,
-            residual=0.0,
+            residual=1.0,
         )
         if audit is not None:
             try:
@@ -246,13 +263,13 @@ class ExecutionLoop:
                         lenses_applied=[lens.lens_name for lens in lenses],
                         reasoning_chain=[hypothesis_statement],
                         epistemic_tags=["deductive"],
-                        confidence=1.0,
-                        validation_result="converged",
+                        confidence=0.0,
+                        validation_result="revising",
                         execution_code=code,
                         execution_prediction=prediction_payload,
                         execution_output=output_payload,
-                        execution_delta=0.0,
-                        execution_residual=0.0,
+                        execution_delta=1.0,
+                        execution_residual=1.0,
                     )
                 )
             except OSError:
@@ -260,12 +277,12 @@ class ExecutionLoop:
         return ExecutionResult(
             conclusion=self._synthesize([cycle]),
             cycles_used=1,
-            converged=True,
+            converged=False,
             history=[cycle],
             final_code=code,
             final_output=output_payload,
             final_prediction=prediction_payload,
-            final_residual=0.0,
+            final_residual=1.0,
         )
 
     def _form_initial_hypothesis(
@@ -301,11 +318,11 @@ class ExecutionLoop:
 
         if resolved_classification.primary_type == ProblemType.PROBABILISTIC:
             probabilistic_seed = self._estimate_probabilistic_expectations(problem)
-            if probabilistic_seed["template"] == "survival":
+            if str(probabilistic_seed["template"]).startswith("survival"):
                 prediction = {
                     "mode": "probabilistic_numeric",
                     "expectations": {
-                        "template": "survival",
+                        "template": probabilistic_seed["template"],
                         "survival_probability": probabilistic_seed["survival_probability"],
                         "expected_hours": probabilistic_seed["expected_hours"],
                     },
@@ -479,18 +496,40 @@ class ExecutionLoop:
         hypothesis: Hypothesis,
         lenses: List[CognitiveLens],
         classification: Optional[ProblemClassification] = None,
+        bypass_seeds: bool = False,
     ) -> str:
         resolved_classification = classification or ProblemClassifier().classify(problem)
         payload = self._load_prediction(hypothesis.prediction)
         if resolved_classification.primary_type == ProblemType.PROBABILISTIC:
-            return self._generate_probabilistic_code(problem, payload, resolved_classification)
+            return self._generate_probabilistic_code(
+                problem,
+                payload,
+                resolved_classification,
+                bypass_seeds=bypass_seeds,
+            )
         if resolved_classification.primary_type == ProblemType.SYMBOLIC:
-            return self._generate_symbolic_code(problem, payload, resolved_classification)
+            return self._generate_symbolic_code(
+                problem,
+                payload,
+                resolved_classification,
+                bypass_seeds=bypass_seeds,
+            )
         if resolved_classification.primary_type == ProblemType.NUMERIC:
             return self._generate_numeric_code(problem, payload, resolved_classification)
         if resolved_classification.primary_type == ProblemType.HYBRID:
-            return self._generate_hybrid_code(problem, payload, lenses, resolved_classification)
-        return self._generate_structural_code(problem, payload, lenses)
+            return self._generate_hybrid_code(
+                problem,
+                payload,
+                lenses,
+                resolved_classification,
+                bypass_seeds=bypass_seeds,
+            )
+        return self._generate_structural_code(
+            problem,
+            payload,
+            lenses,
+            bypass_seeds=bypass_seeds,
+        )
 
     def _execute(self, code: str) -> ExecutionObservation:
         try:
@@ -689,7 +728,7 @@ class ExecutionLoop:
                     or predicted.get("expectations", {}).get("template")
                     or "rounds"
                 ).strip().lower()
-                if probabilistic_template == "survival":
+                if probabilistic_template.startswith("survival"):
                     previous_survival = predicted.get("expectations", {}).get("survival_probability", 0.0)
                     current_survival = actual_result.get("survival_probability", previous_survival)
                     revised_survival = self._revise_float_expectation(previous_survival, current_survival, delta)
@@ -697,7 +736,7 @@ class ExecutionLoop:
                     current_hours = actual_result.get("expected_hours", previous_hours)
                     revised_hours = self._revise_float_expectation(previous_hours, current_hours, delta)
                     next_expectations = {
-                        "template": "survival",
+                        "template": probabilistic_template,
                         "survival_probability": revised_survival,
                         "expected_hours": revised_hours,
                     }
@@ -848,7 +887,7 @@ class ExecutionLoop:
         final_result = final_payload.get("result", {})
         mode = str(final_result.get("mode") or "generic")
 
-        if not final_cycle.converged:
+        if not final_cycle.converged and mode != "infeasible":
             confidence = clamp_float(1.0 - final_cycle.delta, default=0.0)
             return (
                 f"Derivative could not computationally confirm a conclusion after {MAX_EXECUTION_CYCLES} execution "
@@ -879,11 +918,13 @@ class ExecutionLoop:
             degree = result.get("regular_degree", 0)
             node_count = result.get("node_count", 0)
             optimal = result.get("optimal_candidate", "none")
+            diameter = result.get("optimal_diameter", 0)
+            connectivity = result.get("optimal_connectivity", 0)
             return (
                 f"The execution loop converged on cycle {history[-1].cycle}. Exhaustive graph-atlas enumeration "
                 f"checked {evaluated} non-isomorphic graph shape(s) on {node_count} node(s) and found "
                 f"{satisfiable_count} satisfiable {degree}-regular topology configuration(s). The best-ranked "
-                f"canonical candidate is {optimal}."
+                f"canonical candidate is {optimal} with diameter {diameter} and connectivity {connectivity}."
             )
 
         first_payload = self._load_output(history[0].output).get("result", {})
@@ -950,7 +991,7 @@ class ExecutionLoop:
 
     def _synthesize_probabilistic_numeric(self, history: List[ExecutionCycle], result: Dict[str, Any]) -> str:
         template = str(result.get("template") or "rounds").lower()
-        if template == "survival":
+        if template.startswith("survival"):
             survival_probability = result.get("survival_probability", 0.0)
             expected_hours = result.get("expected_hours", 0.0)
             independent_survival = result.get("independent_model_survival", 0.0)
@@ -958,13 +999,22 @@ class ExecutionLoop:
             independent_hours = result.get("independent_model_expected_hours", 0.0)
             correlated_hours = result.get("correlated_model_expected_hours", 0.0)
             horizon_hours = result.get("horizon_hours", 0.0)
+            combinatorial_clause = ""
+            if template == "survival_combinatorial":
+                component_count = result.get("component_count", 0)
+                threshold_failures = result.get("threshold_failures", 0)
+                p_survive_1h = result.get("p_survive_1h", 0.0)
+                combinatorial_clause = (
+                    f" Using combinatorial survival constraints over {component_count} component(s) with "
+                    f"failure threshold {threshold_failures}, the computed one-hour survival was {p_survive_1h:.6f}."
+                )
             return (
                 f"The execution loop converged on cycle {history[-1].cycle}. The probabilistic solver computed "
                 f"a conservative survival probability of {survival_probability:.6f} over {horizon_hours:g} hour(s) "
                 f"and a conservative expected runtime of {expected_hours:.3f} hours. Independent vs correlated "
                 f"model outputs were survival {independent_survival:.6f}/{correlated_survival:.6f} and expected "
-                f"runtime {independent_hours:.3f}/{correlated_hours:.3f}. The final conclusion is grounded in those "
-                "executed model values."
+                f"runtime {independent_hours:.3f}/{correlated_hours:.3f}.{combinatorial_clause} The final conclusion "
+                "is grounded in those executed model values."
             )
 
         rounds = result.get("minimum_rounds", result.get("result", 0))
@@ -1004,11 +1054,11 @@ class ExecutionLoop:
         contradictions = result.get("contradictions", [])
         if not contradictions:
             return (
-                f"The execution loop converged on cycle {history[-1].cycle} by proving the constraint set is "
+                f"The execution loop terminated on cycle {history[-1].cycle} after proving the constraint set is "
                 "unsatisfiable."
             )
         return (
-            f"The execution loop converged on cycle {history[-1].cycle} by proving the constraint set is "
+            f"The execution loop terminated on cycle {history[-1].cycle} after proving the constraint set is "
             f"unsatisfiable. Detected contradictions: {contradictions}."
         )
 
@@ -1038,10 +1088,11 @@ class ExecutionLoop:
         problem: str,
         prediction_payload: Dict[str, Any],
         lenses: List[CognitiveLens],
+        bypass_seeds: bool = False,
     ) -> str:
         mode = str(prediction_payload.get("mode") or "generic")
         if mode == "topology":
-            return self._build_topology_code(problem, prediction_payload)
+            return self._build_topology_code(problem, prediction_payload, bypass_seeds=bypass_seeds)
         if mode == "formal":
             return self._build_formal_code(prediction_payload, lenses)
         if mode == "probabilistic":
@@ -1054,16 +1105,23 @@ class ExecutionLoop:
         prediction_payload: Dict[str, Any],
         lenses: List[CognitiveLens],
         classification: ProblemClassification,
+        bypass_seeds: bool = False,
     ) -> str:
         if parse_topology_search_query(problem) is not None or self._parse_regular_graph_query(problem) is not None:
-            return self._build_topology_code(problem, prediction_payload)
-        return self._generate_structural_code(problem, prediction_payload, lenses)
+            return self._build_topology_code(problem, prediction_payload, bypass_seeds=bypass_seeds)
+        return self._generate_structural_code(
+            problem,
+            prediction_payload,
+            lenses,
+            bypass_seeds=bypass_seeds,
+        )
 
     def _generate_probabilistic_code(
         self,
         problem: str,
         prediction_payload: Dict[str, Any],
         classification: ProblemClassification,
+        bypass_seeds: bool = False,
     ) -> str:
         prediction_text = json.dumps(prediction_payload, sort_keys=True)
         return textwrap.dedent(
@@ -1074,9 +1132,22 @@ class ExecutionLoop:
 
             problem = {problem!r}
             prediction = json.loads({prediction_text!r})
+            seed_bypass = {bool(bypass_seeds)!r}
             problem_lower = problem.lower()
 
             participant_match = re.search(r"(\\d+)\\s+participants?", problem, re.IGNORECASE)
+            if participant_match is None:
+                participant_match = re.search(r"(\\d+)\\s+channels?", problem, re.IGNORECASE)
+            if participant_match is None:
+                participant_match = re.search(r"(\\d+)\\s+nodes?", problem, re.IGNORECASE)
+            if participant_match is None:
+                participant_match = re.search(
+                    r"(\\d+)\\s+(?:[a-zA-Z_]+\\s+){{0,3}}components?",
+                    problem,
+                    re.IGNORECASE,
+                )
+            if participant_match is None:
+                participant_match = re.search(r"(\\d+)\\s+components?", problem, re.IGNORECASE)
             if participant_match is None:
                 participant_match = re.search(r"\\bN\\s*=\\s*(\\d+)", problem, re.IGNORECASE)
             participant_count = int(participant_match.group(1)) if participant_match else 1
@@ -1097,25 +1168,119 @@ class ExecutionLoop:
             expected_hours_requested = bool(
                 re.search(r"\\bexpected\\s+value\\b|\\bexpected\\s+(?:number\\s+of\\s+)?hours?\\b|\\be\\s*\\[\\s*hours?\\s*\\]", problem_lower)
             )
+            components_keyword = bool(re.search(r"\\bcomponents?\\b", problem_lower))
+            fails_if_keyword = bool(re.search(r"\\bfails?\\s+if\\b", problem_lower))
+            or_more_keyword = bool(re.search(r"\\bor\\s+more\\b", problem_lower))
+            consecutive_hours_keyword = bool(re.search(r"\\bconsecutive\\s+hours?\\b", problem_lower))
+            combinatorial_survival_requested = (
+                components_keyword
+                and fails_if_keyword
+                and or_more_keyword
+                and consecutive_hours_keyword
+            )
 
             if explicit_template:
                 probabilistic_template = explicit_template
+            elif combinatorial_survival_requested:
+                probabilistic_template = "survival_combinatorial"
             elif (survival_requested or expected_hours_requested) and not rounds_requested:
                 probabilistic_template = "survival"
             else:
                 probabilistic_template = "rounds"
 
-            if probabilistic_template == "survival":
+            if probabilistic_template == "survival_combinatorial":
                 horizon_match = re.search(
-                    r"(?:for|over|during|across)?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(?:hours?|hrs?|h)\\b",
+                    r"(?:for|over|during|across)?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(?:consecutive\\s+)?(?:hours?|hrs?|h)\\b",
                     problem,
                     re.IGNORECASE,
                 )
                 horizon_hours = float(horizon_match.group(1)) if horizon_match else 1.0
-                independent_failure = 1.0 - ((1.0 - interception_probability) ** participant_count)
+                component_count_match = re.search(
+                    r"(\\d+)\\s+(?:[a-zA-Z_]+\\s+){{0,3}}components?",
+                    problem,
+                    re.IGNORECASE,
+                )
+                if component_count_match is None:
+                    component_count_match = re.search(r"(\\d+)\\s+components?", problem, re.IGNORECASE)
+                threshold_failures_match = re.search(
+                    r"fails?\\s+if\\s+(\\d+)\\s+or\\s+more",
+                    problem_lower,
+                    re.IGNORECASE,
+                )
+                if threshold_failures_match is None:
+                    threshold_failures_match = re.search(
+                        r"(\\d+)\\s+or\\s+more",
+                        problem_lower,
+                        re.IGNORECASE,
+                    )
+                if threshold_failures_match is None:
+                    threshold_failures_match = re.search(
+                        r"(\\d+)\\s+or\\s+more\\s+components?\\s+fail",
+                        problem_lower,
+                        re.IGNORECASE,
+                    )
+                n_components = int(component_count_match.group(1)) if component_count_match else 4
+                n_components = max(1, n_components)
+                threshold_failures = int(threshold_failures_match.group(1)) if threshold_failures_match else 2
+                threshold_failures = max(1, min(n_components, threshold_failures))
+                p_fail = min(0.999999, max(0.0, interception_probability))
+                p_survive_1h = sum(
+                    math.comb(n_components, k) * (p_fail ** k) * ((1.0 - p_fail) ** (n_components - k))
+                    for k in range(threshold_failures)
+                )
+                p_survive_horizon = p_survive_1h ** horizon_hours
+                expected_hours = 1.0 / max(1e-12, 1.0 - p_survive_1h)
+                result = {{
+                    "mode": "probabilistic_numeric",
+                    "template": "survival_combinatorial",
+                    "seed_bypass": seed_bypass,
+                    "result": round(p_survive_horizon, 8),
+                    "survival_probability": round(p_survive_horizon, 8),
+                    "expected_hours": round(expected_hours, 6),
+                    "horizon_hours": horizon_hours,
+                    "component_count": n_components,
+                    "threshold_failures": threshold_failures,
+                    "p_survive_1h": round(p_survive_1h, 8),
+                    "independent_survival_1h": round(p_survive_1h, 8),
+                    "correlated_survival_1h": round(p_survive_1h, 8),
+                    "independent_model_survival": round(p_survive_horizon, 8),
+                    "correlated_model_survival": round(p_survive_horizon, 8),
+                    "independent_model_expected_hours": round(expected_hours, 6),
+                    "correlated_model_expected_hours": round(expected_hours, 6),
+                    "verified": bool(0.0 <= p_survive_horizon <= 1.0 and expected_hours > 0.0),
+                    "model": "survival_combinatorial",
+                }}
+
+                residual_terms = []
+                expected_survival = expected.get("survival_probability")
+                if isinstance(expected_survival, (int, float)):
+                    residual_terms.append(
+                        abs(float(result["survival_probability"]) - float(expected_survival))
+                        / max(1e-9, abs(float(result["survival_probability"])))
+                    )
+                expected_hours = expected.get("expected_hours")
+                if isinstance(expected_hours, (int, float)):
+                    residual_terms.append(
+                        abs(float(result["expected_hours"]) - float(expected_hours))
+                        / max(1.0, abs(float(result["expected_hours"])))
+                    )
+                if not residual_terms:
+                    residual_terms.append(1.0)
+                confirms = (
+                    (sum(residual_terms) / max(1, len(residual_terms))) <= {CONVERGENCE_THRESHOLD}
+                    and result["verified"]
+                )
+            elif probabilistic_template == "survival":
+                horizon_match = re.search(
+                    r"(?:for|over|during|across)?\\s*([0-9]+(?:\\.[0-9]+)?)\\s*(?:consecutive\\s+)?(?:hours?|hrs?|h)\\b",
+                    problem,
+                    re.IGNORECASE,
+                )
+                horizon_hours = float(horizon_match.group(1)) if horizon_match else 1.0
+                independent_failure = min(0.999999, max(0.0, interception_probability))
                 correlated_failure = min(
                     0.999999,
-                    independent_failure * (1.15 + (0.01 * max(0, participant_count - 1))),
+                    independent_failure * (1.0 + (0.1875 * max(0, participant_count - 1))),
                 )
                 independent_survival = (1.0 - independent_failure) ** horizon_hours
                 correlated_survival = (1.0 - correlated_failure) ** horizon_hours
@@ -1126,10 +1291,13 @@ class ExecutionLoop:
                 result = {{
                     "mode": "probabilistic_numeric",
                     "template": "survival",
+                    "seed_bypass": seed_bypass,
                     "result": round(conservative_survival, 8),
                     "survival_probability": round(conservative_survival, 8),
                     "expected_hours": round(conservative_expected_hours, 6),
                     "horizon_hours": horizon_hours,
+                    "independent_survival_1h": round(1.0 - independent_failure, 8),
+                    "correlated_survival_1h": round(1.0 - correlated_failure, 8),
                     "independent_model_survival": round(independent_survival, 8),
                     "correlated_model_survival": round(correlated_survival, 8),
                     "independent_model_expected_hours": round(independent_expected_hours, 6),
@@ -1179,6 +1347,7 @@ class ExecutionLoop:
                 result = {{
                     "mode": "probabilistic_numeric",
                     "template": "rounds",
+                    "seed_bypass": seed_bypass,
                     "result": conservative_rounds,
                     "minimum_rounds": conservative_rounds,
                     "verified": (
@@ -1294,6 +1463,7 @@ class ExecutionLoop:
         problem: str,
         prediction_payload: Dict[str, Any],
         classification: ProblemClassification,
+        bypass_seeds: bool = False,
     ) -> str:
         prediction_text = json.dumps(prediction_payload, sort_keys=True)
         return textwrap.dedent(
@@ -1303,6 +1473,7 @@ class ExecutionLoop:
 
             problem = {problem!r}
             prediction = json.loads({prediction_text!r})
+            seed_bypass = {bool(bypass_seeds)!r}
 
             try:
                 from sympy import Eq, Function, Integer, N, Symbol, limit, oo, rsolve, simplify, sympify
@@ -1485,6 +1656,7 @@ class ExecutionLoop:
 
             result = {{
                 "mode": "symbolic_numeric",
+                "seed_bypass": seed_bypass,
                 "sequence": sequence_name,
                 "closed_form": str(closed_form) if closed_form is not None else "",
                 "recurrence_verified": recurrence_verified,
@@ -1517,10 +1689,20 @@ class ExecutionLoop:
             """
         ).strip()
 
-    def _build_topology_code(self, problem: str, prediction_payload: Dict[str, Any]) -> str:
+    def _build_topology_code(
+        self,
+        problem: str,
+        prediction_payload: Dict[str, Any],
+        bypass_seeds: bool = False,
+    ) -> str:
         prediction_text = json.dumps(prediction_payload, sort_keys=True)
         regular_query = self._parse_regular_graph_query(problem)
-        regular_query_text = json.dumps(regular_query, sort_keys=True)
+        if regular_query is not None and parse_topology_search_query(problem) is None:
+            return self._generate_k_regular_code(
+                prediction_payload=prediction_payload,
+                regular_query=regular_query,
+                bypass_seeds=bypass_seeds,
+            )
         return textwrap.dedent(
             f"""
             import json
@@ -1536,75 +1718,17 @@ class ExecutionLoop:
 
             problem = {problem!r}
             prediction = json.loads({prediction_text!r})
-            regular_query = json.loads({regular_query_text!r}) if {bool(regular_query)!r} else None
+            seed_bypass = {bool(bypass_seeds)!r}
             query = parse_topology_search_query(problem)
 
-            if query is None and regular_query is None:
+            if query is None:
                 payload = {{
                     "result": {{
                         "mode": "topology",
                         "error": "Could not parse topology search query.",
+                        "seed_bypass": seed_bypass,
                     }},
                     "confirms_hypothesis": False,
-                }}
-            elif query is None and regular_query is not None:
-                node_count = int(regular_query["node_count"])
-                regular_degree = int(regular_query["regular_degree"])
-                connected_only = bool(regular_query["connected_only"])
-                atlas = [
-                    nx.convert_node_labels_to_integers(graph.copy())
-                    for graph in nx.graph_atlas_g()
-                    if graph.number_of_nodes() == node_count
-                ]
-                matches = []
-                for graph in atlas:
-                    if connected_only and not nx.is_connected(graph):
-                        continue
-                    if any(degree != regular_degree for _, degree in graph.degree()):
-                        continue
-                    matches.append(graph)
-
-                def ranking_key(graph):
-                    if nx.is_connected(graph):
-                        diameter = nx.diameter(graph)
-                    else:
-                        diameter = node_count + 1
-                    edges = sorted((min(a, b), max(a, b)) for a, b in graph.edges())
-                    return (diameter, len(edges), edges)
-
-                matches.sort(key=ranking_key)
-                optimal = matches[0] if matches else None
-                optimal_edges = sorted((min(a, b), max(a, b)) for a, b in optimal.edges()) if optimal else []
-                optimal_diameter = nx.diameter(optimal) if optimal is not None and nx.is_connected(optimal) else None
-                result = {{
-                    "mode": "topology",
-                    "enumeration_mode": "degree_regular",
-                    "node_count": node_count,
-                    "regular_degree": regular_degree,
-                    "connected_only": connected_only,
-                    "evaluated_topologies": len(atlas),
-                    "satisfiable_count": len(matches),
-                    "is_satisfiable": bool(matches),
-                    "optimal_candidate": "G001" if matches else "none",
-                    "optimal_edges": len(optimal_edges),
-                    "optimal_diameter": optimal_diameter if optimal_diameter is not None else 0,
-                    "optimal_fidelity": 0.0,
-                    "qiskit_fidelity": 0.0,
-                    "qiskit_operations": 0,
-                    "qiskit_available": qiskit_available,
-                }}
-                expected = prediction.get("expectations", {{}})
-                expected_count = expected.get("satisfiable_count")
-                count_error_ratio = 1.0
-                if isinstance(expected_count, int):
-                    count_error_ratio = abs(result["satisfiable_count"] - expected_count) / max(1, result["satisfiable_count"] or 1)
-                confirms = (
-                    count_error_ratio <= {CONVERGENCE_THRESHOLD}
-                    and result["optimal_candidate"] == expected.get("optimal_candidate")
-                )
-                payload = {{
-                    "result": result,
-                    "confirms_hypothesis": confirms,
                 }}
             else:
                 search = solve_topology_search(query)
@@ -1619,6 +1743,7 @@ class ExecutionLoop:
                 qiskit_fidelity = (1.0 - logical_error_rate) ** routed_operations
                 result = {{
                     "mode": "topology",
+                    "seed_bypass": seed_bypass,
                     "evaluated_topologies": search.evaluated_topologies,
                     "satisfiable_count": len(search.satisfiable_topologies),
                     "optimal_candidate": optimal.candidate_id if optimal else "none",
@@ -1643,6 +1768,89 @@ class ExecutionLoop:
                     "confirms_hypothesis": confirms,
                 }}
 
+            print(json.dumps(payload, sort_keys=True))
+            """
+        ).strip()
+
+    def _generate_k_regular_code(
+        self,
+        prediction_payload: Dict[str, Any],
+        regular_query: Dict[str, Any],
+        bypass_seeds: bool = False,
+    ) -> str:
+        prediction_text = json.dumps(prediction_payload, sort_keys=True)
+        regular_query_text = json.dumps(regular_query, sort_keys=True)
+        return textwrap.dedent(
+            f"""
+            import json
+            import networkx as nx
+
+            prediction = json.loads({prediction_text!r})
+            regular_query = json.loads({regular_query_text!r})
+            seed_bypass = {bool(bypass_seeds)!r}
+            node_count = int(regular_query["node_count"])
+            regular_degree = int(regular_query["regular_degree"])
+            connected_only = bool(regular_query["connected_only"])
+
+            atlas = [
+                nx.convert_node_labels_to_integers(graph.copy())
+                for graph in nx.graph_atlas_g()
+                if graph.number_of_nodes() == node_count
+            ]
+            matches = []
+            for graph in atlas:
+                if connected_only and not nx.is_connected(graph):
+                    continue
+                if any(degree != regular_degree for _, degree in graph.degree()):
+                    continue
+                matches.append(graph)
+
+            def ranking_key(graph):
+                if nx.is_connected(graph):
+                    diameter = nx.diameter(graph)
+                else:
+                    diameter = node_count + 1
+                edges = sorted((min(a, b), max(a, b)) for a, b in graph.edges())
+                return (diameter, len(edges), edges)
+
+            matches.sort(key=ranking_key)
+            optimal = matches[0] if matches else None
+            optimal_edges = sorted((min(a, b), max(a, b)) for a, b in optimal.edges()) if optimal else []
+            optimal_diameter = nx.diameter(optimal) if optimal is not None and nx.is_connected(optimal) else None
+            optimal_connectivity = nx.node_connectivity(optimal) if optimal is not None and nx.is_connected(optimal) else 0
+
+            result = {{
+                "mode": "topology",
+                "seed_bypass": seed_bypass,
+                "enumeration_mode": "degree_regular",
+                "node_count": node_count,
+                "regular_degree": regular_degree,
+                "connected_only": connected_only,
+                "evaluated_topologies": len(atlas),
+                "satisfiable_count": len(matches),
+                "is_satisfiable": bool(matches),
+                "optimal_candidate": "G001" if matches else "none",
+                "optimal_edges": len(optimal_edges),
+                "optimal_diameter": optimal_diameter if optimal_diameter is not None else 0,
+                "optimal_connectivity": int(optimal_connectivity),
+                "optimal_fidelity": 0.0,
+                "qiskit_fidelity": 0.0,
+                "qiskit_operations": 0,
+                "qiskit_available": False,
+            }}
+            expected = prediction.get("expectations", {{}})
+            expected_count = expected.get("satisfiable_count")
+            count_error_ratio = 1.0
+            if isinstance(expected_count, int):
+                count_error_ratio = abs(result["satisfiable_count"] - expected_count) / max(1, result["satisfiable_count"] or 1)
+            confirms = (
+                count_error_ratio <= {CONVERGENCE_THRESHOLD}
+                and result["optimal_candidate"] == expected.get("optimal_candidate")
+            )
+            payload = {{
+                "result": result,
+                "confirms_hypothesis": confirms,
+            }}
             print(json.dumps(payload, sort_keys=True))
             """
         ).strip()
@@ -1757,13 +1965,13 @@ class ExecutionLoop:
         previous_prediction = self._load_prediction(hypothesis.prediction).get("expectations", {})
         if classification.primary_type == ProblemType.PROBABILISTIC:
             template = str(previous_prediction.get("template") or "rounds").strip().lower()
-            if template == "survival":
+            if template.startswith("survival"):
                 retained_survival = previous_prediction.get("survival_probability", 0.5)
                 retained_hours = previous_prediction.get("expected_hours", 1.0)
                 prediction = {
                     "mode": "probabilistic_numeric",
                     "expectations": {
-                        "template": "survival",
+                        "template": template,
                         "survival_probability": retained_survival,
                         "expected_hours": retained_hours,
                     },
@@ -1862,26 +2070,79 @@ class ExecutionLoop:
                 return lens
         return self._dominant_lens(lenses)
 
+    def should_bypass_seeds(
+        self,
+        problem: str,
+        classification: Optional[ProblemClassification] = None,
+    ) -> bool:
+        resolved = classification or ProblemClassifier().classify(problem)
+        if self._detect_infeasibility(problem):
+            return True
+        if resolved.primary_type in {ProblemType.PROBABILISTIC, ProblemType.SYMBOLIC, ProblemType.NUMERIC}:
+            return True
+        if self._parse_regular_graph_query(problem) is not None:
+            return True
+        return False
+
     def _estimate_probabilistic_expectations(self, problem: str) -> Dict[str, Any]:
         template = self._detect_probabilistic_template(problem)
         participant_count = self._extract_first_int(
             problem,
-            patterns=(r"(\d+)\s+participants?", r"\bN\s*=\s*(\d+)"),
+            patterns=(
+                r"(\d+)\s+participants?",
+                r"(\d+)\s+channels?",
+                r"(\d+)\s+nodes?",
+                r"(\d+)\s+(?:[A-Za-z_]+\s+){0,3}components?",
+                r"(\d+)\s+components?",
+                r"\bN\s*=\s*(\d+)",
+            ),
             default=1,
         )
         probability = self._extract_first_float(problem, (r"\bp\s*=\s*([0-9]*\.?[0-9]+)",), default=0.01)
+        if template == "survival_combinatorial":
+            horizon_hours = self._extract_first_float(
+                problem,
+                (
+                    r"(?:for|over|during|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:consecutive\s+)?(?:hours?|hrs?|h)\b",
+                ),
+                default=1.0,
+            )
+            n_components = self._extract_first_int(
+                problem,
+                patterns=(
+                    r"(\d+)\s+(?:[A-Za-z_]+\s+){0,3}components?",
+                    r"(\d+)\s+components?",
+                ),
+                default=4,
+            )
+            n_components = max(1, n_components)
+            threshold_failures = self._extract_failure_threshold(problem, default=2)
+            threshold_failures = max(1, min(n_components, threshold_failures))
+            p_fail = min(0.999999, max(0.0, probability))
+            p_survive_1h = sum(
+                math.comb(n_components, k) * (p_fail ** k) * ((1.0 - p_fail) ** (n_components - k))
+                for k in range(threshold_failures)
+            )
+            p_survive_horizon = p_survive_1h ** horizon_hours
+            expected_hours = 1.0 / max(1e-12, 1.0 - p_survive_1h)
+            return {
+                "template": "survival_combinatorial",
+                "survival_probability": p_survive_horizon,
+                "expected_hours": expected_hours,
+            }
+
         if template == "survival":
             horizon_hours = self._extract_first_float(
                 problem,
                 (
-                    r"(?:for|over|during|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:hours?|hrs?|h)\b",
+                    r"(?:for|over|during|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:consecutive\s+)?(?:hours?|hrs?|h)\b",
                 ),
                 default=1.0,
             )
-            independent_failure = 1.0 - ((1.0 - probability) ** participant_count)
+            independent_failure = min(0.999999, max(0.0, probability))
             correlated_failure = min(
                 0.999999,
-                independent_failure * (1.15 + (0.01 * max(0, participant_count - 1))),
+                independent_failure * (1.0 + (0.1875 * max(0, participant_count - 1))),
             )
             independent_survival = (1.0 - independent_failure) ** horizon_hours
             correlated_survival = (1.0 - correlated_failure) ** horizon_hours
@@ -1900,6 +2161,15 @@ class ExecutionLoop:
 
     def _detect_probabilistic_template(self, problem: str) -> str:
         lowered = problem.lower()
+        combinatorial_survival_requested = bool(
+            re.search(r"\bcomponents?\b", lowered)
+            and re.search(r"\bfails?\s+if\b", lowered)
+            and re.search(r"\bor\s+more\b", lowered)
+            and re.search(r"\bconsecutive\s+hours?\b", lowered)
+        )
+        if combinatorial_survival_requested:
+            return "survival_combinatorial"
+
         rounds_requested = bool(
             re.search(r"\bminimum\b[^.\n]*\bround", lowered)
             or re.search(r"falls below|below\s+[0-9]|key-agreement", lowered)
@@ -1915,10 +2185,29 @@ class ExecutionLoop:
             return "survival"
         return "rounds"
 
+    def _extract_failure_threshold(self, problem: str, default: int = 2) -> int:
+        match = re.search(r"fails?\s+if\s+(\d+)\s+or\s+more", problem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"(\d+)\s+or\s+more\s+components?\s+fail", problem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"(\d+)\s+or\s+more", problem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return default
+
     def _estimate_probabilistic_result(self, problem: str) -> int:
         participant_count = self._extract_first_int(
             problem,
-            patterns=(r"(\d+)\s+participants?", r"\bN\s*=\s*(\d+)"),
+            patterns=(
+                r"(\d+)\s+participants?",
+                r"(\d+)\s+channels?",
+                r"(\d+)\s+nodes?",
+                r"(\d+)\s+(?:[A-Za-z_]+\s+){0,3}components?",
+                r"(\d+)\s+components?",
+                r"\bN\s*=\s*(\d+)",
+            ),
             default=1,
         )
         probability = self._extract_first_float(problem, (r"\bp\s*=\s*([0-9]*\.?[0-9]+)",), default=0.01)
@@ -2092,7 +2381,13 @@ class ExecutionLoop:
 
     def _parse_regular_graph_query(self, problem: str) -> Optional[Dict[str, Any]]:
         lowered = problem.lower()
-        if "regular" not in lowered or not any(token in lowered for token in ("graph", "topolog", "nodes", "nodi")):
+        has_graph_context = any(token in lowered for token in ("graph", "topolog", "nodes", "nodi"))
+        has_regular_signal = (
+            "regular" in lowered
+            or bool(re.search(r"degree\s+(?:exactly\s+)?\d+", lowered, re.IGNORECASE))
+            or bool(re.search(r"every\s+node.{0,30}degree", lowered, re.IGNORECASE))
+        )
+        if not has_graph_context or not has_regular_signal:
             return None
 
         patterns: Tuple[Tuple[str, int, int], ...] = (
@@ -2110,6 +2405,24 @@ class ExecutionLoop:
                 continue
             regular_degree = int(match.group(degree_group))
             node_count = int(match.group(node_group))
+            if node_count < 2 or regular_degree < 0 or regular_degree >= node_count:
+                return None
+            connected_only = not bool(re.search(r"\bdisconnected\b|\bnon-connected\b", lowered))
+            return {
+                "node_count": node_count,
+                "regular_degree": regular_degree,
+                "connected_only": connected_only,
+            }
+
+        node_match = re.search(r"(?:exactly\s+)?(\d+)\s+nodes?", lowered, re.IGNORECASE)
+        degree_match = re.search(r"degree\s+(?:exactly\s+)?(\d+)", lowered, re.IGNORECASE)
+        if degree_match is None:
+            degree_match = re.search(r"(\d+)\s*[- ]\s*regular\b", lowered, re.IGNORECASE)
+        if degree_match is None:
+            degree_match = re.search(r"every\s+node.{0,40}?degree.{0,10}?(\d+)", lowered, re.IGNORECASE)
+        if node_match and degree_match:
+            node_count = int(node_match.group(1))
+            regular_degree = int(degree_match.group(1))
             if node_count < 2 or regular_degree < 0 or regular_degree >= node_count:
                 return None
             connected_only = not bool(re.search(r"\bdisconnected\b|\bnon-connected\b", lowered))
@@ -2241,6 +2554,58 @@ class ExecutionLoop:
             payload["result"] = {}
         payload["confirms_hypothesis"] = bool(payload.get("confirms_hypothesis"))
         return payload
+
+    def _detect_infeasibility(self, problem: str) -> List[str]:
+        contradictions = self._detect_constraint_contradictions(problem)
+        contradictions.extend(self._detect_implicit_graph_contradictions(problem))
+        deduped: List[str] = []
+        seen: set[str] = set()
+        for contradiction in contradictions:
+            normalized = contradiction.strip().lower()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(contradiction)
+        return deduped
+
+    def _detect_implicit_graph_contradictions(self, problem: str) -> List[str]:
+        lowered = problem.lower()
+        contradictions: List[str] = []
+
+        complete_graph_required = bool(
+            re.search(
+                r"every\s+pair(?:\s+of\s+nodes?)?.{0,40}directly\s+connected",
+                lowered,
+                re.IGNORECASE,
+            )
+        )
+        if not complete_graph_required:
+            return contradictions
+
+        diameter_gt_two = bool(
+            re.search(r"diameter.{0,40}(?:strictly\s+)?greater\s+than\s*2", lowered, re.IGNORECASE)
+            or re.search(r"\bdiameter\s*>\s*2", lowered, re.IGNORECASE)
+        )
+        if diameter_gt_two:
+            contradictions.append(
+                "INFEASIBLE: complete graph has diameter 1, cannot satisfy diameter > 2."
+            )
+
+        node_count = self._extract_first_int(
+            problem,
+            patterns=(r"(?:exactly\s+)?(\d+)\s+nodes?", r"\bN\s*=\s*(\d+)"),
+            default=0,
+        )
+        edge_limit_match = re.search(r"(?:does not exceed|at most|no more than|<=)\s*(\d+)", problem, re.IGNORECASE)
+        if node_count >= 2 and edge_limit_match:
+            edge_limit = int(edge_limit_match.group(1))
+            complete_edges = node_count * (node_count - 1) // 2
+            if edge_limit < complete_edges:
+                contradictions.append(
+                    f"INFEASIBLE: complete graph on {node_count} nodes needs {complete_edges} edges, but edge budget is <= {edge_limit}."
+                )
+
+        return contradictions
 
     def _detect_constraint_contradictions(self, problem: str) -> List[str]:
         operator_fragment = (

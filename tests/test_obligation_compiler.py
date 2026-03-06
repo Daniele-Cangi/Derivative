@@ -33,6 +33,13 @@ SURVIVAL_QUERY = (
     "of hours before failure under independent and correlated failure models."
 )
 
+SURVIVAL_COMBINATORIAL_QUERY = (
+    "A system has 4 independent components, each failing with probability p=0.1 per hour. "
+    "The system fails if 2 or more components fail in the same hour. "
+    "Find the probability that the system survives exactly 8 consecutive hours without failure. "
+    "Then find the expected number of hours until first system failure."
+)
+
 
 def test_obligation_compiler_builds_symbolic_schema():
     compiler = ObligationCompiler()
@@ -136,6 +143,31 @@ def test_obligation_compiler_validates_probabilistic_survival_obligations():
 
     assert compiled.mode == "probabilistic_numeric"
     assert compiled.context["template"] == "survival"
+    assert assessment.schema_valid is True
+    assert assessment.all_required_passed is True
+
+
+def test_obligation_compiler_validates_probabilistic_survival_combinatorial_obligations():
+    compiler = ObligationCompiler()
+    classification = ProblemClassifier().classify(SURVIVAL_COMBINATORIAL_QUERY)
+    compiled = compiler.compile(SURVIVAL_COMBINATORIAL_QUERY, classification)
+
+    payload = {
+        "result": {
+            "mode": "probabilistic_numeric",
+            "template": "survival_combinatorial",
+            "survival_probability": compiled.context["survival_probability"],
+            "expected_hours": compiled.context["expected_hours"],
+            "independent_model_survival": compiled.context["independent_model_survival"],
+            "correlated_model_survival": compiled.context["correlated_model_survival"],
+            "independent_model_expected_hours": compiled.context["independent_model_expected_hours"],
+            "correlated_model_expected_hours": compiled.context["correlated_model_expected_hours"],
+        },
+        "confirms_hypothesis": True,
+    }
+    assessment = compiler.evaluate(compiled, json.dumps(payload, sort_keys=True))
+
+    assert compiled.context["template"] == "survival_combinatorial"
     assert assessment.schema_valid is True
     assert assessment.all_required_passed is True
 

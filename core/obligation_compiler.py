@@ -1,3 +1,4 @@
+import math
 import json
 import re
 from dataclasses import dataclass, field
@@ -136,19 +137,96 @@ class ObligationCompiler:
         )
 
     def _compile_probabilistic(self, problem: str) -> CompiledObligations:
-        participant_count = self._extract_first_int(problem, (r"(\d+)\s+participants?", r"\bN\s*=\s*(\d+)"), default=1)
+        participant_count = self._extract_first_int(
+            problem,
+            (
+                r"(\d+)\s+participants?",
+                r"(\d+)\s+channels?",
+                r"(\d+)\s+nodes?",
+                r"(\d+)\s+(?:[A-Za-z_]+\s+){0,3}components?",
+                r"(\d+)\s+components?",
+                r"\bN\s*=\s*(\d+)",
+            ),
+            default=1,
+        )
         interception_probability = self._extract_first_float(problem, (r"\bp\s*=\s*([0-9]*\.?[0-9]+)",), default=0.01)
         template = self._detect_probabilistic_template(problem)
+        if template == "survival_combinatorial":
+            horizon_hours = self._extract_first_float(
+                problem,
+                (r"(?:for|over|during|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:consecutive\s+)?(?:hours?|hrs?|h)\b",),
+                default=1.0,
+            )
+            n_components = self._extract_first_int(
+                problem,
+                (
+                    r"(\d+)\s+(?:[A-Za-z_]+\s+){0,3}components?",
+                    r"(\d+)\s+components?",
+                ),
+                default=4,
+            )
+            n_components = max(1, n_components)
+            threshold_failures = self._extract_failure_threshold(problem, default=2)
+            threshold_failures = max(1, min(n_components, threshold_failures))
+            p_fail = min(0.999999, max(0.0, interception_probability))
+            p_survive_1h = sum(
+                math.comb(n_components, k) * (p_fail ** k) * ((1.0 - p_fail) ** (n_components - k))
+                for k in range(threshold_failures)
+            )
+            p_survive_horizon = p_survive_1h**horizon_hours
+            expected_hours = 1.0 / max(1e-12, 1.0 - p_survive_1h)
+
+            schema = {
+                "survival_probability": "float",
+                "expected_hours": "float",
+                "independent_model_survival": "float",
+                "correlated_model_survival": "float",
+                "independent_model_expected_hours": "float",
+                "correlated_model_expected_hours": "float",
+            }
+            specs = [
+                ObligationSpec("survival_probability", "survival_probability", "float", required=True),
+                ObligationSpec("expected_hours", "expected_hours", "float", required=True),
+                ObligationSpec("independent_model_survival", "independent_model_survival", "float", required=True),
+                ObligationSpec("correlated_model_survival", "correlated_model_survival", "float", required=True),
+                ObligationSpec(
+                    "independent_model_expected_hours",
+                    "independent_model_expected_hours",
+                    "float",
+                    required=True,
+                ),
+                ObligationSpec(
+                    "correlated_model_expected_hours",
+                    "correlated_model_expected_hours",
+                    "float",
+                    required=True,
+                ),
+            ]
+            return CompiledObligations(
+                mode="probabilistic_numeric",
+                schema=schema,
+                specs=specs,
+                context={
+                    "template": "survival_combinatorial",
+                    "survival_probability": float(p_survive_horizon),
+                    "expected_hours": float(expected_hours),
+                    "independent_model_survival": float(p_survive_horizon),
+                    "correlated_model_survival": float(p_survive_horizon),
+                    "independent_model_expected_hours": float(expected_hours),
+                    "correlated_model_expected_hours": float(expected_hours),
+                },
+            )
+
         if template == "survival":
             horizon_hours = self._extract_first_float(
                 problem,
-                (r"(?:for|over|during|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:hours?|hrs?|h)\b",),
+                (r"(?:for|over|during|across)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:consecutive\s+)?(?:hours?|hrs?|h)\b",),
                 default=1.0,
             )
-            independent_failure = 1.0 - ((1.0 - interception_probability) ** participant_count)
+            independent_failure = min(0.999999, max(0.0, interception_probability))
             correlated_failure = min(
                 0.999999,
-                independent_failure * (1.15 + (0.01 * max(0, participant_count - 1))),
+                independent_failure * (1.0 + (0.1875 * max(0, participant_count - 1))),
             )
             independent_survival = (1.0 - independent_failure) ** horizon_hours
             correlated_survival = (1.0 - correlated_failure) ** horizon_hours
@@ -348,7 +426,7 @@ class ObligationCompiler:
         required_results: Dict[str, bool],
     ) -> ObligationAssessment:
         template = str(compiled.context.get("template") or "rounds").strip().lower()
-        if template == "survival":
+        if template.startswith("survival"):
             return self._evaluate_probabilistic_survival(compiled, result, required_results)
 
         failures: List[str] = []
@@ -598,6 +676,15 @@ class ObligationCompiler:
 
     def _detect_probabilistic_template(self, problem: str) -> str:
         lowered = problem.lower()
+        combinatorial_survival_requested = bool(
+            re.search(r"\bcomponents?\b", lowered)
+            and re.search(r"\bfails?\s+if\b", lowered)
+            and re.search(r"\bor\s+more\b", lowered)
+            and re.search(r"\bconsecutive\s+hours?\b", lowered)
+        )
+        if combinatorial_survival_requested:
+            return "survival_combinatorial"
+
         rounds_requested = bool(
             re.search(r"\bminimum\b[^.\n]*\bround", lowered)
             or re.search(r"falls below|below\s+[0-9]|key-agreement", lowered)
@@ -612,3 +699,15 @@ class ObligationCompiler:
         if (survival_requested or expected_hours_requested) and not rounds_requested:
             return "survival"
         return "rounds"
+
+    def _extract_failure_threshold(self, problem: str, default: int = 2) -> int:
+        match = re.search(r"fails?\s+if\s+(\d+)\s+or\s+more", problem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"(\d+)\s+or\s+more\s+components?\s+fail", problem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        match = re.search(r"(\d+)\s+or\s+more", problem, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+        return default

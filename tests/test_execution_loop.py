@@ -45,6 +45,13 @@ SURVIVAL_QUERY = (
     "of hours before failure under independent and correlated failure models."
 )
 
+SURVIVAL_COMBINATORIAL_QUERY = (
+    "A system has 4 independent components, each failing with probability p=0.1 per hour. "
+    "The system fails if 2 or more components fail in the same hour. "
+    "Find the probability that the system survives exactly 8 consecutive hours without failure. "
+    "Then find the expected number of hours until first system failure."
+)
+
 RECURRENCE_QUERY = (
     "Given the linear recurrence f(n) = 3f(n-1) - f(n-2), with f(0)=1 and f(1)=2, "
     "find the closed-form formula, verify it satisfies the recurrence, determine the first n "
@@ -59,13 +66,13 @@ RECURRENCE_QUERY_FOR_CLAUSE = (
 )
 
 REGULAR_ENUMERATION_QUERY = (
-    "Enumerate all connected 3-regular graph topologies on 6 nodes and report the total count. "
-    "Then return the canonical best configuration."
+    "Find all non-isomorphic connected graphs on exactly 6 nodes where every node has degree exactly 3."
 )
 
 IMPOSSIBLE_QUERY = (
-    "Find a distributed architecture where circuit depth is strictly greater than 2 and at most 2, "
-    "while preserving all listed constraints."
+    "Design a network on exactly 4 nodes such that: every pair of nodes is directly connected, "
+    "the network diameter is strictly greater than 2, the vertex connectivity is at least 3, "
+    "and the total number of edges does not exceed 3."
 )
 
 
@@ -115,6 +122,7 @@ def test_execution_loop_computes_numeric_probabilistic_answer():
     assert result.converged is True
     assert result.cycles_used >= 2
     assert computed["mode"] == "probabilistic_numeric"
+    assert computed["seed_bypass"] is True
     assert computed["minimum_rounds"] == 5
     assert computed["independent_model_result"] == 4
     assert computed["correlated_model_result"] == 5
@@ -135,10 +143,35 @@ def test_execution_loop_computes_survival_and_expected_probabilistic_answer():
     assert result.converged is True
     assert computed["mode"] == "probabilistic_numeric"
     assert computed["template"] == "survival"
+    assert computed["seed_bypass"] is True
     assert 0.0 <= computed["survival_probability"] <= 1.0
     assert computed["expected_hours"] > 0.0
     assert "survival probability" in result.conclusion
     assert "expected runtime" in result.conclusion
+
+
+def test_execution_loop_computes_combinatorial_survival_template():
+    loop = ExecutionLoop()
+    lenses = [
+        CognitiveLens("Probabilistic", "framing", ["constraint1"], ["spot1"], 0.9, "probabilistic"),
+        CognitiveLens("Topological", "framing", ["constraint2"], ["spot2"], 0.7, "deductive"),
+    ]
+
+    result = loop.run(SURVIVAL_COMBINATORIAL_QUERY, lenses)
+    output = json.loads(result.final_output)
+    computed = output["result"]
+
+    assert result.converged is True
+    assert computed["mode"] == "probabilistic_numeric"
+    assert computed["template"] == "survival_combinatorial"
+    assert computed["seed_bypass"] is True
+    assert computed["component_count"] == 4
+    assert computed["threshold_failures"] == 2
+    assert computed["horizon_hours"] == 8.0
+    assert computed["p_survive_1h"] > 0.94
+    assert 0.64 <= computed["survival_probability"] <= 0.67
+    assert 19.0 <= computed["expected_hours"] <= 19.3
+    assert abs(computed["survival_probability"] - 0.43046721) > 0.1
 
 
 def test_execution_loop_enumerates_regular_graph_topologies():
@@ -156,6 +189,7 @@ def test_execution_loop_enumerates_regular_graph_topologies():
     assert result.converged is True
     assert computed["mode"] == "topology"
     assert computed["enumeration_mode"] == "degree_regular"
+    assert computed["seed_bypass"] is True
     assert computed["node_count"] == 6
     assert computed["regular_degree"] == 3
     assert computed["satisfiable_count"] == 2
@@ -174,12 +208,30 @@ def test_execution_loop_detects_contradictory_constraints_as_infeasible():
     payload = json.loads(result.final_output)
     computed = payload["result"]
 
-    assert result.converged is True
+    assert result.converged is False
     assert result.cycles_used == 1
     assert computed["mode"] == "infeasible"
     assert computed["is_satisfiable"] is False
+    assert computed["seed_bypass"] is True
     assert computed["contradiction_count"] >= 1
     assert "unsatisfiable" in result.conclusion
+
+
+def test_parse_regular_graph_query_handles_degree_exactly_prompt():
+    loop = ExecutionLoop()
+    query = loop._parse_regular_graph_query(REGULAR_ENUMERATION_QUERY)
+    assert query is not None
+    assert query["node_count"] == 6
+    assert query["regular_degree"] == 3
+    assert query["connected_only"] is True
+
+
+def test_detect_infeasibility_handles_complete_graph_diameter_conflict():
+    loop = ExecutionLoop()
+    contradictions = loop._detect_infeasibility(IMPOSSIBLE_QUERY)
+    lowered = " ".join(contradictions).lower()
+    assert contradictions
+    assert "complete graph has diameter 1" in lowered
 
 
 def test_execution_loop_routes_linear_recurrence_to_symbolic_mode():

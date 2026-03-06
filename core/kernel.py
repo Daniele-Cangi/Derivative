@@ -182,7 +182,12 @@ Do not remove the idea of invention: prefer executable design moves over comment
         draft_result: ReasoningResult,
         audit: Optional[AuditTrail] = None,
     ) -> ReasoningResult:
-        execution_result = self.execution_loop.run(problem, lenses, audit=audit)
+        execution_result = self.execution_loop.run(
+            problem,
+            lenses,
+            audit=audit,
+            bypass_seeds=self.execution_loop.should_bypass_seeds(problem),
+        )
         execution_confidence = (
             1.0 - execution_result.history[-1].delta
             if execution_result.history
