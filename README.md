@@ -25,6 +25,18 @@ It now includes **Forge**, a production-oriented orchestrator that turns natural
 - `core/forge/packaging_stage.py`
 - `forge.py` (thin orchestrator)
 
+## Libraries
+
+The substrate and CLI rely on these packages:
+- `sympy`: symbolic algebra and recurrence solving.
+- `networkx`: graph and topology modeling/enumeration.
+- `qiskit`, `qiskit-aer`: quantum circuit construction and simulation.
+- `z3-solver`: satisfiability and constraint proving.
+- `pgmpy`, `dowhy`: probabilistic/causal reasoning support.
+- `scipy`, `pint`: scientific computation and unit-aware calculations.
+- `typer`, `rich`: command-line interface and structured console output.
+- `python-dotenv`: runtime environment loading.
+
 ## Forge Execution Flow
 
 `RequirementCompiler -> PlannerStage -> (InfeasibilityCertificate | CoderStage -> ValidatorStage -> (validation_failed | PackagingStage))`
