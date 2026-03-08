@@ -12,6 +12,7 @@ from core.forge.coder_stage import CoderStage
 from core.forge.contracts import (
     BuildSpec,
     CodeArtifact,
+    FailureCategory,
     FeasiblePlan,
     ForgeResult,
     ForgeRoute,
@@ -37,6 +38,8 @@ def run_forge(
     execution_mode: str = "local-only",
     output_root: str = "generated_artifacts/forge_runs",
     packaging_output_root: str = "generated_artifacts/forge_packages",
+    max_planner_attempts: int = 1,
+    max_coder_attempts: int = 1,
     requirement_compiler: RequirementCompiler | None = None,
     planner_stage: PlannerStage | None = None,
     coder_stage: CoderStage | None = None,
@@ -44,6 +47,8 @@ def run_forge(
     packaging_stage: PackagingStage | None = None,
 ) -> ForgeResult:
     started = time.perf_counter()
+    normalized_planner_attempts = max(1, int(max_planner_attempts))
+    normalized_coder_attempts = max(1, int(max_coder_attempts))
     compiler = requirement_compiler or RequirementCompiler()
     planner = planner_stage or PlannerStage(execution_mode=execution_mode)
     coder = coder_stage or CoderStage()
@@ -51,83 +56,179 @@ def run_forge(
     packager = packaging_stage or PackagingStage(output_root=packaging_output_root)
 
     build_spec = compiler.compile(requirement)
-    planning_output = planner.plan(build_spec)
+    attempt_trace: list[dict[str, object]] = []
 
-    if isinstance(planning_output, InfeasibilityCertificate):
-        run_root = _persist_run_artifacts(
-            output_root=output_root,
-            build_spec=build_spec,
-            terminal_status=TERMINAL_INFEASIBLE_PROVEN,
-            plan_output=planning_output,
-            code_artifact=None,
-            validation=None,
-            packaged_artifact=None,
-        )
-        elapsed = time.perf_counter() - started
-        return ForgeResult(
-            route=ForgeRoute.TERMINAL_INFEASIBLE,
-            terminal_status=TERMINAL_INFEASIBLE_PROVEN,
-            summary=(
-                "Planning terminated with an infeasibility certificate grounded in execution evidence. "
-                "The stated constraints cannot be satisfied simultaneously."
-            ),
-            validation=None,
-            packaged_artifact=None,
-            infeasibility_certificate=planning_output,
-            artifact_path=run_root,
-            execution_time_seconds=elapsed,
-        )
+    latest_plan: FeasiblePlan | InfeasibilityCertificate | None = None
+    latest_code_artifact: CodeArtifact | None = None
+    latest_validation: ValidationArtifact | None = None
 
-    if not isinstance(planning_output, FeasiblePlan):
-        raise TypeError(f"PlannerStage returned unsupported output type: {type(planning_output)!r}")
+    planner_attempt = 0
+    while planner_attempt < normalized_planner_attempts:
+        planner_attempt += 1
+        planning_output = planner.plan(build_spec)
+        latest_plan = planning_output
 
-    code_artifact = coder.generate(planning_output)
-    validation = validator.validate(code_artifact, planning_output, build_spec)
-    if not validation.passed:
-        run_root = _persist_run_artifacts(
-            output_root=output_root,
-            build_spec=build_spec,
-            terminal_status=TERMINAL_VALIDATION_FAILED,
-            plan_output=planning_output,
-            code_artifact=code_artifact,
-            validation=validation,
-            packaged_artifact=None,
-        )
-        elapsed = time.perf_counter() - started
-        return ForgeResult(
-            route=ForgeRoute.TERMINAL_VALIDATION_FAILED,
-            terminal_status=TERMINAL_VALIDATION_FAILED,
-            summary="Planning and code generation completed, but validation did not pass. Packaging was not attempted.",
-            validation=validation,
-            packaged_artifact=None,
-            infeasibility_certificate=None,
-            artifact_path=run_root,
-            execution_time_seconds=elapsed,
-        )
+        if isinstance(planning_output, InfeasibilityCertificate):
+            run_root = _persist_run_artifacts(
+                output_root=output_root,
+                build_spec=build_spec,
+                terminal_status=TERMINAL_INFEASIBLE_PROVEN,
+                plan_output=planning_output,
+                code_artifact=None,
+                validation=None,
+                packaged_artifact=None,
+                run_metadata={
+                    "max_planner_attempts": normalized_planner_attempts,
+                    "max_coder_attempts": normalized_coder_attempts,
+                    "planner_attempts_used": planner_attempt,
+                    "coder_attempts_used": 0,
+                    "attempt_trace": attempt_trace,
+                },
+            )
+            elapsed = time.perf_counter() - started
+            return ForgeResult(
+                route=ForgeRoute.TERMINAL_INFEASIBLE,
+                terminal_status=TERMINAL_INFEASIBLE_PROVEN,
+                summary=(
+                    "Planning terminated with an infeasibility certificate grounded in execution evidence. "
+                    "The stated constraints cannot be satisfied simultaneously."
+                ),
+                validation=None,
+                packaged_artifact=None,
+                infeasibility_certificate=planning_output,
+                artifact_path=run_root,
+                execution_time_seconds=elapsed,
+            )
 
-    packaged_artifact = packager.package(build_spec, planning_output, code_artifact, validation)
-    _persist_run_artifacts(
+        if not isinstance(planning_output, FeasiblePlan):
+            raise TypeError(f"PlannerStage returned unsupported output type: {type(planning_output)!r}")
+
+        route_to_planner = False
+        coder_attempt = 0
+        while coder_attempt < normalized_coder_attempts:
+            coder_attempt += 1
+            code_artifact = coder.generate(planning_output)
+            validation = validator.validate(code_artifact, planning_output, build_spec)
+            latest_code_artifact = code_artifact
+            latest_validation = validation
+            retry_route = _retry_route_for_validation(validation)
+            attempt_trace.append(
+                {
+                    "planner_attempt": planner_attempt,
+                    "coder_attempt": coder_attempt,
+                    "validation_passed": validation.passed,
+                    "retry_route": retry_route.value,
+                    "failure_category": (
+                        validation.failure_category.value
+                        if validation.failure_category is not None
+                        else None
+                    ),
+                    "failure_signatures": list(validation.failure_signatures),
+                }
+            )
+
+            if validation.passed:
+                packaged_artifact = packager.package(build_spec, planning_output, code_artifact, validation)
+                _persist_run_artifacts(
+                    output_root=output_root,
+                    build_spec=build_spec,
+                    terminal_status=TERMINAL_VERIFIED,
+                    plan_output=planning_output,
+                    code_artifact=code_artifact,
+                    validation=validation,
+                    packaged_artifact=packaged_artifact,
+                    run_metadata={
+                        "max_planner_attempts": normalized_planner_attempts,
+                        "max_coder_attempts": normalized_coder_attempts,
+                        "planner_attempts_used": planner_attempt,
+                        "coder_attempts_used": coder_attempt,
+                        "attempt_trace": attempt_trace,
+                    },
+                )
+                elapsed = time.perf_counter() - started
+                return ForgeResult(
+                    route=ForgeRoute.TERMINAL_VERIFIED,
+                    terminal_status=TERMINAL_VERIFIED,
+                    summary=(
+                        "Requirement compiled into a feasible build plan. Code was generated, validated across "
+                        "syntax/import/run, obligation and acceptance coverage, and adversarial checks, then "
+                        "packaged successfully."
+                    ),
+                    validation=validation,
+                    packaged_artifact=packaged_artifact,
+                    infeasibility_certificate=None,
+                    artifact_path=packaged_artifact.package_root,
+                    execution_time_seconds=elapsed,
+                )
+
+            if retry_route == ForgeRoute.TO_CODER and coder_attempt < normalized_coder_attempts:
+                continue
+            if retry_route == ForgeRoute.TO_PLANNER and planner_attempt < normalized_planner_attempts:
+                route_to_planner = True
+                break
+
+            run_root = _persist_run_artifacts(
+                output_root=output_root,
+                build_spec=build_spec,
+                terminal_status=TERMINAL_VALIDATION_FAILED,
+                plan_output=planning_output,
+                code_artifact=code_artifact,
+                validation=validation,
+                packaged_artifact=None,
+                run_metadata={
+                    "max_planner_attempts": normalized_planner_attempts,
+                    "max_coder_attempts": normalized_coder_attempts,
+                    "planner_attempts_used": planner_attempt,
+                    "coder_attempts_used": coder_attempt,
+                    "attempt_trace": attempt_trace,
+                },
+            )
+            elapsed = time.perf_counter() - started
+            return ForgeResult(
+                route=ForgeRoute.TERMINAL_VALIDATION_FAILED,
+                terminal_status=TERMINAL_VALIDATION_FAILED,
+                summary="Planning and code generation completed, but validation did not pass. Packaging was not attempted.",
+                validation=validation,
+                packaged_artifact=None,
+                infeasibility_certificate=None,
+                artifact_path=run_root,
+                execution_time_seconds=elapsed,
+            )
+
+        if route_to_planner:
+            continue
+        break
+
+    if not isinstance(latest_plan, FeasiblePlan):
+        raise RuntimeError("Forge orchestration exhausted attempts without a feasible plan.")
+    if latest_code_artifact is None or latest_validation is None:
+        raise RuntimeError("Forge orchestration exhausted attempts without a validation artifact.")
+
+    run_root = _persist_run_artifacts(
         output_root=output_root,
         build_spec=build_spec,
-        terminal_status=TERMINAL_VERIFIED,
-        plan_output=planning_output,
-        code_artifact=code_artifact,
-        validation=validation,
-        packaged_artifact=packaged_artifact,
+        terminal_status=TERMINAL_VALIDATION_FAILED,
+        plan_output=latest_plan,
+        code_artifact=latest_code_artifact,
+        validation=latest_validation,
+        packaged_artifact=None,
+        run_metadata={
+            "max_planner_attempts": normalized_planner_attempts,
+            "max_coder_attempts": normalized_coder_attempts,
+            "planner_attempts_used": planner_attempt,
+            "coder_attempts_used": normalized_coder_attempts,
+            "attempt_trace": attempt_trace,
+        },
     )
     elapsed = time.perf_counter() - started
     return ForgeResult(
-        route=ForgeRoute.TERMINAL_VERIFIED,
-        terminal_status=TERMINAL_VERIFIED,
-        summary=(
-            "Requirement compiled into a feasible build plan. Code was generated, validated across "
-            "syntax/import/run, obligation and acceptance coverage, and adversarial checks, then "
-            "packaged successfully."
-        ),
-        validation=validation,
-        packaged_artifact=packaged_artifact,
+        route=ForgeRoute.TERMINAL_VALIDATION_FAILED,
+        terminal_status=TERMINAL_VALIDATION_FAILED,
+        summary="Planning and code generation completed, but validation did not pass. Packaging was not attempted.",
+        validation=latest_validation,
+        packaged_artifact=None,
         infeasibility_certificate=None,
-        artifact_path=packaged_artifact.package_root,
+        artifact_path=run_root,
         execution_time_seconds=elapsed,
     )
 
@@ -177,12 +278,26 @@ def main(
         "--packaging-root",
         help="Directory for verified packaged artifacts.",
     ),
+    max_planner_attempts: int = typer.Option(
+        1,
+        "--max-planner-attempts",
+        min=1,
+        help="Maximum planner attempts before terminal failure.",
+    ),
+    max_coder_attempts: int = typer.Option(
+        1,
+        "--max-coder-attempts",
+        min=1,
+        help="Maximum coder attempts per planner attempt.",
+    ),
 ) -> None:
     result = run_forge(
         requirement=requirement,
         execution_mode=mode,
         output_root=output_root,
         packaging_output_root=packaging_root,
+        max_planner_attempts=max_planner_attempts,
+        max_coder_attempts=max_coder_attempts,
     )
     typer.echo(render_cli_output(result))
 
@@ -195,6 +310,7 @@ def _persist_run_artifacts(
     code_artifact: CodeArtifact | None,
     validation: ValidationArtifact | None,
     packaged_artifact: PackagedArtifact | None,
+    run_metadata: dict[str, Any] | None = None,
 ) -> str:
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -213,6 +329,8 @@ def _persist_run_artifacts(
         _write_json(run_root / "validation_artifact.json", validation)
     if packaged_artifact is not None:
         _write_json(run_root / "packaged_artifact.json", packaged_artifact)
+    if run_metadata is not None:
+        _write_json(run_root / "run_metadata.json", run_metadata)
 
     return str(run_root.resolve())
 
@@ -245,6 +363,22 @@ def _concise_validation_failures(validation: ValidationArtifact | None, limit: i
     if len(failures) > limit:
         trimmed.append("...")
     return ", ".join(trimmed)
+
+
+def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:
+    signatures = set(validation.failure_signatures or [])
+    planner_signatures = {
+        "semantic_omission",
+        "missing_requirement_coverage",
+        "universal_constraint_unproven",
+    }
+    if signatures & planner_signatures:
+        return ForgeRoute.TO_PLANNER
+
+    category = validation.failure_category
+    if category in {FailureCategory.ARCHITECTURAL, FailureCategory.CONTRADICTION, FailureCategory.UNDERSPECIFIED}:
+        return ForgeRoute.TO_PLANNER
+    return ForgeRoute.TO_CODER
 
 
 if __name__ == "__main__":

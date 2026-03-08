@@ -15,6 +15,12 @@ FEASIBLE_REQUIREMENT = (
     "flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
 )
 
+INVOICE_REQUIREMENT = (
+    "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, "
+    "customer_name, flags overdue invoices, writes a summary CSV with totals and counts, and "
+    "includes tests for malformed rows and invalid dates."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -30,6 +36,29 @@ def feasible_plan(tmp_path_factory) -> FeasiblePlan:
     output = planner.plan(spec)
     assert isinstance(output, FeasiblePlan)
     return output
+
+
+@pytest.fixture(scope="module")
+def invoice_feasible_plan(tmp_path_factory) -> FeasiblePlan:
+    root = tmp_path_factory.mktemp("forge_coder_stage_invoice")
+    compiler = RequirementCompiler()
+    spec = compiler.compile(INVOICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(root / "forge_audit.json"),
+        memory_file=str(root / "forge_memory.json"),
+        gene_pool_file=str(root / "forge_gene_pool.json"),
+    )
+    output = planner.plan(spec)
+    assert isinstance(output, FeasiblePlan)
+    return output
+
+
+def _find_generated_file(artifact: CodeArtifact, path: str):
+    for generated_file in artifact.files:
+        if generated_file.path == path:
+            return generated_file
+    return None
 
 
 def test_coder_stage_returns_typed_code_artifact(feasible_plan):
@@ -91,3 +120,74 @@ def test_malformed_plan_fails_explicitly(feasible_plan):
     with pytest.raises(MalformedPlanError):
         coder.generate(malformed)
 
+
+def test_invoice_business_tests_are_semantic(invoice_feasible_plan):
+    coder = CoderStage()
+    artifact = coder.generate(invoice_feasible_plan)
+
+    reads_csv = _find_generated_file(artifact, "tests/test_reads_contracts_csv.py")
+    overdue = _find_generated_file(artifact, "tests/test_implement_functional_goal_flags_overdue_invoices.py")
+    totals = _find_generated_file(artifact, "tests/test_writes_summary_csv_with_totals_and_counts.py")
+    malformed_invalid = _find_generated_file(artifact, "tests/test_handles_malformed_rows_and_invalid_dates.py")
+
+    assert reads_csv is not None
+    assert overdue is not None
+    assert totals is not None
+    assert malformed_invalid is not None
+
+    assert "load_contracts_csv(" in reads_csv.content
+    assert "invoice_id,due_date,amount,customer_name" in reads_csv.content
+    assert "assert len(rows) == 1" in reads_csv.content
+    assert "assert rows[0]['due_date']" in reads_csv.content
+
+    assert "flag_expiring_contracts(" in overdue.content
+    assert "{'invoice_id': 'INV-1', 'due_date': '2026-01-10'}" in overdue.content
+    assert "{'invoice_id': 'INV-2', 'due_date': '2026-01-20'}" in overdue.content
+    assert "assert flagged_by_id['INV-1']['is_expiring_within_horizon'] == 'True'" in overdue.content
+    assert "assert flagged_by_id['INV-2']['is_expiring_within_horizon'] == 'False'" in overdue.content
+    assert "assert flagged_by_id['INV-1']['is_overdue'] == 'True'" in overdue.content
+
+    assert "write_summary_csv(" in totals.content
+    assert "csv.DictReader" in totals.content
+    assert "assert parsed[0]['total_amount'] == '25'" in totals.content
+    assert "assert parsed[1]['invoice_count'] == '2'" in totals.content
+
+    assert "flag_expiring_contracts(" in malformed_invalid.content
+    assert "{'invoice_id': 'A', 'due_date': 'not-a-date'}" in malformed_invalid.content
+    assert "assert len(flagged) == 2" in malformed_invalid.content
+    assert "assert flagged[1]['days_to_expiration'] == ''" in malformed_invalid.content
+
+
+def test_invoice_required_tests_have_no_assert_true_placeholders(invoice_feasible_plan):
+    coder = CoderStage()
+    artifact = coder.generate(invoice_feasible_plan)
+    required_paths = {f"tests/{plan_test.test_name}.py" for plan_test in invoice_feasible_plan.required_tests}
+
+    for path in required_paths:
+        generated = _find_generated_file(artifact, path)
+        assert generated is not None
+        assert "assert True" not in generated.content
+
+
+def test_invoice_required_tests_keep_requirement_provenance(invoice_feasible_plan):
+    coder = CoderStage()
+    artifact = coder.generate(invoice_feasible_plan)
+    required_paths = {f"tests/{plan_test.test_name}.py" for plan_test in invoice_feasible_plan.required_tests}
+
+    for path in required_paths:
+        generated = _find_generated_file(artifact, path)
+        assert generated is not None
+        assert any(section.startswith("requirement:") for section in generated.generated_from_plan_sections)
+
+
+def test_invoice_test_generation_is_deterministic(invoice_feasible_plan):
+    coder = CoderStage()
+    first = coder.generate(invoice_feasible_plan)
+    second = coder.generate(invoice_feasible_plan)
+    required_paths = {f"tests/{plan_test.test_name}.py" for plan_test in invoice_feasible_plan.required_tests}
+
+    for path in required_paths:
+        first_file = _find_generated_file(first, path)
+        second_file = _find_generated_file(second, path)
+        assert first_file is not None and second_file is not None
+        assert first_file.content == second_file.content

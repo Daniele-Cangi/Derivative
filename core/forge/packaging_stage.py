@@ -36,9 +36,10 @@ class PackagingStage:
         if not validation.passed:
             raise PackagingRefusedError("Packaging requires a passed ValidationArtifact.")
 
-        package_id = self._package_id(build_spec.build_id, plan.plan_id, code_artifact.artifact_id)
-        package_root = self.output_root / package_id
+        base_package_id = self._package_id(build_spec.build_id, plan.plan_id, code_artifact.artifact_id)
+        package_id, package_root = self._resolve_package_root(base_package_id)
         package_root.mkdir(parents=True, exist_ok=True)
+        code_artifact_digest = self._artifact_content_digest(code_artifact)
 
         packaged_files = self._write_code_artifact_files(package_root, code_artifact)
         validation_evidence_path = package_root / "validation_evidence.json"
@@ -74,6 +75,9 @@ class PackagingStage:
             "plan_id": plan.plan_id,
             "artifact_id": code_artifact.artifact_id,
             "package_id": package_id,
+            "package_base_id": base_package_id,
+            "package_run_id": package_id,
+            "code_artifact_digest": code_artifact_digest,
             "validation_summary": {
                 "passed": validation.passed,
                 "failure_count": len(validation.failures),
@@ -101,6 +105,9 @@ class PackagingStage:
                 "build_id": build_spec.build_id,
                 "plan_id": plan.plan_id,
                 "artifact_id": code_artifact.artifact_id,
+                "package_base_id": base_package_id,
+                "package_run_id": package_id,
+                "code_artifact_digest": code_artifact_digest,
                 "passed_layers": validation.metrics.get("passed_layers", {}),
             },
         )
@@ -131,6 +138,28 @@ class PackagingStage:
     def _package_id(self, build_id: str, plan_id: str, artifact_id: str) -> str:
         digest = hashlib.sha256(f"{build_id}:{plan_id}:{artifact_id}".encode("utf-8")).hexdigest()[:12]
         return f"pkg-{digest}"
+
+    def _resolve_package_root(self, base_package_id: str) -> tuple[str, Path]:
+        base_root = self.output_root / base_package_id
+        if not base_root.exists() or not any(base_root.iterdir()):
+            return base_package_id, base_root
+
+        revision = 2
+        while True:
+            candidate_id = f"{base_package_id}-r{revision:02d}"
+            candidate_root = self.output_root / candidate_id
+            if not candidate_root.exists():
+                return candidate_id, candidate_root
+            revision += 1
+
+    def _artifact_content_digest(self, code_artifact: CodeArtifact) -> str:
+        hasher = hashlib.sha256()
+        for generated_file in sorted(code_artifact.files, key=lambda item: item.path):
+            hasher.update(generated_file.path.encode("utf-8"))
+            hasher.update(b"\0")
+            hasher.update(generated_file.content.encode("utf-8"))
+            hasher.update(b"\0")
+        return hasher.hexdigest()
 
     def _to_jsonable(self, value: Any) -> Any:
         if is_dataclass(value):

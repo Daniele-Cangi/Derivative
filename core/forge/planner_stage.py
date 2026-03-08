@@ -50,24 +50,35 @@ class PlannerStage:
             design_context=design_context,
             audit=self.audit_trail,
         )
-        self._persist_learning(reasoning_result, requirement)
+        persistence_warnings = self._persist_learning(reasoning_result, requirement)
 
-        execution_evidence = self._extract_execution_evidence(reasoning_result, design_context_count=len(design_context))
+        execution_evidence = self._extract_execution_evidence(
+            reasoning_result,
+            design_context_count=len(design_context),
+            persistence_warnings=persistence_warnings,
+        )
         if execution_evidence.get("result_mode") == "infeasible" and execution_evidence.get("is_satisfiable") is False:
             return self._to_infeasibility_certificate(build_spec, reasoning_result, execution_evidence)
         return self._to_feasible_plan(build_spec, reasoning_result, execution_evidence)
 
-    def _persist_learning(self, reasoning_result: ReasoningResult, requirement: str) -> None:
+    def _persist_learning(self, reasoning_result: ReasoningResult, requirement: str) -> List[str]:
+        warnings: List[str] = []
         try:
             self.memory.record(reasoning_result, requirement)
-        except OSError:
-            pass
+        except OSError as exc:
+            warnings.append(f"memory_persist_failed:{exc}")
         try:
             self.gene_pool.record_execution(reasoning_result, requirement)
-        except OSError:
-            pass
+        except OSError as exc:
+            warnings.append(f"gene_pool_persist_failed:{exc}")
+        return warnings
 
-    def _extract_execution_evidence(self, reasoning_result: ReasoningResult, design_context_count: int) -> Dict[str, Any]:
+    def _extract_execution_evidence(
+        self,
+        reasoning_result: ReasoningResult,
+        design_context_count: int,
+        persistence_warnings: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         execution_result = reasoning_result.execution_result
         payload = self._load_execution_payload(execution_result.final_output if execution_result else "")
         result_payload = payload.get("result", {}) if isinstance(payload, dict) else {}
@@ -88,6 +99,7 @@ class PlannerStage:
             "final_prediction": execution_result.final_prediction if execution_result else "",
             "audit_log_path": self.audit_trail.log_file,
             "design_context_count": design_context_count,
+            "persistence_warnings": list(persistence_warnings or []),
             "terminal_status": (
                 "infeasible_proven"
                 if str(result_payload.get("mode", "")) == "infeasible" and result_payload.get("is_satisfiable") is False
@@ -138,6 +150,9 @@ class PlannerStage:
             f"Cycles used during grounding: {execution_evidence.get('cycles_used', 0)}.",
             f"Audit trace persisted at: {execution_evidence.get('audit_log_path', '')}.",
         ]
+        persistence_warnings = execution_evidence.get("persistence_warnings", [])
+        if isinstance(persistence_warnings, list):
+            implementation_notes.extend(f"Persistence warning: {warning}" for warning in persistence_warnings)
         acceptance_ids = [criterion.criterion_id for criterion in build_spec.acceptance_contract.criteria]
         obligation_mode = build_spec.obligation_contract.mode if build_spec.obligation_contract else "none"
         requirement_coverage = self._build_requirement_coverage(build_spec, file_tree, required_tests)

@@ -16,6 +16,12 @@ FEASIBLE_REQUIREMENT = (
     "flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
 )
 
+INVOICE_REQUIREMENT = (
+    "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, "
+    "customer_name, flags overdue invoices, writes a summary CSV with totals and counts, and "
+    "includes tests for malformed rows and invalid dates."
+)
+
 
 @pytest.fixture(scope="module")
 def forge_pipeline(tmp_path_factory):
@@ -181,3 +187,13 @@ def test_provenance_manifest_mismatch_is_detected(forge_pipeline):
 
     assert result.passed is False
     assert "provenance_mismatch" in result.failure_signatures or "manifest_mismatch" in result.failure_signatures
+
+
+def test_validator_uses_invoice_smoke_input_for_invoice_specs():
+    validator = ValidatorStage()
+    invoice_spec = RequirementCompiler().compile(INVOICE_REQUIREMENT)
+
+    sample = validator._sample_input_csv_content(invoice_spec)
+
+    assert "invoice_id,due_date,amount,customer_name" in sample
+    assert "INV-1,2026-01-15,100.00,Acme" in sample

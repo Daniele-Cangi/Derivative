@@ -39,7 +39,7 @@ class ValidatorStage:
             evidence["workspace"] = str(workspace)
             evidence["materialized_files"] = sorted(str(path) for path in materialized.values())
 
-            layer1 = self._validate_layer1(code_artifact, plan, materialized, workspace)
+            layer1 = self._validate_layer1(code_artifact, plan, build_spec, materialized, workspace)
             layer2 = self._validate_layer2(code_artifact, plan, build_spec, materialized, workspace)
             layer3 = self._validate_layer3(code_artifact, plan, build_spec, materialized, workspace)
 
@@ -104,6 +104,7 @@ class ValidatorStage:
         self,
         code_artifact: CodeArtifact,
         plan: FeasiblePlan,
+        build_spec: BuildSpec,
         materialized: Dict[str, Path],
         workspace: Path,
     ) -> ValidationLayerResult:
@@ -150,7 +151,7 @@ class ValidatorStage:
             self._append_unique(signatures, "missing_entrypoint")
 
         for entrypoint in code_artifact.runnable_entrypoints:
-            result = self._execute_entrypoint(workspace, materialized, entrypoint)
+            result = self._execute_entrypoint(workspace, materialized, entrypoint, build_spec)
             entrypoint_evidence[entrypoint] = result
             if not result.get("exists", False):
                 failures.append(f"Declared runnable entrypoint is missing: {entrypoint}.")
@@ -414,6 +415,7 @@ class ValidatorStage:
         workspace: Path,
         materialized: Dict[str, Path],
         entrypoint: str,
+        build_spec: BuildSpec,
     ) -> Dict[str, object]:
         result = {
             "exists": False,
@@ -447,10 +449,7 @@ class ValidatorStage:
         module_name = target.stem
         input_csv = workspace / "validator_input.csv"
         output_csv = workspace / "validator_output.csv"
-        input_csv.write_text(
-            "contract_id,expiration_date\nA,2026-01-15\n",
-            encoding="utf-8",
-        )
+        input_csv.write_text(self._sample_input_csv_content(build_spec), encoding="utf-8")
         call_args = "[]"
         if candidate == "main" and entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
             call_args = f"[{str(input_csv)!r}, {str(output_csv)!r}]"
@@ -472,6 +471,15 @@ class ValidatorStage:
         result["stderr"] = completed.stderr.strip()
         result["executed"] = completed.returncode == 0
         return result
+
+    def _sample_input_csv_content(self, build_spec: BuildSpec) -> str:
+        atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
+        if "invoice" in atom_text or "due_date" in atom_text:
+            return (
+                "invoice_id,due_date,amount,customer_name\n"
+                "INV-1,2026-01-15,100.00,Acme\n"
+            )
+        return "contract_id,expiration_date\nA,2026-01-15\n"
 
     def _run_required_tests(
         self,

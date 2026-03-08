@@ -76,6 +76,9 @@ class RequirementCompiler:
     def _extract_requirement_atoms(self, requirement: str) -> List[RequirementAtom]:
         body = self._requirement_body(requirement)
         clauses = self._extract_atomic_clauses(body)
+        leading_clause = self._leading_requirement_clause(requirement)
+        if leading_clause:
+            clauses = [leading_clause, *clauses]
 
         atoms: List[RequirementAtom] = []
         seen = set()
@@ -112,6 +115,18 @@ class RequirementCompiler:
                 )
             )
         return atoms
+
+    def _leading_requirement_clause(self, requirement: str) -> str:
+        lowered = requirement.lower()
+        pivot = lowered.find(" that ")
+        if pivot < 0:
+            return ""
+        leading = requirement[:pivot].strip(" .")
+        if not leading:
+            return ""
+        if re.match(r"^(build|create|implement|develop|deliver)\b", leading, re.IGNORECASE):
+            return leading
+        return ""
 
     def _normalize_requirement(self, requirement: str) -> str:
         collapsed = " ".join((requirement or "").strip().split())

@@ -62,6 +62,7 @@ def test_business_requirement_atoms_are_preserved_and_propagated_to_plan(tmp_pat
     spec = compiler.compile(EXAMPLE_B)
     atom_text = " ".join(atom.text.lower() for atom in spec.requirement_atoms)
 
+    assert "build a python cli" in atom_text
     assert "invoice_id" in atom_text
     assert "due_date" in atom_text
     assert "amount" in atom_text

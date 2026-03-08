@@ -1,6 +1,7 @@
 from dataclasses import is_dataclass
 from pathlib import Path
 
+from core.execution_loop import ExecutionCycle, ExecutionResult
 from core.forge.contracts import (
     AcceptanceContract,
     ArtifactTargetType,
@@ -12,6 +13,7 @@ from core.forge.contracts import (
     PlannerStageOutput,
     ValidationStrategy,
 )
+from core.kernel import ReasoningResult
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 
@@ -128,3 +130,130 @@ def test_planner_outputs_are_typed_and_contract_compatible(tmp_path):
 def test_forge_package_layout_uses_dunder_init():
     assert Path("core/forge/__init__.py").exists()
     assert not Path("core/forge/init.py").exists()
+
+
+def test_planner_surfaces_persistence_warnings_in_evidence_and_plan_notes():
+    class _StubSubstrate:
+        def decompose(self, problem: str):
+            return ["stub_framing"]
+
+    class _StubKernel:
+        def synthesize(self, problem: str, lenses, design_context=None, audit=None):
+            execution_result = ExecutionResult(
+                conclusion="synthetic execution result",
+                cycles_used=1,
+                converged=True,
+                history=[
+                    ExecutionCycle(
+                        cycle=1,
+                        hypothesis="h",
+                        code="print(1)",
+                        output='{"result":{"mode":"generic","is_satisfiable":true}}',
+                        delta=0.0,
+                        converged=True,
+                    )
+                ],
+                final_code="print(1)",
+                final_output='{"result":{"mode":"generic","is_satisfiable":true}}',
+                final_prediction='{"expectations":{"unique_tag_count":1}}',
+                final_residual=0.0,
+            )
+            return ReasoningResult(
+                conclusion="kernel",
+                reasoning_chain=[],
+                violated_constraints=[],
+                epistemic_confidence=0.9,
+                lens_contributions={"stub": 1.0},
+                execution_result=execution_result,
+            )
+
+    class _StubMemory:
+        def retrieve_design_context(self, problem: str, top_k: int = 3):
+            return []
+
+        def record(self, result, problem: str):
+            raise OSError("memory write failed")
+
+    class _StubGenePool:
+        def record_execution(self, result, problem: str):
+            raise OSError("gene pool write failed")
+
+    compiler = RequirementCompiler()
+    build_spec = compiler.compile(FEASIBLE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        substrate=_StubSubstrate(),
+        kernel=_StubKernel(),
+        memory=_StubMemory(),
+        gene_pool=_StubGenePool(),
+    )
+
+    output = planner.plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert any("Persistence warning: memory_persist_failed:" in note for note in output.implementation_notes)
+    assert any("Persistence warning: gene_pool_persist_failed:" in note for note in output.implementation_notes)
+
+
+def test_planner_surfaces_persistence_warnings_in_infeasibility_evidence():
+    class _StubSubstrate:
+        def decompose(self, problem: str):
+            return ["stub_framing"]
+
+    class _StubKernel:
+        def synthesize(self, problem: str, lenses, design_context=None, audit=None):
+            execution_result = ExecutionResult(
+                conclusion="infeasible execution result",
+                cycles_used=1,
+                converged=False,
+                history=[
+                    ExecutionCycle(
+                        cycle=1,
+                        hypothesis="h",
+                        code="print(1)",
+                        output='{"result":{"mode":"infeasible","is_satisfiable":false,"contradictions":["c"]}}',
+                        delta=1.0,
+                        converged=False,
+                    )
+                ],
+                final_code="print(1)",
+                final_output='{"result":{"mode":"infeasible","is_satisfiable":false,"contradictions":["c"]}}',
+                final_prediction='{"expectations":{"constraint_count":1}}',
+                final_residual=1.0,
+            )
+            return ReasoningResult(
+                conclusion="kernel",
+                reasoning_chain=[],
+                violated_constraints=[],
+                epistemic_confidence=0.2,
+                lens_contributions={"stub": 1.0},
+                execution_result=execution_result,
+            )
+
+    class _StubMemory:
+        def retrieve_design_context(self, problem: str, top_k: int = 3):
+            return []
+
+        def record(self, result, problem: str):
+            raise OSError("memory write failed")
+
+    class _StubGenePool:
+        def record_execution(self, result, problem: str):
+            raise OSError("gene pool write failed")
+
+    compiler = RequirementCompiler()
+    build_spec = compiler.compile(CONTRADICTORY_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        substrate=_StubSubstrate(),
+        kernel=_StubKernel(),
+        memory=_StubMemory(),
+        gene_pool=_StubGenePool(),
+    )
+
+    output = planner.plan(build_spec)
+
+    assert isinstance(output, InfeasibilityCertificate)
+    warnings = output.execution_evidence.get("persistence_warnings", [])
+    assert any("memory_persist_failed:" in warning for warning in warnings)
+    assert any("gene_pool_persist_failed:" in warning for warning in warnings)

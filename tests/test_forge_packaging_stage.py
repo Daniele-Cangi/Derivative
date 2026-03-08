@@ -95,6 +95,10 @@ def test_package_manifest_includes_ids_and_validation_summary(forge_packaging_co
     assert manifest["build_id"] == forge_packaging_context["build_spec"].build_id
     assert manifest["plan_id"] == forge_packaging_context["plan"].plan_id
     assert manifest["artifact_id"] == forge_packaging_context["artifact"].artifact_id
+    assert manifest["package_id"].startswith("pkg-")
+    assert manifest["package_base_id"].startswith("pkg-")
+    assert manifest["package_run_id"].startswith("pkg-")
+    assert isinstance(manifest["code_artifact_digest"], str) and len(manifest["code_artifact_digest"]) == 64
     assert manifest["validation_summary"]["passed"] is True
     assert "evidence_refs" in manifest
     assert "manifest_paths" in manifest
@@ -102,3 +106,29 @@ def test_package_manifest_includes_ids_and_validation_summary(forge_packaging_co
     package_root = Path(packaged.package_root)
     assert (package_root / manifest["evidence_refs"]["validation_evidence"]).exists()
     assert (package_root / manifest["evidence_refs"]["artifact_manifest_dump"]).exists()
+
+
+def test_packaging_creates_new_revision_directory_without_overwriting(forge_packaging_context):
+    stage = PackagingStage(output_root=str(forge_packaging_context["root"] / "packages_revision"))
+
+    first = stage.package(
+        forge_packaging_context["build_spec"],
+        forge_packaging_context["plan"],
+        forge_packaging_context["artifact"],
+        forge_packaging_context["passing_validation"],
+    )
+    second = stage.package(
+        forge_packaging_context["build_spec"],
+        forge_packaging_context["plan"],
+        forge_packaging_context["artifact"],
+        forge_packaging_context["passing_validation"],
+    )
+
+    first_root = Path(first.package_root)
+    second_root = Path(second.package_root)
+
+    assert first_root.exists()
+    assert second_root.exists()
+    assert first_root != second_root
+    assert first.package_id != second.package_id
+    assert second.package_id.endswith("-r02")

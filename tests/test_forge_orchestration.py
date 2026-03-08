@@ -6,6 +6,7 @@ from core.forge.contracts import (
     ArtifactTargetType,
     BuildSpec,
     CodeArtifact,
+    FailureCategory,
     FeasiblePlan,
     ForgeRoute,
     GeneratedFile,
@@ -45,6 +46,17 @@ class _StubPlannerStage:
         return self.output
 
 
+class _SequencePlannerStage:
+    def __init__(self, outputs):
+        self.outputs = list(outputs)
+        self.called = 0
+
+    def plan(self, build_spec: BuildSpec):
+        self.called += 1
+        index = min(self.called - 1, len(self.outputs) - 1)
+        return self.outputs[index]
+
+
 class _StubCoderStage:
     def __init__(self, code_artifact: CodeArtifact):
         self.code_artifact = code_artifact
@@ -68,6 +80,22 @@ class _StubValidatorStage:
     ) -> ValidationArtifact:
         self.called += 1
         return self.validation
+
+
+class _SequenceValidatorStage:
+    def __init__(self, validations: list[ValidationArtifact]):
+        self.validations = list(validations)
+        self.called = 0
+
+    def validate(
+        self,
+        code_artifact: CodeArtifact,
+        plan: FeasiblePlan,
+        build_spec: BuildSpec,
+    ) -> ValidationArtifact:
+        self.called += 1
+        index = min(self.called - 1, len(self.validations) - 1)
+        return self.validations[index]
 
 
 class _StubPackagingStage:
@@ -187,6 +215,26 @@ def _failing_validation() -> ValidationArtifact:
         },
         metrics={"passed_layers": {"layer1": True, "layer2": False, "layer3": True}},
         failure_category=None,
+    )
+
+
+def _failing_validation_with_category(
+    *,
+    failure_signatures: list[str],
+    failure_category: FailureCategory,
+) -> ValidationArtifact:
+    return ValidationArtifact(
+        passed=False,
+        failures=["Validation failed."],
+        failure_signatures=list(failure_signatures),
+        evidence={
+            "validated_entrypoints": {"src/cli.py": {"exists": True, "function_present": True, "executed": True}},
+            "executed_tests": {"ran": True, "returncode": 1, "tests": ["tests/test_reads_contracts_csv.py"]},
+            "manifest_provenance_checks": {},
+            "obligation_acceptance_checks": {},
+        },
+        metrics={"passed_layers": {"layer1": True, "layer2": False, "layer3": True}},
+        failure_category=failure_category,
     )
 
 
@@ -341,3 +389,88 @@ def test_packaging_not_called_when_validation_fails(tmp_path):
     )
 
     assert packaging.called == 0
+
+
+def test_forge_orchestration_retries_coder_on_implementation_failures(tmp_path):
+    build_spec = _build_spec()
+    plan = _feasible_plan(build_spec)
+    artifact = _code_artifact()
+    failing = _failing_validation_with_category(
+        failure_signatures=["syntax_error"],
+        failure_category=FailureCategory.IMPLEMENTATION,
+    )
+    passing = _passing_validation()
+    packaged = PackagedArtifact(
+        package_id="pkg-test",
+        package_root=str((tmp_path / "package").resolve()),
+        manifest_path=str((tmp_path / "package" / "forge_package_manifest.json").resolve()),
+        packaged_files=["src/cli.py", "forge_package_manifest.json"],
+        evidence_paths={"validation_evidence": "validation_evidence.json"},
+        verification_metadata={"terminal_status": TERMINAL_VERIFIED},
+    )
+
+    planner = _StubPlannerStage(plan)
+    coder = _StubCoderStage(artifact)
+    validator = _SequenceValidatorStage([failing, passing])
+    packaging = _StubPackagingStage(packaged)
+
+    result = run_forge(
+        requirement="build requirement",
+        output_root=str(tmp_path / "runs"),
+        requirement_compiler=_StubRequirementCompiler(build_spec),
+        planner_stage=planner,
+        coder_stage=coder,
+        validator_stage=validator,
+        packaging_stage=packaging,
+        max_planner_attempts=1,
+        max_coder_attempts=2,
+    )
+
+    assert result.terminal_status == TERMINAL_VERIFIED
+    assert planner.called == 1
+    assert coder.called == 2
+    assert validator.called == 2
+    assert packaging.called == 1
+
+
+def test_forge_orchestration_retries_planner_on_architectural_failures(tmp_path):
+    build_spec = _build_spec()
+    plan_first = _feasible_plan(build_spec)
+    plan_second = _feasible_plan(build_spec)
+    artifact = _code_artifact()
+    failing = _failing_validation_with_category(
+        failure_signatures=["missing_required_file"],
+        failure_category=FailureCategory.ARCHITECTURAL,
+    )
+    passing = _passing_validation()
+    packaged = PackagedArtifact(
+        package_id="pkg-test",
+        package_root=str((tmp_path / "package").resolve()),
+        manifest_path=str((tmp_path / "package" / "forge_package_manifest.json").resolve()),
+        packaged_files=["src/cli.py", "forge_package_manifest.json"],
+        evidence_paths={"validation_evidence": "validation_evidence.json"},
+        verification_metadata={"terminal_status": TERMINAL_VERIFIED},
+    )
+
+    planner = _SequencePlannerStage([plan_first, plan_second])
+    coder = _StubCoderStage(artifact)
+    validator = _SequenceValidatorStage([failing, passing])
+    packaging = _StubPackagingStage(packaged)
+
+    result = run_forge(
+        requirement="build requirement",
+        output_root=str(tmp_path / "runs"),
+        requirement_compiler=_StubRequirementCompiler(build_spec),
+        planner_stage=planner,
+        coder_stage=coder,
+        validator_stage=validator,
+        packaging_stage=packaging,
+        max_planner_attempts=2,
+        max_coder_attempts=1,
+    )
+
+    assert result.terminal_status == TERMINAL_VERIFIED
+    assert planner.called == 2
+    assert coder.called == 2
+    assert validator.called == 2
+    assert packaging.called == 1
