@@ -217,6 +217,24 @@ def test_execution_loop_detects_contradictory_constraints_as_infeasible():
     assert "unsatisfiable" in result.conclusion
 
 
+def test_execution_loop_records_audit_persistence_warnings_without_crashing():
+    class _FailingAudit:
+        def log(self, entry):
+            raise OSError("disk is read-only")
+
+    loop = ExecutionLoop()
+    lenses = [
+        CognitiveLens("Topological", "framing", ["constraint1"], ["spot1"], 0.9, "deductive"),
+        CognitiveLens("Probabilistic", "framing", ["constraint2"], ["spot2"], 0.7, "probabilistic"),
+    ]
+
+    result = loop.run(IMPOSSIBLE_QUERY, lenses, audit=_FailingAudit())
+
+    assert result.cycles_used == 1
+    assert result.warnings
+    assert any("audit_log_failed:cycle=1" in warning for warning in result.warnings)
+
+
 def test_parse_regular_graph_query_handles_degree_exactly_prompt():
     loop = ExecutionLoop()
     query = loop._parse_regular_graph_query(REGULAR_ENUMERATION_QUERY)

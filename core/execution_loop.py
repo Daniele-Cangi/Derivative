@@ -4,7 +4,7 @@ import re
 import subprocess
 import sys
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
@@ -53,6 +53,7 @@ class ExecutionResult:
     final_output: str
     final_prediction: str = ""
     final_residual: float = 0.0
+    warnings: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -92,6 +93,7 @@ class ExecutionLoop:
         numeric_check = NumericAnswerCheck()
         hypothesis = self._form_initial_hypothesis(problem, lenses, classification)
         history: List[ExecutionCycle] = []
+        warnings: List[str] = []
         audit_trail = audit
 
         for cycle in range(1, MAX_EXECUTION_CYCLES + 1):
@@ -162,8 +164,8 @@ class ExecutionLoop:
                             execution_residual=residual,
                         )
                     )
-                except OSError:
-                    pass
+                except OSError as exc:
+                    warnings.append(f"audit_log_failed:cycle={cycle}:{exc}")
 
             history.append(
                 ExecutionCycle(
@@ -200,6 +202,7 @@ class ExecutionLoop:
             final_output=final_cycle.output,
             final_prediction=final_cycle.prediction,
             final_residual=final_cycle.residual,
+            warnings=warnings,
         )
 
     def _build_infeasible_result(
@@ -253,6 +256,7 @@ class ExecutionLoop:
             prediction=prediction_payload,
             residual=1.0,
         )
+        warnings: List[str] = []
         if audit is not None:
             try:
                 audit.log(
@@ -272,8 +276,8 @@ class ExecutionLoop:
                         execution_residual=1.0,
                     )
                 )
-            except OSError:
-                pass
+            except OSError as exc:
+                warnings.append(f"audit_log_failed:cycle=1:{exc}")
         return ExecutionResult(
             conclusion=self._synthesize([cycle]),
             cycles_used=1,
@@ -283,6 +287,7 @@ class ExecutionLoop:
             final_output=output_payload,
             final_prediction=prediction_payload,
             final_residual=1.0,
+            warnings=warnings,
         )
 
     def _form_initial_hypothesis(

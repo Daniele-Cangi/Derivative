@@ -257,3 +257,66 @@ def test_planner_surfaces_persistence_warnings_in_infeasibility_evidence():
     warnings = output.execution_evidence.get("persistence_warnings", [])
     assert any("memory_persist_failed:" in warning for warning in warnings)
     assert any("gene_pool_persist_failed:" in warning for warning in warnings)
+
+
+def test_planner_surfaces_execution_warnings_in_plan_notes():
+    class _StubSubstrate:
+        def decompose(self, problem: str):
+            return ["stub_framing"]
+
+    class _StubKernel:
+        def synthesize(self, problem: str, lenses, design_context=None, audit=None):
+            execution_result = ExecutionResult(
+                conclusion="synthetic execution result",
+                cycles_used=1,
+                converged=True,
+                history=[
+                    ExecutionCycle(
+                        cycle=1,
+                        hypothesis="h",
+                        code="print(1)",
+                        output='{"result":{"mode":"generic","is_satisfiable":true}}',
+                        delta=0.0,
+                        converged=True,
+                    )
+                ],
+                final_code="print(1)",
+                final_output='{"result":{"mode":"generic","is_satisfiable":true}}',
+                final_prediction='{"expectations":{"unique_tag_count":1}}',
+                final_residual=0.0,
+                warnings=["audit_log_failed:cycle=1:disk is read-only"],
+            )
+            return ReasoningResult(
+                conclusion="kernel",
+                reasoning_chain=[],
+                violated_constraints=[],
+                epistemic_confidence=0.9,
+                lens_contributions={"stub": 1.0},
+                execution_result=execution_result,
+            )
+
+    class _StubMemory:
+        def retrieve_design_context(self, problem: str, top_k: int = 3):
+            return []
+
+        def record(self, result, problem: str):
+            return None
+
+    class _StubGenePool:
+        def record_execution(self, result, problem: str):
+            return []
+
+    compiler = RequirementCompiler()
+    build_spec = compiler.compile(FEASIBLE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        substrate=_StubSubstrate(),
+        kernel=_StubKernel(),
+        memory=_StubMemory(),
+        gene_pool=_StubGenePool(),
+    )
+
+    output = planner.plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert any("Execution warning: audit_log_failed:cycle=1" in note for note in output.implementation_notes)

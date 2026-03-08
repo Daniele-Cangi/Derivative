@@ -87,6 +87,13 @@ class PlannerStage:
         contradictions = result_payload.get("contradictions", [])
         if not isinstance(contradictions, list):
             contradictions = []
+        execution_warnings = (
+            list(getattr(execution_result, "warnings", []))
+            if execution_result is not None
+            else []
+        )
+        if not isinstance(execution_warnings, list):
+            execution_warnings = []
 
         return {
             "result_mode": str(result_payload.get("mode", "")),
@@ -99,6 +106,7 @@ class PlannerStage:
             "final_prediction": execution_result.final_prediction if execution_result else "",
             "audit_log_path": self.audit_trail.log_file,
             "design_context_count": design_context_count,
+            "execution_warnings": execution_warnings,
             "persistence_warnings": list(persistence_warnings or []),
             "terminal_status": (
                 "infeasible_proven"
@@ -150,6 +158,9 @@ class PlannerStage:
             f"Cycles used during grounding: {execution_evidence.get('cycles_used', 0)}.",
             f"Audit trace persisted at: {execution_evidence.get('audit_log_path', '')}.",
         ]
+        execution_warnings = execution_evidence.get("execution_warnings", [])
+        if isinstance(execution_warnings, list):
+            implementation_notes.extend(f"Execution warning: {warning}" for warning in execution_warnings)
         persistence_warnings = execution_evidence.get("persistence_warnings", [])
         if isinstance(persistence_warnings, list):
             implementation_notes.extend(f"Persistence warning: {warning}" for warning in persistence_warnings)
