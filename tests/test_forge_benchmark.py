@@ -86,11 +86,23 @@ def test_extended_cases_load_from_bundled_dataset():
     assert Path(dataset_path).exists()
 
     cases = extended_forge_benchmark_cases()
-    assert len(cases) >= 10
+    assert len(cases) >= 30
+    ids = [case.case_id for case in cases]
+    assert len(ids) == len(set(ids))
     statuses = {case.expected_terminal_status for case in cases}
     assert TERMINAL_VERIFIED in statuses
     assert TERMINAL_VALIDATION_FAILED in statuses
     assert TERMINAL_INFEASIBLE_PROVEN in statuses
+    verified_count = sum(1 for case in cases if case.expected_terminal_status == TERMINAL_VERIFIED)
+    validation_failed_count = sum(
+        1 for case in cases if case.expected_terminal_status == TERMINAL_VALIDATION_FAILED
+    )
+    infeasible_count = sum(
+        1 for case in cases if case.expected_terminal_status == TERMINAL_INFEASIBLE_PROVEN
+    )
+    assert verified_count >= 8
+    assert validation_failed_count >= 8
+    assert infeasible_count >= 8
 
 
 def test_load_benchmark_cases_from_json(tmp_path):

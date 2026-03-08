@@ -218,7 +218,16 @@ class CoderStage:
         path: str,
         interfaces: List[PlanInterface],
     ) -> str:
+        mode = self._infer_plan_template_mode(plan)
         normalized = path.replace("\\", "/").lower()
+        if mode == "service":
+            if normalized.endswith("src/service.py"):
+                return self._template_service_entrypoint()
+            if normalized.endswith("src/domain.py"):
+                return self._template_service_domain()
+            if normalized.startswith("tests/"):
+                return self._template_service_plan_test_module()
+            return self._template_generic_module(path, interfaces)
         if normalized.endswith("src/cli.py") or normalized.endswith("src/main.py"):
             return self._template_cli(plan)
         if normalized.endswith("src/contracts_csv.py"):
@@ -230,6 +239,18 @@ class CoderStage:
         if normalized.startswith("tests/"):
             return self._template_plan_test_module(plan, path)
         return self._template_generic_module(path, interfaces)
+
+    def _infer_plan_template_mode(self, plan: FeasiblePlan) -> str:
+        summary = (plan.architecture_summary or "").lower()
+        planned_paths = " ".join(file.path.lower() for file in plan.file_tree_plan)
+        combined = f"{summary} {planned_paths}"
+        service_tokens = ("service", "rest", "api", "endpoint", "http", "src/service.py")
+        cli_tokens = ("cli", "csv", "contracts", "src/cli.py", "src/main.py")
+        if any(token in combined for token in service_tokens):
+            return "service"
+        if any(token in combined for token in cli_tokens):
+            return "cli"
+        return "generic"
 
     def _template_cli(self, plan: FeasiblePlan) -> str:
         is_invoice = self._is_invoice_plan(plan)
@@ -399,6 +420,137 @@ class CoderStage:
             "            writer.writerow(row)\n"
         )
 
+    def _template_service_entrypoint(self) -> str:
+        return (
+            "import os\n"
+            "import sqlite3\n"
+            "import time\n"
+            "from typing import Any\n"
+            "\n"
+            "\n"
+            "DB_PATH = os.environ.get('FORGE_SERVICE_DB', 'service.db')\n"
+            "RATE_LIMIT_PER_MINUTE = 100\n"
+            "_RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}\n"
+            "\n"
+            "\n"
+            "def init_db(db_path: str = DB_PATH) -> None:\n"
+            "    with sqlite3.connect(db_path) as conn:\n"
+            "        conn.execute(\n"
+            "            'CREATE TABLE IF NOT EXISTS users ('\n"
+            "            'username TEXT PRIMARY KEY, '\n"
+            "            'api_key TEXT UNIQUE NOT NULL)'\n"
+            "        )\n"
+            "        conn.commit()\n"
+            "\n"
+            "\n"
+            "def register_user(username: str, api_key: str, db_path: str = DB_PATH) -> None:\n"
+            "    init_db(db_path)\n"
+            "    with sqlite3.connect(db_path) as conn:\n"
+            "        conn.execute(\n"
+            "            'INSERT OR REPLACE INTO users(username, api_key) VALUES (?, ?)',\n"
+            "            (username, api_key),\n"
+            "        )\n"
+            "        conn.commit()\n"
+            "\n"
+            "\n"
+            "def authenticate(api_key: str, db_path: str = DB_PATH) -> str | None:\n"
+            "    init_db(db_path)\n"
+            "    with sqlite3.connect(db_path) as conn:\n"
+            "        row = conn.execute(\n"
+            "            'SELECT username FROM users WHERE api_key = ?',\n"
+            "            (api_key,),\n"
+            "        ).fetchone()\n"
+            "    return str(row[0]) if row else None\n"
+            "\n"
+            "\n"
+            "def enforce_rate_limit(\n"
+            "    user_id: str,\n"
+            "    limit: int = RATE_LIMIT_PER_MINUTE,\n"
+            "    now: float | None = None,\n"
+            ") -> bool:\n"
+            "    timestamp = time.time() if now is None else float(now)\n"
+            "    window_start = timestamp - 60.0\n"
+            "    bucket = _RATE_LIMIT_BUCKETS.setdefault(user_id, [])\n"
+            "    bucket[:] = [entry for entry in bucket if entry >= window_start]\n"
+            "    if len(bucket) >= limit:\n"
+            "        return False\n"
+            "    bucket.append(timestamp)\n"
+            "    return True\n"
+            "\n"
+            "\n"
+            "def create_app(db_path: str = DB_PATH) -> dict[str, str]:\n"
+            "    init_db(db_path)\n"
+            "    return {'db_path': db_path}\n"
+            "\n"
+            "\n"
+            "def handle_request(\n"
+            "    api_key: str,\n"
+            "    payload: dict[str, Any],\n"
+            "    db_path: str = DB_PATH,\n"
+            "    now: float | None = None,\n"
+            ") -> tuple[int, dict[str, Any]]:\n"
+            "    user_id = authenticate(api_key, db_path=db_path)\n"
+            "    if user_id is None:\n"
+            "        return 401, {'error': 'unauthorized'}\n"
+            "    if not enforce_rate_limit(user_id, now=now):\n"
+            "        return 429, {'error': 'rate_limit_exceeded'}\n"
+            "    return 200, {'status': 'ok', 'user': user_id, 'payload': payload}\n"
+            "\n"
+            "\n"
+            "try:\n"
+            "    from fastapi import FastAPI, Header, HTTPException\n"
+            "\n"
+            "    app = FastAPI(title='Forge Service')\n"
+            "\n"
+            "    @app.get('/health')\n"
+            "    def health() -> dict[str, str]:\n"
+            "        return {'status': 'ok'}\n"
+            "\n"
+            "    @app.post('/events')\n"
+            "    def events(payload: dict[str, Any], x_api_key: str | None = Header(default=None)) -> dict[str, Any]:\n"
+            "        if not x_api_key:\n"
+            "            raise HTTPException(status_code=401, detail='missing_api_key')\n"
+            "        code, body = handle_request(x_api_key, payload)\n"
+            "        if code != 200:\n"
+            "            raise HTTPException(status_code=code, detail=str(body.get('error', 'request_rejected')))\n"
+            "        return body\n"
+            "except Exception:\n"
+            "    app = None\n"
+            "\n"
+            "\n"
+            "def run() -> int:\n"
+            "    config = create_app(DB_PATH)\n"
+            "    return 0 if 'db_path' in config else 1\n"
+        )
+
+    def _template_service_domain(self) -> str:
+        return (
+            "from service import authenticate, enforce_rate_limit, handle_request, init_db, register_user\n"
+            "\n"
+            "__all__ = [\n"
+            "    'init_db',\n"
+            "    'register_user',\n"
+            "    'authenticate',\n"
+            "    'enforce_rate_limit',\n"
+            "    'handle_request',\n"
+            "]\n"
+        )
+
+    def _template_service_plan_test_module(self) -> str:
+        return (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "\n"
+            "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+            "\n"
+            "import service\n"
+            "\n"
+            "\n"
+            "def test_service_module_importable():\n"
+            "    assert callable(service.run)\n"
+            "    assert callable(service.handle_request)\n"
+        )
+
     def _template_plan_test_module(self, plan: FeasiblePlan, path: str) -> str:
         normalized = path.replace("\\", "/").lower()
         is_invoice = self._is_invoice_plan(plan)
@@ -489,8 +641,16 @@ class CoderStage:
         )
 
     def _template_for_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
+        mode = self._infer_plan_template_mode(plan)
         name = plan_test.test_name.lower()
         objective = plan_test.objective.lower()
+        if mode == "service":
+            if "suite_executes" in name or any(
+                token in objective
+                for token in ("service", "rest", "api", "authentication", "rate limit", "persistent")
+            ):
+                return self._template_service_suite_executes_test()
+            return self._template_service_requirement_test()
         if "reads_contracts_csv" in name or ("read" in objective and "csv" in objective):
             if "invoice" in objective:
                 return (
@@ -728,6 +888,73 @@ class CoderStage:
                 "    assert callable(summary_writer.write_summary_csv)\n"
             )
         return self._template_generic_requirement_test(plan, plan_test)
+
+    def _template_service_suite_executes_test(self) -> str:
+        return (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "\n"
+            "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+            "\n"
+            "import service\n"
+            "\n"
+            "\n"
+            "def test_rejects_unauthorized_requests(tmp_path):\n"
+            "    db_path = tmp_path / 'service.sqlite3'\n"
+            "    service.init_db(str(db_path))\n"
+            "    code, payload = service.handle_request('invalid-key', {'event': 'x'}, db_path=str(db_path), now=1000.0)\n"
+            "    assert code == 401\n"
+            "    assert payload['error'] == 'unauthorized'\n"
+            "\n"
+            "\n"
+            "def test_enforces_rate_limit(tmp_path):\n"
+            "    db_path = tmp_path / 'service.sqlite3'\n"
+            "    service.register_user('alice', 'key-alice', db_path=str(db_path))\n"
+            "    for index in range(100):\n"
+            "        code, _ = service.handle_request(\n"
+            "            'key-alice',\n"
+            "            {'index': index},\n"
+            "            db_path=str(db_path),\n"
+            "            now=1000.0 + index * 0.1,\n"
+            "        )\n"
+            "        assert code == 200\n"
+            "    code, payload = service.handle_request(\n"
+            "        'key-alice',\n"
+            "        {'index': 101},\n"
+            "        db_path=str(db_path),\n"
+            "        now=1000.0 + 10.1,\n"
+            "    )\n"
+            "    assert code == 429\n"
+            "    assert payload['error'] == 'rate_limit_exceeded'\n"
+            "\n"
+            "\n"
+            "def test_persists_user_credentials_across_reloads(tmp_path):\n"
+            "    db_path = tmp_path / 'service.sqlite3'\n"
+            "    service.register_user('bob', 'key-bob', db_path=str(db_path))\n"
+            "    user = service.authenticate('key-bob', db_path=str(db_path))\n"
+            "    assert user == 'bob'\n"
+            "    app_config = service.create_app(str(db_path))\n"
+            "    assert app_config['db_path'] == str(db_path)\n"
+            "    assert service.run() == 0\n"
+        )
+
+    def _template_service_requirement_test(self) -> str:
+        return (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "\n"
+            "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+            "\n"
+            "import service\n"
+            "\n"
+            "\n"
+            "def test_service_requirement_smoke(tmp_path):\n"
+            "    db_path = tmp_path / 'service.sqlite3'\n"
+            "    service.register_user('smoke', 'key-smoke', db_path=str(db_path))\n"
+            "    code, payload = service.handle_request('key-smoke', {'ok': True}, db_path=str(db_path), now=1000.0)\n"
+            "    assert code == 200\n"
+            "    assert payload['user'] == 'smoke'\n"
+        )
 
     def _template_generic_requirement_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
         src_modules = [

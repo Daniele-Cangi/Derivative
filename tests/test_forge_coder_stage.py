@@ -21,6 +21,12 @@ INVOICE_REQUIREMENT = (
     "includes tests for malformed rows and invalid dates."
 )
 
+SERVICE_REQUIREMENT = (
+    "Build a Python REST microservice with authentication, rate limiting (100 requests per minute per user), "
+    "persistent storage for users and API keys, and tests for unauthorized access, rate-limit enforcement, "
+    "and persistence across restart."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -43,6 +49,22 @@ def invoice_feasible_plan(tmp_path_factory) -> FeasiblePlan:
     root = tmp_path_factory.mktemp("forge_coder_stage_invoice")
     compiler = RequirementCompiler()
     spec = compiler.compile(INVOICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(root / "forge_audit.json"),
+        memory_file=str(root / "forge_memory.json"),
+        gene_pool_file=str(root / "forge_gene_pool.json"),
+    )
+    output = planner.plan(spec)
+    assert isinstance(output, FeasiblePlan)
+    return output
+
+
+@pytest.fixture(scope="module")
+def service_feasible_plan(tmp_path_factory) -> FeasiblePlan:
+    root = tmp_path_factory.mktemp("forge_coder_stage_service")
+    compiler = RequirementCompiler()
+    spec = compiler.compile(SERVICE_REQUIREMENT)
     planner = PlannerStage(
         execution_mode="local-only",
         audit_log_file=str(root / "forge_audit.json"),
@@ -246,3 +268,43 @@ def test_invoice_test_generation_is_deterministic(invoice_feasible_plan):
         second_file = _find_generated_file(second, path)
         assert first_file is not None and second_file is not None
         assert first_file.content == second_file.content
+
+
+def test_service_plan_generates_service_artifacts(service_feasible_plan):
+    coder = CoderStage()
+    artifact = coder.generate(service_feasible_plan)
+
+    service_module = _find_generated_file(artifact, "src/service.py")
+    domain_module = _find_generated_file(artifact, "src/domain.py")
+    service_test = _find_generated_file(artifact, "tests/test_service.py")
+    suite_test = _find_generated_file(artifact, "tests/test_suite_executes.py")
+
+    assert service_module is not None
+    assert domain_module is not None
+    assert service_test is not None
+    assert suite_test is not None
+
+    assert "import sqlite3" in service_module.content
+    assert "def handle_request(" in service_module.content
+    assert "def enforce_rate_limit(" in service_module.content
+    assert "def authenticate(" in service_module.content
+    assert "def run() -> int:" in service_module.content
+    assert "create_app(" in service_module.content
+
+    assert "from service import" in domain_module.content
+    assert "import service" in service_test.content
+    assert "import service" in suite_test.content
+    assert "import cli" not in suite_test.content
+    assert "import contracts_csv" not in suite_test.content
+
+
+def test_service_file_tree_never_generates_cli_imports(service_feasible_plan):
+    assert any(file.path.lower().endswith("src/service.py") for file in service_feasible_plan.file_tree_plan)
+
+    coder = CoderStage()
+    artifact = coder.generate(service_feasible_plan)
+    python_files = [generated for generated in artifact.files if generated.path.endswith(".py")]
+
+    for generated in python_files:
+        assert "import cli" not in generated.content
+        assert "import contracts_csv" not in generated.content
