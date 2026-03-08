@@ -1,4 +1,5 @@
 import ast
+import importlib.util
 import json
 import subprocess
 import sys
@@ -251,6 +252,16 @@ class ValidatorStage:
         for signature in requirement_signatures:
             self._append_unique(signatures, signature)
         evidence["requirement_coverage_checks"] = requirement_evidence
+
+        quality_contract_failures = self._check_quality_contract(
+            materialized=materialized,
+            code_artifact=code_artifact,
+            build_spec=build_spec,
+        )
+        if quality_contract_failures:
+            failures.extend(quality_contract_failures)
+            self._append_unique(signatures, "quality_contract_violation")
+        evidence["quality_contract_checks"] = quality_contract_failures
 
         test_result = self._run_required_tests(workspace, expected_test_paths, actual_paths)
         evidence["test_execution"] = test_result
@@ -628,6 +639,7 @@ class ValidatorStage:
             "missing_requirement_coverage",
             "missing_semantic_requirement_coverage",
             "universal_constraint_unproven",
+            "quality_contract_violation",
             "non_semantic_test",
             "fake_acceptance_coverage",
         } & signature_set:
@@ -679,6 +691,7 @@ class ValidatorStage:
             "missing_provenance_obligations": layer2.evidence.get("missing_provenance_obligations", []),
             "missing_acceptance_coverage": layer2.evidence.get("missing_acceptance_coverage", []),
             "requirement_coverage_checks": layer2.evidence.get("requirement_coverage_checks", {}),
+            "quality_contract_checks": layer2.evidence.get("quality_contract_checks", []),
             "semantic_requirement_test_coverage": layer3.evidence.get("semantic_requirement_test_coverage", {}),
         }
 
@@ -865,3 +878,82 @@ class ValidatorStage:
             "missing_semantic_coverage": missing_semantic_coverage,
         }
         return failures, signatures, evidence
+
+    def _check_quality_contract(
+        self,
+        materialized: Dict[str, Path],
+        code_artifact: CodeArtifact,
+        build_spec: BuildSpec,
+    ) -> List[str]:
+        service_target = materialized.get("src/service.py")
+        if service_target is None or not service_target.exists():
+            return []
+        quality = build_spec.quality_contract
+        service_src = service_target.read_text(encoding="utf-8")
+        service_lower = service_src.lower()
+        failures: List[str] = []
+
+        if quality.auth_level == "hashed":
+            if "bcrypt" not in service_lower:
+                failures.append(
+                    "quality_contract_violation: auth_level=hashed but bcrypt not found"
+                )
+            if "sha256$" in service_src or "FORGE_USE_BCRYPT" in service_src:
+                failures.append(
+                    "quality_contract_violation: auth_level=hashed must not include sha256/env-gated fallback"
+                )
+            if importlib.util.find_spec("bcrypt") is None:
+                failures.append(
+                    "quality_contract_violation: bcrypt required but not available"
+                )
+        if quality.auth_level == "jwt" and "_verify_jwt_token" not in service_src:
+            failures.append(
+                "quality_contract_violation: auth_level=jwt but jwt verification path not found"
+            )
+        if not quality.secrets_in_plaintext and "api_key text" in service_lower:
+            failures.append(
+                "quality_contract_violation: secrets_in_plaintext=False but API key stored as plaintext TEXT"
+            )
+
+        if quality.rate_limit_persistent and "_rate_limit_buckets" in service_lower:
+            failures.append(
+                "quality_contract_violation: rate_limit_persistent=True but in-memory dict found"
+            )
+        if quality.rate_limit_scope == "distributed" and "redis" not in service_lower:
+            failures.append(
+                "quality_contract_violation: rate_limit_scope=distributed but no Redis found"
+            )
+        if quality.rate_limit_persistent and "rate_limit_hits" not in service_lower and "redis" not in service_lower:
+            failures.append(
+                "quality_contract_violation: rate_limit_persistent=True but no persistent limiter storage found"
+            )
+
+        if quality.audit_trail and "create table if not exists events" not in service_lower:
+            failures.append(
+                "quality_contract_violation: audit_trail=True but no events table found"
+            )
+        if quality.schema_versioned and "schema_meta" not in service_lower:
+            failures.append(
+                "quality_contract_violation: schema_versioned=True but schema metadata table not found"
+            )
+        if quality.health_endpoint and "/health" not in service_src:
+            failures.append(
+                "quality_contract_violation: health_endpoint=True but /health route not found"
+            )
+        if quality.structured_logging and "json.dumps" not in service_src:
+            failures.append(
+                "quality_contract_violation: structured_logging=True but JSON logging not found"
+            )
+
+        if quality.integration_tests:
+            test_sources = "\n".join(
+                materialized[path].read_text(encoding="utf-8")
+                for path in code_artifact.test_paths
+                if path in materialized and materialized[path].exists()
+            ).lower()
+            if "test_integration" not in test_sources and "integration" not in test_sources:
+                failures.append(
+                    "quality_contract_violation: integration_tests=True but no integration test found"
+                )
+
+        return failures

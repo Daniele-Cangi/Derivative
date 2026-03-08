@@ -8,6 +8,7 @@ from core.forge.contracts import (
     ArtifactTargetType,
     BuildSpec,
     ObligationContract,
+    QualityContract,
     RequirementAtom,
 )
 from core.obligation_compiler import ObligationCompiler
@@ -52,6 +53,7 @@ class RequirementCompiler:
             functional_goals,
             acceptance_contract,
         )
+        quality_contract = self._extract_quality_contract(normalized)
 
         return BuildSpec(
             build_id=self._build_id(normalized),
@@ -62,6 +64,7 @@ class RequirementCompiler:
             requirement_atoms=requirement_atoms,
             acceptance_contract=acceptance_contract,
             obligation_contract=obligation_contract,
+            quality_contract=quality_contract,
             target_artifact_type=target_artifact_type,
             risk_hints=self._derive_risk_hints(
                 normalized,
@@ -72,6 +75,78 @@ class RequirementCompiler:
             ambiguity_flags=ambiguity_flags,
             assumptions=self._derive_assumptions(normalized),
         )
+
+    def _extract_quality_contract(self, requirement: str) -> QualityContract:
+        lowered = requirement.lower()
+        quality = QualityContract(
+            auth_level="plaintext",
+            secrets_in_plaintext=True,
+            rate_limit_scope="per_user",
+            rate_limit_persistent=False,
+            schema_versioned=False,
+            audit_trail=False,
+            health_endpoint=False,
+            structured_logging=False,
+            test_coverage_target=0.6,
+            integration_tests=False,
+        )
+
+        # Auth quality
+        if any(token in lowered for token in ("jwt", "bearer token", "oauth")):
+            quality.auth_level = "jwt"
+            quality.secrets_in_plaintext = False
+        elif any(token in lowered for token in ("hashed", "bcrypt", "argon2")):
+            quality.auth_level = "hashed"
+            quality.secrets_in_plaintext = False
+        elif any(token in lowered for token in ("api key", "api-key", "authentication")):
+            quality.auth_level = "plaintext"
+            quality.secrets_in_plaintext = True
+            if "secure" in lowered:
+                quality.auth_level = "hashed"
+                quality.secrets_in_plaintext = False
+
+        # Rate limiting quality
+        if any(token in lowered for token in ("distributed", "redis", "across instances")):
+            quality.rate_limit_scope = "distributed"
+            quality.rate_limit_persistent = True
+        elif any(token in lowered for token in ("per user", "per-user", "per client")):
+            quality.rate_limit_scope = "per_user"
+        elif "rate limit" in lowered or "rate limiting" in lowered:
+            quality.rate_limit_scope = "per_user"
+            quality.rate_limit_persistent = False
+        if any(token in lowered for token in ("persistent", "survives restart", "survive restart", "restart")):
+            quality.rate_limit_persistent = True
+
+        # Persistence quality
+        if any(token in lowered for token in ("migrations", "versioned schema", "alembic")):
+            quality.schema_versioned = True
+        if any(token in lowered for token in ("audit log", "audit trail", "event log", "full audit trail")):
+            quality.audit_trail = True
+        if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
+            quality.schema_versioned = True
+            quality.audit_trail = True
+
+        # Observability quality
+        if any(token in lowered for token in ("health check", "monitoring", "observability", "structured json logging", "structured logging")):
+            quality.health_endpoint = True
+            quality.structured_logging = True
+        if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
+            quality.health_endpoint = True
+
+        # Test quality
+        if any(token in lowered for token in ("integration tests", "end-to-end", "e2e")):
+            quality.integration_tests = True
+        if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
+            quality.test_coverage_target = 0.8
+            quality.integration_tests = True
+
+        computed_level = quality.compute_level()
+        if any(token in lowered for token in ("microservice", "service", "rest", "api")) and computed_level < 5:
+            computed_level = 5
+        if any(token in lowered for token in ("production", "prod-ready", "production-grade")) and computed_level > 9:
+            computed_level = 9
+        quality.overall_level = computed_level
+        return quality
 
     def _extract_requirement_atoms(self, requirement: str) -> List[RequirementAtom]:
         body = self._requirement_body(requirement)
@@ -503,7 +578,17 @@ class RequirementCompiler:
 
     def _categorize_clause(self, clause: str) -> str:
         lowered = clause.lower()
-        universal_tokens = ("every", "all", "any", "arbitrary", "guarantee", "guarantees", "exactly")
+        universal_tokens = (
+            "every possible",
+            "all possible",
+            "any possible",
+            "arbitrary",
+            "guarantee",
+            "guarantees",
+            "exactly",
+            "for every",
+            "for all",
+        )
         validation_tokens = ("test", "tests", "malformed", "invalid", "reject", "validate", "verif")
         quality_tokens = ("latency", "performance", "memory", "secure", "security", "reliable", "scalable")
         comparator_pattern = re.compile(
@@ -548,7 +633,16 @@ class RequirementCompiler:
         lowered = clause.lower()
         if category == "ambiguity":
             return "ambiguous"
-        universal_tokens = ("every", "all", "any", "arbitrary", "guarantee", "guarantees")
+        universal_tokens = (
+            "every possible",
+            "all possible",
+            "any possible",
+            "arbitrary",
+            "guarantee",
+            "guarantees",
+            "for every",
+            "for all",
+        )
         hard_tokens = (
             "must",
             "exactly",

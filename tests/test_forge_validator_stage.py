@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import core.forge.validator_stage as validator_stage_module
 from core.forge.coder_stage import CoderStage
 from core.forge.contracts import CodeArtifact, FeasiblePlan, ValidationArtifact
 from core.forge.planner_stage import PlannerStage
@@ -20,6 +21,12 @@ INVOICE_REQUIREMENT = (
     "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, "
     "customer_name, flags overdue invoices, writes a summary CSV with totals and counts, and "
     "includes tests for malformed rows and invalid dates."
+)
+
+PRODUCTION_SERVICE_REQUIREMENT = (
+    "Build a production-grade Python REST microservice with hashed API keys using bcrypt, "
+    "persistent per-user rate limiting that survives restarts, a full audit trail of all requests, "
+    "structured JSON logging, and integration tests."
 )
 
 
@@ -223,3 +230,64 @@ def test_validator_uses_invoice_smoke_input_for_invoice_specs():
 
     assert "invoice_id,due_date,amount,customer_name" in sample
     assert "INV-1,2026-01-15,100.00,Acme" in sample
+
+
+def test_quality_contract_violation_detected_for_hashed_service(tmp_path):
+    compiler = RequirementCompiler()
+    spec = compiler.compile(PRODUCTION_SERVICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan_output = planner.plan(spec)
+    assert isinstance(plan_output, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan_output)
+    service_file = _find_file(artifact, "src/service.py")
+    assert service_file is not None
+    service_file.content = (
+        "import sqlite3\n"
+        "def init_db(db_path='service.db'):\n"
+        "    with sqlite3.connect(db_path) as conn:\n"
+        "        conn.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, api_key TEXT UNIQUE NOT NULL)')\n"
+        "        conn.commit()\n"
+        "def run():\n"
+        "    return 0\n"
+    )
+
+    result = ValidatorStage().validate(artifact, plan_output, spec)
+
+    assert result.passed is False
+    assert "quality_contract_violation" in result.failure_signatures
+    assert any("quality_contract_violation:" in failure for failure in result.failures)
+
+
+def test_quality_contract_violation_when_bcrypt_not_available(tmp_path, monkeypatch):
+    compiler = RequirementCompiler()
+    spec = compiler.compile(PRODUCTION_SERVICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan_output = planner.plan(spec)
+    assert isinstance(plan_output, FeasiblePlan)
+    artifact = CoderStage().generate(plan_output)
+
+    original_find_spec = validator_stage_module.importlib.util.find_spec
+
+    def _fake_find_spec(module_name: str):
+        if module_name == "bcrypt":
+            return None
+        return original_find_spec(module_name)
+
+    monkeypatch.setattr(validator_stage_module.importlib.util, "find_spec", _fake_find_spec)
+
+    result = ValidatorStage().validate(artifact, plan_output, spec)
+
+    assert result.passed is False
+    assert "quality_contract_violation" in result.failure_signatures
+    assert any("bcrypt required but not available" in failure for failure in result.failures)

@@ -172,6 +172,7 @@ class PlannerStage:
             plan_id=f"plan-{build_spec.build_id}",
             build_spec=build_spec,
             architecture_summary=architecture_summary,
+            quality_contract=build_spec.quality_contract,
             file_tree_plan=file_tree,
             interfaces=interfaces,
             required_tests=required_tests,

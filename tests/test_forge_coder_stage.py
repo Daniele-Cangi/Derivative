@@ -27,6 +27,12 @@ SERVICE_REQUIREMENT = (
     "and persistence across restart."
 )
 
+PRODUCTION_SERVICE_REQUIREMENT = (
+    "Build a production-grade Python REST microservice with hashed API keys using bcrypt, "
+    "persistent per-user rate limiting that survives restarts, a full audit trail of all requests, "
+    "structured JSON logging, and integration tests."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -65,6 +71,22 @@ def service_feasible_plan(tmp_path_factory) -> FeasiblePlan:
     root = tmp_path_factory.mktemp("forge_coder_stage_service")
     compiler = RequirementCompiler()
     spec = compiler.compile(SERVICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(root / "forge_audit.json"),
+        memory_file=str(root / "forge_memory.json"),
+        gene_pool_file=str(root / "forge_gene_pool.json"),
+    )
+    output = planner.plan(spec)
+    assert isinstance(output, FeasiblePlan)
+    return output
+
+
+@pytest.fixture(scope="module")
+def production_service_feasible_plan(tmp_path_factory) -> FeasiblePlan:
+    root = tmp_path_factory.mktemp("forge_coder_stage_service_production")
+    compiler = RequirementCompiler()
+    spec = compiler.compile(PRODUCTION_SERVICE_REQUIREMENT)
     planner = PlannerStage(
         execution_mode="local-only",
         audit_log_file=str(root / "forge_audit.json"),
@@ -308,3 +330,28 @@ def test_service_file_tree_never_generates_cli_imports(service_feasible_plan):
     for generated in python_files:
         assert "import cli" not in generated.content
         assert "import contracts_csv" not in generated.content
+
+
+def test_production_service_quality_contract_changes_generated_code(production_service_feasible_plan):
+    coder = CoderStage()
+    artifact = coder.generate(production_service_feasible_plan)
+
+    service_module = _find_generated_file(artifact, "src/service.py")
+    suite_test = _find_generated_file(artifact, "tests/test_suite_executes.py")
+
+    assert service_module is not None
+    assert suite_test is not None
+
+    assert "import bcrypt" in service_module.content
+    assert "FORGE_USE_BCRYPT" not in service_module.content
+    assert "sha256$" not in service_module.content
+    assert "api_key_hash TEXT UNIQUE NOT NULL" in service_module.content
+    assert "CREATE TABLE IF NOT EXISTS rate_limit_hits" in service_module.content
+    assert "_RATE_LIMIT_BUCKETS" not in service_module.content
+    assert "CREATE TABLE IF NOT EXISTS events" in service_module.content
+    assert "CREATE TABLE IF NOT EXISTS schema_meta" in service_module.content
+    assert "json.dumps" in service_module.content
+    assert "@app.get('/health')" in service_module.content
+
+    assert "def test_integration_flow_handles_valid_request" in suite_test.content
+    assert "def test_audit_trail_records_requests" in suite_test.content

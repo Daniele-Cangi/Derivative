@@ -62,6 +62,50 @@ class ObligationContract:
 
 
 @dataclass
+class QualityContract:
+    auth_level: str = "plaintext"
+    secrets_in_plaintext: bool = True
+    rate_limit_scope: str = "per_user"
+    rate_limit_persistent: bool = False
+    schema_versioned: bool = False
+    audit_trail: bool = False
+    health_endpoint: bool = False
+    structured_logging: bool = False
+    test_coverage_target: float = 0.6
+    integration_tests: bool = False
+    overall_level: int = 5
+
+    def __post_init__(self) -> None:
+        self.overall_level = self.compute_level()
+
+    def compute_level(self) -> int:
+        score = 0.0
+        if self.auth_level in ("hashed", "jwt"):
+            score += 2.0
+        elif self.auth_level == "plaintext":
+            score += 1.0
+        if not self.secrets_in_plaintext:
+            score += 1.0
+        if self.rate_limit_scope == "distributed":
+            score += 2.0
+        elif self.rate_limit_scope == "per_user":
+            score += 1.0
+        if self.rate_limit_persistent:
+            score += 1.0
+        if self.schema_versioned:
+            score += 1.0
+        if self.audit_trail:
+            score += 1.0
+        if self.health_endpoint:
+            score += 0.5
+        if self.structured_logging:
+            score += 0.5
+        if self.integration_tests:
+            score += 1.0
+        return min(10, max(1, int(round(score))))
+
+
+@dataclass
 class BuildSpec:
     build_id: str
     raw_requirement: str
@@ -71,6 +115,7 @@ class BuildSpec:
     requirement_atoms: List[RequirementAtom] = field(default_factory=list)
     acceptance_contract: AcceptanceContract = field(default_factory=AcceptanceContract)
     obligation_contract: Optional[ObligationContract] = None
+    quality_contract: QualityContract = field(default_factory=QualityContract)
     target_artifact_type: ArtifactTargetType = ArtifactTargetType.UNKNOWN
     risk_hints: List[str] = field(default_factory=list)
     ambiguity_flags: List[str] = field(default_factory=list)
@@ -116,6 +161,7 @@ class FeasiblePlan:
     plan_id: str
     build_spec: BuildSpec
     architecture_summary: str
+    quality_contract: QualityContract = field(default_factory=QualityContract)
     file_tree_plan: List[PlanFile] = field(default_factory=list)
     interfaces: List[PlanInterface] = field(default_factory=list)
     required_tests: List[PlanTest] = field(default_factory=list)
