@@ -92,7 +92,7 @@ class CoderStage:
 
     def _generate_from_plan_file(self, plan: FeasiblePlan, plan_file: PlanFile) -> GeneratedFile:
         path = plan_file.path
-        content = self._template_for_plan_file(path, plan.interfaces, plan.required_obligations)
+        content = self._template_for_plan_file(plan, path, plan.interfaces)
         generated_from = [
             f"plan_file:{path}",
             f"plan_purpose:{plan_file.purpose}",
@@ -214,13 +214,13 @@ class CoderStage:
 
     def _template_for_plan_file(
         self,
+        plan: FeasiblePlan,
         path: str,
         interfaces: List[PlanInterface],
-        required_obligations: List[str],
     ) -> str:
         normalized = path.replace("\\", "/").lower()
         if normalized.endswith("src/cli.py") or normalized.endswith("src/main.py"):
-            return self._template_cli(required_obligations)
+            return self._template_cli(plan)
         if normalized.endswith("src/contracts_csv.py"):
             return self._template_contracts_csv()
         if normalized.endswith("src/expiration_rules.py"):
@@ -228,11 +228,15 @@ class CoderStage:
         if normalized.endswith("src/summary_writer.py"):
             return self._template_summary_writer()
         if normalized.startswith("tests/"):
-            return self._template_plan_test_module(path)
+            return self._template_plan_test_module(plan, path)
         return self._template_generic_module(path, interfaces)
 
-    def _template_cli(self, required_obligations: List[str]) -> str:
-        obligations_comment = ", ".join(required_obligations) if required_obligations else "none"
+    def _template_cli(self, plan: FeasiblePlan) -> str:
+        is_invoice = self._is_invoice_plan(plan)
+        parser_description = "Process invoice due dates from CSV input." if is_invoice else "Process contract expirations from CSV input."
+        input_help = "Input invoices CSV path." if is_invoice else "Input contracts CSV path."
+        output_help = "Output invoice summary CSV path." if is_invoice else "Output summary CSV path."
+        horizon_help = "Due-date horizon in days." if is_invoice else "Expiration horizon in days."
         return (
             "import argparse\n"
             "\n"
@@ -242,10 +246,10 @@ class CoderStage:
             "\n"
             "\n"
             "def build_parser() -> argparse.ArgumentParser:\n"
-            "    parser = argparse.ArgumentParser(description='Process contract expirations from CSV input.')\n"
-            "    parser.add_argument('input_csv', help='Input contracts CSV path.')\n"
-            "    parser.add_argument('output_csv', help='Output summary CSV path.')\n"
-            "    parser.add_argument('--horizon-days', type=int, default=90, help='Expiration horizon in days.')\n"
+            f"    parser = argparse.ArgumentParser(description={parser_description!r})\n"
+            f"    parser.add_argument('input_csv', help={input_help!r})\n"
+            f"    parser.add_argument('output_csv', help={output_help!r})\n"
+            f"    parser.add_argument('--horizon-days', type=int, default=90, help={horizon_help!r})\n"
             "    return parser\n"
             "\n"
             "\n"
@@ -255,7 +259,6 @@ class CoderStage:
             "    rows = load_contracts_csv(args.input_csv)\n"
             "    flagged = flag_expiring_contracts(rows, horizon_days=args.horizon_days)\n"
             "    write_summary_csv(flagged, args.output_csv)\n"
-            f"    _ = {obligations_comment!r}\n"
             "    return 0\n"
             "\n"
             "\n"
@@ -268,15 +271,32 @@ class CoderStage:
             "import csv\n"
             "\n"
             "\n"
+            "def _required_columns(fieldnames: list[str]) -> list[str]:\n"
+            "    normalized = {str(name).strip() for name in fieldnames if name is not None}\n"
+            "    invoice_required = {'invoice_id', 'due_date', 'amount', 'customer_name'}\n"
+            "    contract_required = {'contract_id', 'expiration_date'}\n"
+            "    if invoice_required.issubset(normalized):\n"
+            "        return ['invoice_id', 'due_date', 'amount', 'customer_name']\n"
+            "    if contract_required.issubset(normalized):\n"
+            "        return ['contract_id', 'expiration_date']\n"
+            "    return []\n"
+            "\n"
+            "\n"
             "def load_contracts_csv(path: str) -> list[dict[str, str]]:\n"
             "    rows: list[dict[str, str]] = []\n"
             "    with open(path, 'r', encoding='utf-8', newline='') as handle:\n"
             "        reader = csv.DictReader(handle)\n"
+            "        header = [str(name).strip() for name in (reader.fieldnames or []) if name is not None]\n"
+            "        required = _required_columns(header)\n"
             "        for row in reader:\n"
+            "            if any(key is None for key in row.keys()):\n"
+            "                continue\n"
             "            normalized = {\n"
             "                str(key).strip(): (str(value).strip() if value is not None else '')\n"
             "                for key, value in row.items()\n"
             "            }\n"
+            "            if required and any(not normalized.get(column, '') for column in required):\n"
+            "                continue\n"
             "            rows.append(normalized)\n"
             "    return rows\n"
         )
@@ -379,9 +399,28 @@ class CoderStage:
             "            writer.writerow(row)\n"
         )
 
-    def _template_plan_test_module(self, path: str) -> str:
+    def _template_plan_test_module(self, plan: FeasiblePlan, path: str) -> str:
         normalized = path.replace("\\", "/").lower()
+        is_invoice = self._is_invoice_plan(plan)
         if normalized.endswith("tests/test_expiration_rules.py"):
+            if is_invoice:
+                return (
+                    "from datetime import date\n"
+                    "from pathlib import Path\n"
+                    "import sys\n"
+                    "\n"
+                    "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+                    "\n"
+                    "from expiration_rules import flag_expiring_contracts\n"
+                    "\n"
+                    "\n"
+                    "def test_expiration_flags_expected_rows():\n"
+                    "    rows = [{'invoice_id': 'INV-1', 'due_date': '2026-01-15'}]\n"
+                    "    output = flag_expiring_contracts(rows, horizon_days=90, today=date(2026, 1, 1))\n"
+                    "    assert len(output) == 1\n"
+                    "    assert output[0]['is_expiring_within_horizon'] in {'True', 'False'}\n"
+                    "    assert output[0]['is_overdue'] in {'True', 'False'}\n"
+                )
             return (
                 "from datetime import date\n"
                 "from pathlib import Path\n"
@@ -397,6 +436,32 @@ class CoderStage:
                 "    output = flag_expiring_contracts(rows, horizon_days=90, today=date(2026, 1, 1))\n"
                 "    assert len(output) == 1\n"
                 "    assert output[0]['is_expiring_within_horizon'] in {'True', 'False'}\n"
+            )
+        if is_invoice:
+            return (
+                "import csv\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                "\n"
+                "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+                "\n"
+                "import cli\n"
+                "\n"
+                "\n"
+                "def test_cli_flow_end_to_end(tmp_path):\n"
+                "    input_path = tmp_path / 'invoices.csv'\n"
+                "    output_path = tmp_path / 'summary.csv'\n"
+                "    input_path.write_text(\n"
+                "        'invoice_id,due_date,amount,customer_name\\nINV-1,2026-01-10,10,Acme\\nINV-2,2026-01-20,15,Beta\\n',\n"
+                "        encoding='utf-8',\n"
+                "    )\n"
+                "    result = cli.main([str(input_path), str(output_path), '--horizon-days', '0'])\n"
+                "    assert result == 0\n"
+                "    with output_path.open('r', encoding='utf-8', newline='') as handle:\n"
+                "        rows = list(csv.DictReader(handle))\n"
+                "    assert len(rows) == 2\n"
+                "    assert rows[0]['total_amount'] == '25'\n"
+                "    assert rows[1]['invoice_count'] == '2'\n"
             )
         return (
             "from pathlib import Path\n"
@@ -580,18 +645,23 @@ class CoderStage:
                 "\n"
                 "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
                 "\n"
+                "from contracts_csv import load_contracts_csv\n"
                 "from expiration_rules import flag_expiring_contracts\n"
                 "\n"
                 "\n"
-                "def test_handles_malformed_rows_and_invalid_dates():\n"
-                "    rows = [\n"
-                "        {'invoice_id': 'A', 'due_date': 'not-a-date'},\n"
-                "        {'invoice_id': 'B'},\n"
-                "    ]\n"
+                "def test_handles_malformed_rows_and_invalid_dates(tmp_path):\n"
+                "    input_path = tmp_path / 'invoices.csv'\n"
+                "    input_path.write_text(\n"
+                "        'invoice_id,due_date,amount,customer_name\\nA,not-a-date,10,C1\\nB,,15,C2\\n',\n"
+                "        encoding='utf-8',\n"
+                "    )\n"
+                "    rows = load_contracts_csv(str(input_path))\n"
+                "    assert len(rows) == 1\n"
+                "    assert rows[0]['invoice_id'] == 'A'\n"
                 "    flagged = flag_expiring_contracts(rows, horizon_days=90)\n"
-                "    assert len(flagged) == 2\n"
+                "    assert len(flagged) == 1\n"
                 "    assert flagged[0]['is_expiring_within_horizon'] == 'False'\n"
-                "    assert flagged[1]['days_to_expiration'] == ''\n"
+                "    assert flagged[0]['days_to_expiration'] == ''\n"
             )
         if "handles_malformed_rows" in name:
             return (
@@ -665,10 +735,37 @@ class CoderStage:
             for path in plan.file_tree_plan
             if path.path.startswith("src/") and path.path.endswith(".py")
         ]
+        is_invoice = self._is_invoice_plan(plan)
         has_cli = "cli" in src_modules
         has_main = "main" in src_modules
         if has_cli or has_main:
             module_name = "cli" if has_cli else "main"
+            if is_invoice:
+                return (
+                    "import csv\n"
+                    "from pathlib import Path\n"
+                    "import sys\n"
+                    "\n"
+                    "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+                    "\n"
+                    f"import {module_name}\n"
+                    "\n"
+                    "\n"
+                    "def test_generated_requirement_exercises_cli_flow(tmp_path):\n"
+                    "    input_path = tmp_path / 'input.csv'\n"
+                    "    output_path = tmp_path / 'output.csv'\n"
+                    "    input_path.write_text(\n"
+                    "        'invoice_id,due_date,amount,customer_name\\nINV-1,2026-01-10,10,Acme\\nINV-2,2026-01-20,15,Beta\\n',\n"
+                    "        encoding='utf-8',\n"
+                    "    )\n"
+                    f"    result = {module_name}.main([str(input_path), str(output_path), '--horizon-days', '0'])\n"
+                    "    assert result == 0\n"
+                    "    with output_path.open('r', encoding='utf-8', newline='') as handle:\n"
+                    "        rows = list(csv.DictReader(handle))\n"
+                    "    assert len(rows) == 2\n"
+                    "    assert rows[0]['total_amount'] == '25'\n"
+                    "    assert rows[1]['invoice_count'] == '2'\n"
+                )
             return (
                 "from pathlib import Path\n"
                 "import sys\n"
@@ -711,3 +808,9 @@ class CoderStage:
             f"    objective = {plan_test.objective!r}\n"
             "    assert len(objective) > 0\n"
         )
+
+    def _is_invoice_plan(self, plan: FeasiblePlan) -> bool:
+        atom_text = " ".join(atom.text.lower() for atom in plan.build_spec.requirement_atoms)
+        goal_text = " ".join(goal.lower() for goal in plan.build_spec.functional_goals)
+        combined = f"{atom_text} {goal_text}"
+        return "invoice" in combined or "due_date" in combined

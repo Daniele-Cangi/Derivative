@@ -129,11 +129,17 @@ def test_invoice_business_tests_are_semantic(invoice_feasible_plan):
     overdue = _find_generated_file(artifact, "tests/test_implement_functional_goal_flags_overdue_invoices.py")
     totals = _find_generated_file(artifact, "tests/test_writes_summary_csv_with_totals_and_counts.py")
     malformed_invalid = _find_generated_file(artifact, "tests/test_handles_malformed_rows_and_invalid_dates.py")
+    cli_flow = _find_generated_file(artifact, "tests/test_cli_flow.py")
+    build_goal = _find_generated_file(artifact, "tests/test_implement_functional_goal_build_a_python.py")
+    cli_module = _find_generated_file(artifact, "src/cli.py")
 
     assert reads_csv is not None
     assert overdue is not None
     assert totals is not None
     assert malformed_invalid is not None
+    assert cli_flow is not None
+    assert build_goal is not None
+    assert cli_module is not None
 
     assert "load_contracts_csv(" in reads_csv.content
     assert "invoice_id,due_date,amount,customer_name" in reads_csv.content
@@ -152,10 +158,23 @@ def test_invoice_business_tests_are_semantic(invoice_feasible_plan):
     assert "assert parsed[0]['total_amount'] == '25'" in totals.content
     assert "assert parsed[1]['invoice_count'] == '2'" in totals.content
 
+    assert "load_contracts_csv(" in malformed_invalid.content
+    assert "input_path.write_text(" in malformed_invalid.content
     assert "flag_expiring_contracts(" in malformed_invalid.content
-    assert "{'invoice_id': 'A', 'due_date': 'not-a-date'}" in malformed_invalid.content
-    assert "assert len(flagged) == 2" in malformed_invalid.content
-    assert "assert flagged[1]['days_to_expiration'] == ''" in malformed_invalid.content
+    assert "assert len(rows) == 1" in malformed_invalid.content
+    assert "assert len(flagged) == 1" in malformed_invalid.content
+    assert "assert flagged[0]['days_to_expiration'] == ''" in malformed_invalid.content
+
+    assert "def test_cli_flow_end_to_end(tmp_path):" in cli_flow.content
+    assert "invoice_id,due_date,amount,customer_name" in cli_flow.content
+    assert "rows = list(csv.DictReader(handle))" in cli_flow.content
+    assert "assert rows[0]['total_amount'] == '25'" in cli_flow.content
+
+    assert "invoice_id,due_date,amount,customer_name" in build_goal.content
+    assert "rows = list(csv.DictReader(handle))" in build_goal.content
+
+    assert "Process invoice due dates from CSV input." in cli_module.content
+    assert "_ = 'entrypoint_defined" not in cli_module.content
 
 
 def test_invoice_required_tests_have_no_assert_true_placeholders(invoice_feasible_plan):
