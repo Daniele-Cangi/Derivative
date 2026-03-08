@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.forge.coder_stage import CoderStage, MalformedPlanError
-from core.forge.contracts import CodeArtifact, FeasiblePlan
+from core.forge.contracts import CodeArtifact, FeasiblePlan, PlanFile, PlanInterface, PlanTest
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 
@@ -119,6 +119,42 @@ def test_malformed_plan_fails_explicitly(feasible_plan):
 
     with pytest.raises(MalformedPlanError):
         coder.generate(malformed)
+
+
+def test_unmappable_required_test_fails_closed(feasible_plan):
+    coder = CoderStage()
+    constrained = replace(
+        feasible_plan,
+        file_tree_plan=[
+            PlanFile(
+                path="README.md",
+                purpose="Non-runnable metadata placeholder.",
+                source_requirement_refs=[],
+            )
+        ],
+        interfaces=[
+            PlanInterface(
+                name="run",
+                interface_type="entrypoint",
+                signature="run() -> int",
+                description="Generic entrypoint.",
+            )
+        ],
+        required_tests=[
+            PlanTest(
+                test_name="test_custom_requirement_without_mapping",
+                objective="Satisfy a custom requirement without callable mapping.",
+                test_type="acceptance",
+                required=True,
+                acceptance_criterion_ids=[],
+                obligation_fields=[],
+                requirement_ids=[],
+            )
+        ],
+    )
+
+    with pytest.raises(MalformedPlanError, match="Unable to generate semantic test template"):
+        coder.generate(constrained)
 
 
 def test_invoice_business_tests_are_semantic(invoice_feasible_plan):

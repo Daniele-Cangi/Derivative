@@ -129,6 +129,11 @@ Run all tests:
 python -B -m pytest -q -p no:cacheprovider
 ```
 
+Run the Forge benchmark quality gate locally (same thresholds used in CI):
+```bash
+python forge_benchmark.py --preset extended --enforce-thresholds --min-status-accuracy 0.95 --min-verified-at-1 0.95 --max-false-verified-rate 0.00 --min-infeasible-detection-rate 1.00
+```
+
 Key Forge tests include:
 - `tests/test_forge_planner_stage.py`
 - `tests/test_forge_coder_stage.py`

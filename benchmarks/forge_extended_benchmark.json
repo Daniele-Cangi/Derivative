@@ -1,0 +1,74 @@
+[
+  {
+    "case_id": "E001",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["baseline", "contracts", "csv", "feasible"]
+  },
+  {
+    "case_id": "E002",
+    "requirement": "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, customer_name, flags overdue invoices, writes a summary CSV with totals and counts, and includes tests for malformed rows and invalid dates.",
+    "expected_terminal_status": "verified",
+    "tags": ["business", "invoices", "validation", "feasible"]
+  },
+  {
+    "case_id": "E003",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 60 days, writes a summary CSV, and includes tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["contracts", "horizon", "feasible"]
+  },
+  {
+    "case_id": "E004",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 30 days, writes a summary CSV, and includes tests for invalid dates.",
+    "expected_terminal_status": "verified",
+    "tags": ["contracts", "invalid_dates", "feasible"]
+  },
+  {
+    "case_id": "E005",
+    "requirement": "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, customer_name, flags overdue invoices, writes a summary CSV, and includes tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["invoices", "overdue", "feasible"]
+  },
+  {
+    "case_id": "E006",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, writes a summary CSV, and includes tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["contracts", "simplified", "feasible"]
+  },
+  {
+    "case_id": "E007",
+    "requirement": "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, customer_name, flags overdue invoices, writes a summary CSV with totals and counts, includes tests for malformed rows and invalid dates, and guarantees support for every possible date format.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["invoices", "universal_constraint", "fail_closed"]
+  },
+  {
+    "case_id": "E008",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV, includes tests, and guarantees support for every possible date format.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["contracts", "universal_constraint", "fail_closed"]
+  },
+  {
+    "case_id": "E009",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, writes a summary CSV, includes tests, and guarantees parsing for all possible date formats.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["contracts", "universal_constraint", "all_formats"]
+  },
+  {
+    "case_id": "E010",
+    "requirement": "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, customer_name, writes a summary CSV with totals and counts, includes tests, and guarantees support for every possible CSV dialect and date format.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["invoices", "universal_constraint", "csv_dialect"]
+  },
+  {
+    "case_id": "E011",
+    "requirement": "Design a network on exactly 4 nodes such that every pair of nodes is directly connected, the network diameter is strictly greater than 2, vertex connectivity is at least 3, and the total number of edges does not exceed 3.",
+    "expected_terminal_status": "infeasible_proven",
+    "tags": ["graph", "contradiction", "infeasible"]
+  },
+  {
+    "case_id": "E012",
+    "requirement": "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV with totals and counts, and includes tests for malformed rows.",
+    "expected_terminal_status": "verified",
+    "tags": ["contracts", "totals_counts", "validation", "feasible"]
+  }
+]

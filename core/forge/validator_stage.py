@@ -349,6 +349,19 @@ class ValidatorStage:
             self._append_unique(signatures, "fake_acceptance_coverage")
         evidence["non_semantic_tests"] = non_semantic_tests
 
+        semantic_requirement_failures, semantic_requirement_signatures, semantic_requirement_evidence = (
+            self._validate_semantic_requirement_test_coverage(
+                build_spec=build_spec,
+                plan=plan,
+                expected_test_paths=expected_test_paths,
+                non_semantic_tests=non_semantic_tests,
+            )
+        )
+        failures.extend(semantic_requirement_failures)
+        for signature in semantic_requirement_signatures:
+            self._append_unique(signatures, signature)
+        evidence["semantic_requirement_test_coverage"] = semantic_requirement_evidence
+
         superficial_interfaces = self._detect_superficial_interfaces(plan, materialized)
         if superficial_interfaces:
             failures.append(
@@ -613,6 +626,7 @@ class ValidatorStage:
             "missing_acceptance_coverage",
             "semantic_omission",
             "missing_requirement_coverage",
+            "missing_semantic_requirement_coverage",
             "universal_constraint_unproven",
             "non_semantic_test",
             "fake_acceptance_coverage",
@@ -665,6 +679,7 @@ class ValidatorStage:
             "missing_provenance_obligations": layer2.evidence.get("missing_provenance_obligations", []),
             "missing_acceptance_coverage": layer2.evidence.get("missing_acceptance_coverage", []),
             "requirement_coverage_checks": layer2.evidence.get("requirement_coverage_checks", {}),
+            "semantic_requirement_test_coverage": layer3.evidence.get("semantic_requirement_test_coverage", {}),
         }
 
         return {
@@ -791,3 +806,62 @@ class ValidatorStage:
             if file_non_semantic:
                 self._append_unique(non_semantic, test_path)
         return non_semantic
+
+    def _validate_semantic_requirement_test_coverage(
+        self,
+        build_spec: BuildSpec,
+        plan: FeasiblePlan,
+        expected_test_paths: set[str],
+        non_semantic_tests: List[str],
+    ) -> Tuple[List[str], List[str], Dict[str, object]]:
+        failures: List[str] = []
+        signatures: List[str] = []
+
+        non_semantic_set = set(non_semantic_tests)
+        requirement_evidence: Dict[str, Dict[str, object]] = {}
+        missing_semantic_coverage: List[str] = []
+
+        for atom in build_spec.requirement_atoms:
+            if atom.category == "ambiguity" or atom.strength not in {"hard", "universal"}:
+                continue
+
+            coverage_entry = plan.requirement_coverage.get(
+                atom.requirement_id,
+                {"tests": []},
+            )
+            mapped_test_names = list(coverage_entry.get("tests", []))
+            mapped_test_paths = [
+                f"tests/{test_name}.py"
+                for test_name in mapped_test_names
+                if f"tests/{test_name}.py" in expected_test_paths
+            ]
+            semantic_test_paths = [
+                path for path in mapped_test_paths if path not in non_semantic_set
+            ]
+            has_semantic_test = bool(semantic_test_paths)
+
+            requirement_evidence[atom.requirement_id] = {
+                "strength": atom.strength,
+                "mapped_tests": mapped_test_paths,
+                "semantic_tests": semantic_test_paths,
+                "non_semantic_tests": [
+                    path for path in mapped_test_paths if path in non_semantic_set
+                ],
+                "has_semantic_test": has_semantic_test,
+            }
+
+            if not has_semantic_test:
+                missing_semantic_coverage.append(atom.requirement_id)
+
+        if missing_semantic_coverage:
+            failures.append(
+                "Hard/universal requirements are missing semantic test coverage: "
+                f"{missing_semantic_coverage}."
+            )
+            self._append_unique(signatures, "missing_semantic_requirement_coverage")
+
+        evidence = {
+            "requirements": requirement_evidence,
+            "missing_semantic_coverage": missing_semantic_coverage,
+        }
+        return failures, signatures, evidence

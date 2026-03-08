@@ -803,10 +803,9 @@ class CoderStage:
                 "    assert isinstance(result, (int, type(None)))\n"
             )
 
-        return (
-            "def test_generated_requirement_has_semantic_assertion():\n"
-            f"    objective = {plan_test.objective!r}\n"
-            "    assert len(objective) > 0\n"
+        raise MalformedPlanError(
+            "Unable to generate semantic test template for required test "
+            f"'{plan_test.test_name}'. Plan does not provide a runnable module/interface mapping."
         )
 
     def _is_invoice_plan(self, plan: FeasiblePlan) -> bool:

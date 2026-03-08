@@ -189,6 +189,32 @@ def test_provenance_manifest_mismatch_is_detected(forge_pipeline):
     assert "provenance_mismatch" in result.failure_signatures or "manifest_mismatch" in result.failure_signatures
 
 
+def test_missing_semantic_requirement_coverage_is_detected(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = forge_pipeline["build_spec"]
+
+    hard_atom = next(
+        atom for atom in build_spec.requirement_atoms if atom.category != "ambiguity" and atom.strength in {"hard", "universal"}
+    )
+    mapped_tests = plan.requirement_coverage[hard_atom.requirement_id]["tests"]
+    assert mapped_tests
+
+    for test_name in mapped_tests:
+        path = f"tests/{test_name}.py"
+        generated = _find_file(artifact, path)
+        assert generated is not None
+        generated.content = "def test_placeholder():\n    assert True\n"
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "non_semantic_test" in result.failure_signatures
+    assert "missing_semantic_requirement_coverage" in result.failure_signatures
+    assert result.failure_category is not None and result.failure_category.value == "validation"
+
+
 def test_validator_uses_invoice_smoke_input_for_invoice_specs():
     validator = ValidatorStage()
     invoice_spec = RequirementCompiler().compile(INVOICE_REQUIREMENT)
