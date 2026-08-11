@@ -11,6 +11,7 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
 from core.forge.validation.adversarial import AdversarialValidationLayer
+from core.forge.validation.capabilities import CapabilityContractChecker
 from core.forge.validation.obligations import ObligationValidationLayer
 from core.forge.validation.runtime import RuntimeValidationLayer
 
@@ -85,11 +86,37 @@ def pipeline_forge_pipeline(tmp_path_factory):
     }
 
 
+@pytest.fixture(scope="module")
+def production_service_forge_pipeline(tmp_path_factory):
+    root = tmp_path_factory.mktemp("forge_validator_service_capabilities")
+    spec = RequirementCompiler().compile(PRODUCTION_SERVICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(root / "forge_audit.json"),
+        memory_file=str(root / "forge_memory.json"),
+        gene_pool_file=str(root / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+    return {"build_spec": spec, "plan": plan, "artifact": artifact}
+
+
 def _find_file(artifact: CodeArtifact, path: str):
     for generated in artifact.files:
         if generated.path == path:
             return generated
     return None
+
+
+def _materialize_artifact(artifact: CodeArtifact, root: Path):
+    materialized = {}
+    for generated in artifact.files:
+        target = root / generated.path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(generated.content, encoding="utf-8")
+        materialized[generated.path] = target
+    return materialized
 
 
 def test_validator_stage_is_a_thin_composition_root():
@@ -98,6 +125,62 @@ def test_validator_stage_is_a_thin_composition_root():
     assert isinstance(validator.runtime_layer, RuntimeValidationLayer)
     assert isinstance(validator.obligation_layer, ObligationValidationLayer)
     assert isinstance(validator.adversarial_layer, AdversarialValidationLayer)
+
+
+def test_capability_contract_matches_composed_service(production_service_forge_pipeline, tmp_path):
+    checker = CapabilityContractChecker()
+    artifact = production_service_forge_pipeline["artifact"]
+    plan = production_service_forge_pipeline["plan"]
+    materialized = _materialize_artifact(artifact, tmp_path)
+
+    failures, signatures, evidence = checker.check(artifact, plan, materialized)
+
+    assert failures == []
+    assert signatures == []
+    assert evidence["passed"] is True
+    assert set(evidence["capabilities"]) == {
+        "cap_service_api",
+        "cap_domain",
+        "cap_storage",
+        "cap_auth",
+        "cap_rate_limit",
+        "cap_audit",
+        "cap_observability",
+    }
+
+
+def test_missing_capability_module_fails_closed(production_service_forge_pipeline, tmp_path):
+    checker = CapabilityContractChecker()
+    artifact = copy.deepcopy(production_service_forge_pipeline["artifact"])
+    plan = production_service_forge_pipeline["plan"]
+    artifact.files = [generated for generated in artifact.files if generated.path != "src/auth.py"]
+    materialized = _materialize_artifact(artifact, tmp_path)
+
+    failures, signatures, evidence = checker.check(artifact, plan, materialized)
+
+    assert failures
+    assert "missing_capability" in signatures
+    assert evidence["capabilities"]["cap_auth"]["file_exists"] is False
+
+
+def test_capability_provenance_mismatch_fails_closed(production_service_forge_pipeline, tmp_path):
+    checker = CapabilityContractChecker()
+    artifact = copy.deepcopy(production_service_forge_pipeline["artifact"])
+    plan = production_service_forge_pipeline["plan"]
+    auth_file = _find_file(artifact, "src/auth.py")
+    assert auth_file is not None
+    auth_file.generated_from_plan_sections = [
+        token
+        for token in auth_file.generated_from_plan_sections
+        if token != "capability:cap_auth"
+    ]
+    materialized = _materialize_artifact(artifact, tmp_path)
+
+    failures, signatures, evidence = checker.check(artifact, plan, materialized)
+
+    assert failures
+    assert "capability_contract_violation" in signatures
+    assert evidence["capabilities"]["cap_auth"]["provenance_matches"] is False
 
 
 def test_validator_passes_when_all_layers_pass(forge_pipeline):
@@ -284,16 +367,17 @@ def test_quality_contract_violation_detected_for_hashed_service(tmp_path):
     assert isinstance(plan_output, FeasiblePlan)
 
     artifact = CoderStage().generate(plan_output)
-    service_file = _find_file(artifact, "src/service.py")
-    assert service_file is not None
-    service_file.content = (
+    auth_file = _find_file(artifact, "src/auth.py")
+    assert auth_file is not None
+    auth_file.content = (
         "import sqlite3\n"
-        "def init_db(db_path='service.db'):\n"
+        "from storage import init_db\n"
+        "def register_user(username, api_key, db_path='service.db'):\n"
         "    with sqlite3.connect(db_path) as conn:\n"
-        "        conn.execute('CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, api_key TEXT UNIQUE NOT NULL)')\n"
+        "        conn.execute('INSERT OR REPLACE INTO users(username, api_key_hash) VALUES (?, ?)', (username, api_key))\n"
         "        conn.commit()\n"
-        "def run():\n"
-        "    return 0\n"
+        "def authenticate(api_key, db_path='service.db'):\n"
+        "    return None\n"
     )
 
     result = ValidatorStage().validate(artifact, plan_output, spec)

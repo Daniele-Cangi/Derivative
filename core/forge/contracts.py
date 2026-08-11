@@ -107,6 +107,27 @@ class QualityContract:
 
 
 @dataclass
+class CapabilitySpec:
+    capability_id: str
+    capability_type: str
+    module_path: str
+    purpose: str
+    enabled: bool = True
+    interfaces: List[str] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
+    requirement_ids: List[str] = field(default_factory=list)
+    quality_fields: List[str] = field(default_factory=list)
+    config: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ImplementationBlueprint:
+    target_artifact_type: ArtifactTargetType = ArtifactTargetType.UNKNOWN
+    entrypoint_path: str = ""
+    capabilities: List[CapabilitySpec] = field(default_factory=list)
+
+
+@dataclass
 class BuildSpec:
     build_id: str
     raw_requirement: str
@@ -163,6 +184,7 @@ class FeasiblePlan:
     build_spec: BuildSpec
     architecture_summary: str
     quality_contract: QualityContract = field(default_factory=QualityContract)
+    implementation_blueprint: ImplementationBlueprint = field(default_factory=ImplementationBlueprint)
     file_tree_plan: List[PlanFile] = field(default_factory=list)
     interfaces: List[PlanInterface] = field(default_factory=list)
     required_tests: List[PlanTest] = field(default_factory=list)

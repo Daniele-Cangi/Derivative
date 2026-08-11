@@ -122,6 +122,24 @@ class CoderStage:
         interface_refs = self._interfaces_for_path(path, plan.interfaces)
         generated_from.extend(f"interface:{name}" for name in interface_refs)
         generated_from.extend(f"requirement:{requirement_id}" for requirement_id in plan_file.source_requirement_refs)
+        capability = next(
+            (
+                item
+                for item in plan.implementation_blueprint.capabilities
+                if item.module_path.replace("\\", "/").lower() == path.replace("\\", "/").lower()
+            ),
+            None,
+        )
+        if capability is not None:
+            generated_from.append(f"capability:{capability.capability_id}")
+            generated_from.extend(
+                f"capability_dependency:{dependency_id}"
+                for dependency_id in capability.dependencies
+            )
+            generated_from.extend(
+                f"quality_field:{field_name}"
+                for field_name in capability.quality_fields
+            )
         return GeneratedFile(
             path=path,
             content=content,
@@ -205,6 +223,7 @@ class CoderStage:
             "acceptance_criterion_ids": list(plan.acceptance_criterion_ids),
             "requirement_coverage": plan.requirement_coverage,
             "quality_contract": asdict(plan.quality_contract),
+            "implementation_blueprint": asdict(plan.implementation_blueprint),
             "validation_strategy": asdict(plan.validation_strategy),
             "runnable_entrypoints": runnable_entrypoints,
             "generated_file_count": len(generated_files) + 1,

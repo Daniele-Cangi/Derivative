@@ -23,8 +23,9 @@ It now includes **Forge**, a production-oriented orchestrator that turns natural
 - `core/forge/planner_stage.py`
 - `core/forge/coder_stage.py`: thin plan-to-artifact facade.
 - `core/forge/domains/`: deterministic CLI, service, and pipeline code-generation adapters plus registry.
+- `core/forge/capabilities/`: composable capability renderers used by domain adapters.
 - `core/forge/validator_stage.py`: thin validation orchestration facade.
-- `core/forge/validation/`: runtime, obligation, quality-contract, and adversarial validation components.
+- `core/forge/validation/`: runtime, obligation, capability-contract, quality-contract, and adversarial validation components.
 - `core/forge/packaging_stage.py`
 - `forge.py` (thin orchestrator)
 
@@ -79,11 +80,27 @@ Each requirement is compiled into typed atoms with:
 
 The selected adapter is recorded in `artifact_manifest.metadata.domain_adapter`. New domains must implement the same deterministic adapter contract instead of adding branches to `CoderStage`.
 
+## Capability Composition
+
+For service builds, `PlannerStage` compiles a typed `ImplementationBlueprint` made of `CapabilitySpec` records. Each capability declares its module path, interfaces, dependencies, linked requirement IDs, quality fields, and deterministic configuration.
+
+The service adapter composes these capabilities into separate modules:
+- API and entrypoint (`src/service.py`)
+- request workflow (`src/domain.py`)
+- persistence (`src/storage.py`)
+- authentication (`src/auth.py`)
+- rate limiting (`src/rate_limit.py`)
+- audit trail (`src/audit.py`)
+- observability (`src/observability.py`)
+
+Generated-file provenance records the producing capability, its dependencies, requirement IDs, and quality fields. The capability contract gate rejects missing modules, invalid dependency imports, blueprint/manifest drift, or provenance mismatches with `missing_capability` or `capability_contract_violation`.
+
 ### Validator hard gates
 Validation fails closed if:
 - an atomic requirement is omitted downstream (`semantic_omission`)
 - requirement coverage is missing (`missing_requirement_coverage`)
 - a universal/absolute constraint is unproven (`universal_constraint_unproven`)
+- a planned capability is absent or inconsistent (`missing_capability`, `capability_contract_violation`)
 - tests are superficial/non-semantic (`non_semantic_test`, `fake_acceptance_coverage`)
 
 ## Validation Layers

@@ -6,7 +6,9 @@ from audit.trail import AuditTrail
 from core.forge.contracts import (
     ArtifactTargetType,
     BuildSpec,
+    CapabilitySpec,
     FeasiblePlan,
+    ImplementationBlueprint,
     InfeasibilityCertificate,
     PlanFile,
     PlanInterface,
@@ -122,7 +124,8 @@ class PlannerStage:
         execution_evidence: Dict[str, Any],
     ) -> FeasiblePlan:
         architecture_summary = self._build_architecture_summary(build_spec)
-        file_tree = self._derive_file_tree_plan(build_spec)
+        implementation_blueprint = self._derive_implementation_blueprint(build_spec)
+        file_tree = self._derive_file_tree_plan(build_spec, implementation_blueprint)
         interfaces = self._derive_interfaces(build_spec)
         required_tests = self._derive_required_tests(build_spec)
         required_obligations = (
@@ -173,6 +176,7 @@ class PlannerStage:
             build_spec=build_spec,
             architecture_summary=architecture_summary,
             quality_contract=build_spec.quality_contract,
+            implementation_blueprint=implementation_blueprint,
             file_tree_plan=file_tree,
             interfaces=interfaces,
             required_tests=required_tests,
@@ -230,12 +234,19 @@ class PlannerStage:
                 )
             return "Python CLI with command entrypoint, processing pipeline, and output writer modules."
         if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
-            return "Python service architecture with API entrypoint, domain logic, and validation boundary."
+            return (
+                "Python service composed from separate API, domain, authentication, rate-limit, SQLite storage, "
+                "audit, and observability capability modules."
+            )
         if build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
             return "Python library architecture with public API module, core workflow module, and tests."
         return "Python executable architecture with explicit entrypoint, workflow module, and tests."
 
-    def _derive_file_tree_plan(self, build_spec: BuildSpec) -> List[PlanFile]:
+    def _derive_file_tree_plan(
+        self,
+        build_spec: BuildSpec,
+        implementation_blueprint: ImplementationBlueprint | None = None,
+    ) -> List[PlanFile]:
         if self._is_pipeline_build(build_spec):
             return [
                 PlanFile(
@@ -298,23 +309,24 @@ class PlannerStage:
                 ),
             ]
         if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
-            return [
+            blueprint = implementation_blueprint or self._derive_implementation_blueprint(build_spec)
+            planned_files = [
                 PlanFile(
-                    path="src/service.py",
-                    purpose="Service/API entrypoint.",
-                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/service.py"),
-                ),
-                PlanFile(
-                    path="src/domain.py",
-                    purpose="Domain logic and constraints.",
-                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/domain.py"),
-                ),
+                    path=capability.module_path,
+                    purpose=capability.purpose,
+                    source_requirement_refs=list(capability.requirement_ids),
+                )
+                for capability in blueprint.capabilities
+                if capability.enabled
+            ]
+            planned_files.append(
                 PlanFile(
                     path="tests/test_service.py",
                     purpose="Service contract tests.",
                     source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_service.py"),
-                ),
-            ]
+                )
+            )
+            return planned_files
         if build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
             return [
                 PlanFile(
@@ -386,6 +398,33 @@ class PlannerStage:
                     description="Writes summary CSV output with expiration flags.",
                 ),
             ]
+        if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
+            return [
+                PlanInterface(
+                    name="run",
+                    interface_type="entrypoint",
+                    signature="run() -> int",
+                    description="Initializes the composed service and returns a status code.",
+                ),
+                PlanInterface(
+                    name="authenticate",
+                    interface_type="function",
+                    signature="authenticate(api_key: str, db_path: str) -> str | None",
+                    description="Authenticates credentials under the selected auth capability.",
+                ),
+                PlanInterface(
+                    name="enforce_rate_limit",
+                    interface_type="function",
+                    signature="enforce_rate_limit(user_id: str, limit: int, now: float, db_path: str) -> bool",
+                    description="Applies the configured per-user or distributed rate-limit capability.",
+                ),
+                PlanInterface(
+                    name="handle_request",
+                    interface_type="function",
+                    signature="handle_request(api_key: str, payload: dict, db_path: str, now: float) -> tuple[int, dict]",
+                    description="Runs authentication, rate limiting, audit, and response behavior.",
+                ),
+            ]
         return [
             PlanInterface(
                 name="run",
@@ -439,6 +478,168 @@ class PlannerStage:
         if artifact_type == ArtifactTargetType.LIBRARY:
             return "python_library_package"
         return "python_package"
+
+    def _derive_implementation_blueprint(self, build_spec: BuildSpec) -> ImplementationBlueprint:
+        if build_spec.target_artifact_type != ArtifactTargetType.SERVICE:
+            entrypoint = "src/cli.py" if build_spec.target_artifact_type == ArtifactTargetType.CLI else ""
+            if build_spec.target_artifact_type == ArtifactTargetType.PIPELINE:
+                entrypoint = "src/pipeline.py"
+            return ImplementationBlueprint(
+                target_artifact_type=build_spec.target_artifact_type,
+                entrypoint_path=entrypoint,
+            )
+
+        quality = build_spec.quality_contract
+        definitions = [
+            (
+                "cap_service_api",
+                "service_api",
+                "src/service.py",
+                "Thin API entrypoint and public service exports.",
+                ["run", "create_app"],
+                ["cap_domain", "cap_observability", "cap_storage"],
+                ["health_endpoint", "overall_level"],
+                {"health_endpoint": quality.health_endpoint, "overall_level": quality.overall_level},
+            ),
+            (
+                "cap_domain",
+                "request_workflow",
+                "src/domain.py",
+                "Request workflow composed from auth, rate-limit, and audit capabilities.",
+                ["handle_request"],
+                ["cap_auth", "cap_rate_limit", "cap_audit"],
+                [],
+                {},
+            ),
+            (
+                "cap_storage",
+                "sqlite_storage",
+                "src/storage.py",
+                "SQLite schema, connections, and schema-version metadata.",
+                ["init_db"],
+                [],
+                ["secrets_in_plaintext", "rate_limit_persistent", "schema_versioned", "audit_trail"],
+                {
+                    "secrets_in_plaintext": quality.secrets_in_plaintext,
+                    "rate_limit_persistent": quality.rate_limit_persistent,
+                    "schema_versioned": quality.schema_versioned,
+                    "audit_trail": quality.audit_trail,
+                },
+            ),
+            (
+                "cap_auth",
+                "authentication",
+                "src/auth.py",
+                "Credential registration and authentication policy.",
+                ["register_user", "authenticate"],
+                ["cap_storage"],
+                ["auth_level", "secrets_in_plaintext"],
+                {"auth_level": quality.auth_level, "secrets_in_plaintext": quality.secrets_in_plaintext},
+            ),
+            (
+                "cap_rate_limit",
+                "rate_limit",
+                "src/rate_limit.py",
+                "Per-user, persistent, or distributed rate-limit policy.",
+                ["enforce_rate_limit"],
+                ["cap_storage"],
+                ["rate_limit_scope", "rate_limit_persistent"],
+                {
+                    "scope": quality.rate_limit_scope,
+                    "persistent": quality.rate_limit_persistent,
+                },
+            ),
+            (
+                "cap_audit",
+                "audit_trail",
+                "src/audit.py",
+                "Request audit persistence and structured event logging.",
+                ["record_event", "get_recent_events"],
+                ["cap_storage"],
+                ["audit_trail", "structured_logging"],
+                {"enabled": quality.audit_trail, "structured_logging": quality.structured_logging},
+            ),
+            (
+                "cap_observability",
+                "observability",
+                "src/observability.py",
+                "Health statistics and structured operational logging.",
+                ["health_status"],
+                ["cap_storage"],
+                ["health_endpoint", "structured_logging"],
+                {"health_endpoint": quality.health_endpoint, "structured_logging": quality.structured_logging},
+            ),
+        ]
+        capabilities = [
+            CapabilitySpec(
+                capability_id=capability_id,
+                capability_type=capability_type,
+                module_path=module_path,
+                purpose=purpose,
+                interfaces=interfaces,
+                dependencies=dependencies,
+                requirement_ids=self._capability_requirement_ids(build_spec, capability_type),
+                quality_fields=quality_fields,
+                config=config,
+            )
+            for (
+                capability_id,
+                capability_type,
+                module_path,
+                purpose,
+                interfaces,
+                dependencies,
+                quality_fields,
+                config,
+            ) in definitions
+        ]
+        return ImplementationBlueprint(
+            target_artifact_type=ArtifactTargetType.SERVICE,
+            entrypoint_path="src/service.py",
+            capabilities=capabilities,
+        )
+
+    def _capability_requirement_ids(self, build_spec: BuildSpec, capability_type: str) -> List[str]:
+        token_map = {
+            "service_api": ("service", "api", "rest", "endpoint", "health"),
+            "request_workflow": ("request", "service", "api"),
+            "sqlite_storage": (
+                "persist",
+                "persistent",
+                "storage",
+                "sqlite",
+                "database",
+                "schema",
+                "restart",
+                "restarts",
+                "survives restarts",
+            ),
+            "authentication": ("auth", "api key", "bcrypt", "jwt", "oauth", "credential"),
+            "rate_limit": ("rate limit", "per-user", "per user", "redis"),
+            "audit_trail": ("audit", "event log", "logging", "requests"),
+            "observability": ("health", "monitor", "observability", "logging"),
+        }
+        tokens = token_map.get(capability_type, ())
+        requirement_ids = [
+            atom.requirement_id
+            for atom in build_spec.requirement_atoms
+            if atom.category != "ambiguity"
+            and any(self._matches_capability_token(atom.text, token) for token in tokens)
+        ]
+        if capability_type == "service_api" and not requirement_ids:
+            requirement_ids = [
+                atom.requirement_id for atom in build_spec.requirement_atoms if atom.category != "ambiguity"
+            ]
+        return requirement_ids
+
+    @staticmethod
+    def _matches_capability_token(text: str, token: str) -> bool:
+        return bool(
+            re.search(
+                rf"(?<![a-z0-9_]){re.escape(token.lower())}(?![a-z0-9_])",
+                text.lower(),
+            )
+        )
 
     def _derive_minimal_relaxations(self, contradictions: List[str]) -> List[str]:
         relaxations: List[str] = []

@@ -361,22 +361,38 @@ def test_service_plan_generates_service_artifacts(service_feasible_plan):
 
     service_module = _find_generated_file(artifact, "src/service.py")
     domain_module = _find_generated_file(artifact, "src/domain.py")
+    storage_module = _find_generated_file(artifact, "src/storage.py")
+    auth_module = _find_generated_file(artifact, "src/auth.py")
+    rate_limit_module = _find_generated_file(artifact, "src/rate_limit.py")
+    audit_module = _find_generated_file(artifact, "src/audit.py")
+    observability_module = _find_generated_file(artifact, "src/observability.py")
     service_test = _find_generated_file(artifact, "tests/test_service.py")
     suite_test = _find_generated_file(artifact, "tests/test_suite_executes.py")
 
     assert service_module is not None
     assert domain_module is not None
+    assert storage_module is not None
+    assert auth_module is not None
+    assert rate_limit_module is not None
+    assert audit_module is not None
+    assert observability_module is not None
     assert service_test is not None
     assert suite_test is not None
 
-    assert "import sqlite3" in service_module.content
-    assert "def handle_request(" in service_module.content
-    assert "def enforce_rate_limit(" in service_module.content
-    assert "def authenticate(" in service_module.content
+    assert "import sqlite3" not in service_module.content
+    assert "from domain import handle_request" in service_module.content
+    assert "from auth import authenticate, register_user" in service_module.content
+    assert "from rate_limit import RATE_LIMIT_PER_MINUTE, enforce_rate_limit" in service_module.content
     assert "def run() -> int:" in service_module.content
     assert "create_app(" in service_module.content
 
-    assert "from service import" in domain_module.content
+    assert "def handle_request(" in domain_module.content
+    assert "from auth import authenticate" in domain_module.content
+    assert "def init_db(" in storage_module.content
+    assert "def authenticate(" in auth_module.content
+    assert "def enforce_rate_limit(" in rate_limit_module.content
+    assert "def record_event(" in audit_module.content
+    assert "def health_status(" in observability_module.content
     assert "import service" in service_test.content
     assert "import service" in suite_test.content
     assert "import cli" not in suite_test.content
@@ -400,24 +416,53 @@ def test_production_service_quality_contract_changes_generated_code(production_s
     artifact = coder.generate(production_service_feasible_plan)
 
     service_module = _find_generated_file(artifact, "src/service.py")
+    storage_module = _find_generated_file(artifact, "src/storage.py")
+    auth_module = _find_generated_file(artifact, "src/auth.py")
+    rate_limit_module = _find_generated_file(artifact, "src/rate_limit.py")
+    audit_module = _find_generated_file(artifact, "src/audit.py")
     suite_test = _find_generated_file(artifact, "tests/test_suite_executes.py")
 
     assert service_module is not None
+    assert storage_module is not None
+    assert auth_module is not None
+    assert rate_limit_module is not None
+    assert audit_module is not None
     assert suite_test is not None
 
-    assert "import bcrypt" in service_module.content
-    assert "FORGE_USE_BCRYPT" not in service_module.content
-    assert "sha256$" not in service_module.content
-    assert "api_key_hash TEXT UNIQUE NOT NULL" in service_module.content
-    assert "CREATE TABLE IF NOT EXISTS rate_limit_hits" in service_module.content
-    assert "_RATE_LIMIT_BUCKETS" not in service_module.content
-    assert "CREATE TABLE IF NOT EXISTS events" in service_module.content
-    assert "CREATE TABLE IF NOT EXISTS schema_meta" in service_module.content
-    assert "json.dumps" in service_module.content
+    assert "import bcrypt" in auth_module.content
+    assert "bcrypt.checkpw" in auth_module.content
+    assert "FORGE_USE_BCRYPT" not in auth_module.content
+    assert "sha256$" not in auth_module.content
+    assert "api_key_hash TEXT UNIQUE NOT NULL" in storage_module.content
+    assert "CREATE TABLE IF NOT EXISTS rate_limit_hits" in storage_module.content
+    assert "_RATE_LIMIT_BUCKETS" not in rate_limit_module.content
+    assert "CREATE TABLE IF NOT EXISTS events" in storage_module.content
+    assert "CREATE TABLE IF NOT EXISTS schema_meta" in storage_module.content
+    assert "INSERT INTO events" in audit_module.content
+    assert "json.dumps" in audit_module.content
     assert "@app.get('/health')" in service_module.content
 
     assert "def test_integration_flow_handles_valid_request" in suite_test.content
     assert "def test_audit_trail_records_requests" in suite_test.content
+
+    blueprint = production_service_feasible_plan.implementation_blueprint
+    capability_ids = {capability.capability_id for capability in blueprint.capabilities}
+    assert capability_ids == {
+        "cap_service_api",
+        "cap_domain",
+        "cap_storage",
+        "cap_auth",
+        "cap_rate_limit",
+        "cap_audit",
+        "cap_observability",
+    }
+    assert artifact.artifact_manifest["implementation_blueprint"]["entrypoint_path"] == "src/service.py"
+    for capability in blueprint.capabilities:
+        generated = _find_generated_file(artifact, capability.module_path)
+        assert generated is not None
+        assert f"capability:{capability.capability_id}" in generated.generated_from_plan_sections
+        for quality_field in capability.quality_fields:
+            assert f"quality_field:{quality_field}" in generated.generated_from_plan_sections
 
 
 def test_pipeline_mode_generates_pipeline_artifacts_and_respects_entrypoint_contract(pipeline_feasible_plan):

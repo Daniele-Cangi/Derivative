@@ -50,6 +50,16 @@ def test_extract_quality_contract_for_production_service_requirement():
     assert qc.integration_tests is True
     assert 8 <= qc.overall_level <= 9
 
+    atoms_by_text = {atom.text.lower(): atom for atom in spec.requirement_atoms}
+    assert atoms_by_text["survives restarts"].category == "quality"
+    assert atoms_by_text["a full audit trail of all requests"].category == "quality"
+    assert atoms_by_text["structured json logging"].category == "quality"
+    assert all(
+        atom.strength != "ambiguous"
+        for atom in spec.requirement_atoms
+        if any(token in atom.text.lower() for token in ("restart", "audit", "logging"))
+    )
+
 
 def test_pipeline_requirement_is_typed_and_gets_software_build_obligations():
     spec = RequirementCompiler().compile(PIPELINE_REQUIREMENT)

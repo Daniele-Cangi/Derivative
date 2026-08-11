@@ -6,7 +6,9 @@ from core.forge.contracts import (
     AcceptanceContract,
     ArtifactTargetType,
     BuildSpec,
+    CapabilitySpec,
     FeasiblePlan,
+    ImplementationBlueprint,
     InfeasibilityCertificate,
     ObligationContract,
     PlanFile,
@@ -34,6 +36,12 @@ PIPELINE_REQUIREMENT = (
     "validates each row against a configurable schema, persists valid records to SQLite with full audit trail, "
     "rejects and quarantines invalid rows with structured error logging, and exposes a REST health endpoint "
     "showing pipeline statistics."
+)
+
+PRODUCTION_SERVICE_REQUIREMENT = (
+    "Build a production-grade Python REST microservice with hashed API keys using bcrypt, "
+    "persistent per-user rate limiting that survives restarts, a full audit trail of all requests, "
+    "structured JSON logging, and integration tests."
 )
 
 
@@ -76,6 +84,48 @@ def test_requirement_compiler_and_planner_return_feasible_plan(tmp_path):
     assert output.validation_strategy.layer1_checks
     assert output.validation_strategy.layer2_checks
     assert output.validation_strategy.layer3_checks
+
+
+def test_service_plan_contains_typed_capability_blueprint(tmp_path):
+    build_spec = RequirementCompiler().compile(PRODUCTION_SERVICE_REQUIREMENT)
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert isinstance(output.implementation_blueprint, ImplementationBlueprint)
+    assert output.implementation_blueprint.target_artifact_type == ArtifactTargetType.SERVICE
+    assert output.implementation_blueprint.entrypoint_path == "src/service.py"
+    assert all(isinstance(capability, CapabilitySpec) for capability in output.implementation_blueprint.capabilities)
+
+    capability_ids = {
+        capability.capability_id for capability in output.implementation_blueprint.capabilities
+    }
+    assert capability_ids == {
+        "cap_service_api",
+        "cap_domain",
+        "cap_storage",
+        "cap_auth",
+        "cap_rate_limit",
+        "cap_audit",
+        "cap_observability",
+    }
+    assert all(
+        dependency in capability_ids
+        for capability in output.implementation_blueprint.capabilities
+        for dependency in capability.dependencies
+    )
+    capabilities_by_id = {
+        capability.capability_id: capability
+        for capability in output.implementation_blueprint.capabilities
+    }
+    assert "R002" in capabilities_by_id["cap_storage"].requirement_ids
+    assert "R003" in capabilities_by_id["cap_audit"].requirement_ids
+    assert "R004" in capabilities_by_id["cap_observability"].requirement_ids
+    assert "R002" not in capabilities_by_id["cap_service_api"].requirement_ids
+    assert "R003" not in capabilities_by_id["cap_rate_limit"].requirement_ids
+    planned_paths = {plan_file.path for plan_file in output.file_tree_plan}
+    assert {
+        capability.module_path for capability in output.implementation_blueprint.capabilities
+    }.issubset(planned_paths)
 
 
 def test_requirement_compiler_and_planner_return_infeasibility_certificate(tmp_path):

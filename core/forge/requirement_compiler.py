@@ -603,7 +603,23 @@ class RequirementCompiler:
             "for all",
         )
         validation_tokens = ("test", "tests", "malformed", "invalid", "reject", "validate", "verif")
-        quality_tokens = ("latency", "performance", "memory", "secure", "security", "reliable", "scalable")
+        quality_tokens = (
+            "latency",
+            "performance",
+            "memory",
+            "secure",
+            "security",
+            "reliable",
+            "scalable",
+            "persistent",
+            "survives restart",
+            "audit",
+            "logging",
+            "health",
+            "monitoring",
+            "observability",
+            "production-grade",
+        )
         comparator_pattern = re.compile(
             r"\b(exactly|strictly|at least|at most|no more than|does not exceed|less than|greater than)\b",
             re.IGNORECASE,
