@@ -29,6 +29,13 @@ CONTRADICTORY_REQUIREMENT = (
     "and the total number of edges does not exceed 3."
 )
 
+PIPELINE_REQUIREMENT = (
+    "Build a production-grade Python data pipeline that reads CSV files from a watched directory, "
+    "validates each row against a configurable schema, persists valid records to SQLite with full audit trail, "
+    "rejects and quarantines invalid rows with structured error logging, and exposes a REST health endpoint "
+    "showing pipeline statistics."
+)
+
 
 def _build_planner(tmp_path: Path) -> PlannerStage:
     return PlannerStage(
@@ -320,3 +327,20 @@ def test_planner_surfaces_execution_warnings_in_plan_notes():
 
     assert isinstance(output, FeasiblePlan)
     assert any("Execution warning: audit_log_failed:cycle=1" in note for note in output.implementation_notes)
+
+
+def test_pipeline_requirement_generates_pipeline_plan_shape(tmp_path):
+    compiler = RequirementCompiler()
+    build_spec = compiler.compile(PIPELINE_REQUIREMENT)
+    planner = _build_planner(tmp_path)
+
+    output = planner.plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert "data pipeline" in output.architecture_summary.lower()
+    planned_paths = {item.path for item in output.file_tree_plan}
+    assert "src/pipeline.py" in planned_paths
+    assert "src/watcher.py" in planned_paths
+    assert "src/validator.py" in planned_paths
+    assert "src/quarantine.py" in planned_paths
+    assert any(interface.name == "run" for interface in output.interfaces)

@@ -33,6 +33,13 @@ PRODUCTION_SERVICE_REQUIREMENT = (
     "structured JSON logging, and integration tests."
 )
 
+PIPELINE_REQUIREMENT = (
+    "Build a production-grade Python data pipeline that reads CSV files from a watched directory, "
+    "validates each row against a configurable schema, persists valid records to SQLite with full audit trail, "
+    "rejects and quarantines invalid rows with structured error logging, and exposes a REST health endpoint "
+    "showing pipeline statistics."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -87,6 +94,22 @@ def production_service_feasible_plan(tmp_path_factory) -> FeasiblePlan:
     root = tmp_path_factory.mktemp("forge_coder_stage_service_production")
     compiler = RequirementCompiler()
     spec = compiler.compile(PRODUCTION_SERVICE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(root / "forge_audit.json"),
+        memory_file=str(root / "forge_memory.json"),
+        gene_pool_file=str(root / "forge_gene_pool.json"),
+    )
+    output = planner.plan(spec)
+    assert isinstance(output, FeasiblePlan)
+    return output
+
+
+@pytest.fixture(scope="module")
+def pipeline_feasible_plan(tmp_path_factory) -> FeasiblePlan:
+    root = tmp_path_factory.mktemp("forge_coder_stage_pipeline")
+    compiler = RequirementCompiler()
+    spec = compiler.compile(PIPELINE_REQUIREMENT)
     planner = PlannerStage(
         execution_mode="local-only",
         audit_log_file=str(root / "forge_audit.json"),
@@ -355,3 +378,31 @@ def test_production_service_quality_contract_changes_generated_code(production_s
 
     assert "def test_integration_flow_handles_valid_request" in suite_test.content
     assert "def test_audit_trail_records_requests" in suite_test.content
+
+
+def test_pipeline_mode_generates_pipeline_artifacts_and_respects_entrypoint_contract(pipeline_feasible_plan):
+    coder = CoderStage()
+    artifact = coder.generate(pipeline_feasible_plan)
+
+    pipeline_module = _find_generated_file(artifact, "src/pipeline.py")
+    watcher_module = _find_generated_file(artifact, "src/watcher.py")
+    validator_module = _find_generated_file(artifact, "src/validator.py")
+    quarantine_module = _find_generated_file(artifact, "src/quarantine.py")
+
+    assert pipeline_module is not None
+    assert watcher_module is not None
+    assert validator_module is not None
+    assert quarantine_module is not None
+
+    assert "from watcher import discover_csv_files" in pipeline_module.content
+    assert "from validator import DEFAULT_SCHEMA, validate_row" in pipeline_module.content
+    assert "from quarantine import quarantine_row" in pipeline_module.content
+    assert "INSERT INTO audit_events" in pipeline_module.content
+    assert "@app.get('/health')" in pipeline_module.content
+
+    assert "def run(" in pipeline_module.content
+    assert "def main(" not in pipeline_module.content
+
+    assert "import contracts_csv" not in pipeline_module.content
+    assert "import expiration_rules" not in pipeline_module.content
+    assert "import summary_writer" not in pipeline_module.content

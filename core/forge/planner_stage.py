@@ -216,6 +216,11 @@ class PlannerStage:
         )
 
     def _build_architecture_summary(self, build_spec: BuildSpec) -> str:
+        if self._is_pipeline_build(build_spec):
+            return (
+                "Python data pipeline with watched-directory ingestion, configurable row-schema validation, "
+                "quarantine handling for invalid rows, SQLite persistence with audit trail, and REST health stats."
+            )
         goals = " ".join(build_spec.functional_goals).lower()
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
             if "csv" in goals and "expiration" in goals:
@@ -231,6 +236,34 @@ class PlannerStage:
         return "Python executable architecture with explicit entrypoint, workflow module, and tests."
 
     def _derive_file_tree_plan(self, build_spec: BuildSpec) -> List[PlanFile]:
+        if self._is_pipeline_build(build_spec):
+            return [
+                PlanFile(
+                    path="src/pipeline.py",
+                    purpose="Pipeline orchestration entrypoint and health stats.",
+                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/pipeline.py"),
+                ),
+                PlanFile(
+                    path="src/watcher.py",
+                    purpose="Watched-directory file discovery and polling behavior.",
+                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/watcher.py"),
+                ),
+                PlanFile(
+                    path="src/validator.py",
+                    purpose="Configurable schema validation for incoming rows.",
+                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/validator.py"),
+                ),
+                PlanFile(
+                    path="src/quarantine.py",
+                    purpose="Quarantine handler and structured JSON error logging.",
+                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/quarantine.py"),
+                ),
+                PlanFile(
+                    path="tests/test_pipeline.py",
+                    purpose="End-to-end pipeline behavior tests.",
+                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_pipeline.py"),
+                ),
+            ]
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
             return [
                 PlanFile(
@@ -314,6 +347,15 @@ class PlannerStage:
         ]
 
     def _derive_interfaces(self, build_spec: BuildSpec) -> List[PlanInterface]:
+        if self._is_pipeline_build(build_spec):
+            return [
+                PlanInterface(
+                    name="run",
+                    interface_type="entrypoint",
+                    signature="run() -> int",
+                    description="Runs one polling cycle of the data pipeline and returns status code.",
+                )
+            ]
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
             return [
                 PlanInterface(
@@ -450,6 +492,25 @@ class PlannerStage:
         ids: List[str] = []
         for atom in build_spec.requirement_atoms:
             lowered_atom = atom.text.lower()
+            if lowered_path.endswith("src/pipeline.py"):
+                if any(
+                    token in lowered_atom
+                    for token in ("pipeline", "watch", "health", "stats", "ingest", "persist", "sqlite")
+                ):
+                    ids.append(atom.requirement_id)
+                    continue
+            if lowered_path.endswith("src/watcher.py"):
+                if any(token in lowered_atom for token in ("watch", "directory", "csv", "poll")):
+                    ids.append(atom.requirement_id)
+                    continue
+            if lowered_path.endswith("src/validator.py"):
+                if any(token in lowered_atom for token in ("validate", "schema", "row", "invalid", "malformed")):
+                    ids.append(atom.requirement_id)
+                    continue
+            if lowered_path.endswith("src/quarantine.py"):
+                if any(token in lowered_atom for token in ("quarantine", "reject", "error", "invalid")):
+                    ids.append(atom.requirement_id)
+                    continue
             if lowered_path in {"src/cli.py", "src/main.py"} and atom.category != "ambiguity":
                 ids.append(atom.requirement_id)
                 continue
@@ -478,6 +539,25 @@ class PlannerStage:
             if item not in deduped:
                 deduped.append(item)
         return deduped
+
+    def _is_pipeline_build(self, build_spec: BuildSpec) -> bool:
+        combined = " ".join(
+            [
+                build_spec.normalized_requirement.lower(),
+                " ".join(goal.lower() for goal in build_spec.functional_goals),
+                " ".join(atom.text.lower() for atom in build_spec.requirement_atoms),
+            ]
+        )
+        pipeline_tokens = (
+            "pipeline",
+            "data pipeline",
+            "watched directory",
+            "validate each row",
+            "validates each row",
+            "schema validation",
+            "quarantine",
+        )
+        return any(token in combined for token in pipeline_tokens)
 
     def _build_requirement_coverage(
         self,

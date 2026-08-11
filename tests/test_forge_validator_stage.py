@@ -29,6 +29,13 @@ PRODUCTION_SERVICE_REQUIREMENT = (
     "structured JSON logging, and integration tests."
 )
 
+PIPELINE_REQUIREMENT = (
+    "Build a production-grade Python data pipeline that reads CSV files from a watched directory, "
+    "validates each row against a configurable schema, persists valid records to SQLite with full audit trail, "
+    "rejects and quarantines invalid rows with structured error logging, and exposes a REST health endpoint "
+    "showing pipeline statistics."
+)
+
 
 @pytest.fixture(scope="module")
 def forge_pipeline(tmp_path_factory):
@@ -291,3 +298,23 @@ def test_quality_contract_violation_when_bcrypt_not_available(tmp_path, monkeypa
     assert result.passed is False
     assert "quality_contract_violation" in result.failure_signatures
     assert any("bcrypt required but not available" in failure for failure in result.failures)
+
+
+def test_pipeline_artifact_avoids_cli_import_failure_and_superficial_stub(tmp_path):
+    compiler = RequirementCompiler()
+    spec = compiler.compile(PIPELINE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan_output = planner.plan(spec)
+    assert isinstance(plan_output, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan_output)
+    result = ValidatorStage().validate(artifact, plan_output, spec)
+
+    assert result.passed is True
+    assert "import_failure" not in result.failure_signatures
+    assert "superficial_stub" not in result.failure_signatures
