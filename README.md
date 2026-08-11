@@ -18,10 +18,13 @@ It now includes **Forge**, a production-oriented orchestrator that turns natural
 - `core/workspace.py`: artifact emission/export.
 
 ### Forge pipeline
+- `core/forge/contracts.py`: typed build, plan, code, validation, quality, and packaging contracts.
 - `core/forge/requirement_compiler.py`
 - `core/forge/planner_stage.py`
-- `core/forge/coder_stage.py`
-- `core/forge/validator_stage.py`
+- `core/forge/coder_stage.py`: thin plan-to-artifact facade.
+- `core/forge/domains/`: deterministic CLI, service, and pipeline code-generation adapters plus registry.
+- `core/forge/validator_stage.py`: thin validation orchestration facade.
+- `core/forge/validation/`: runtime, obligation, quality-contract, and adversarial validation components.
 - `core/forge/packaging_stage.py`
 - `forge.py` (thin orchestrator)
 
@@ -65,6 +68,17 @@ Each requirement is compiled into typed atoms with:
 - `PlanTest.requirement_ids` keeps test-to-requirement traceability.
 - `CodeArtifact` provenance includes `requirement:<id>` tags.
 
+## Quality Contracts and Domain Adapters
+
+`RequirementCompiler` extracts a typed `QualityContract` for security, rate limiting, persistence, auditability, observability, and test depth. The contract is propagated through planning, recorded in the artifact manifest, and checked against generated source and executed tests before verification.
+
+`CoderStage` selects a domain adapter from typed plan structure, never from evolutionary seeds or freeform generation state. Current adapters are:
+- `cli`
+- `service`
+- `pipeline`
+
+The selected adapter is recorded in `artifact_manifest.metadata.domain_adapter`. New domains must implement the same deterministic adapter contract instead of adding branches to `CoderStage`.
+
 ### Validator hard gates
 Validation fails closed if:
 - an atomic requirement is omitted downstream (`semantic_omission`)
@@ -74,7 +88,7 @@ Validation fails closed if:
 
 ## Validation Layers
 
-`ValidatorStage` enforces 3 layers:
+`ValidatorStage` composes independent runtime, obligation, quality, and adversarial components and enforces 3 layers:
 1. syntax/import/build/run checks
 2. obligations/tests/acceptance checks
 3. adversarial checks (manifest/provenance/entrypoint/superficiality)

@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 from core.forge.coder_stage import CoderStage, MalformedPlanError
-from core.forge.contracts import CodeArtifact, FeasiblePlan, PlanFile, PlanInterface, PlanTest
+from core.forge.contracts import ArtifactTargetType, CodeArtifact, FeasiblePlan, PlanFile, PlanInterface, PlanTest
+from core.forge.domains.registry import DomainAdapterRegistry
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 
@@ -126,6 +127,45 @@ def _find_generated_file(artifact: CodeArtifact, path: str):
         if generated_file.path == path:
             return generated_file
     return None
+
+
+def test_domain_registry_routes_typed_plans(
+    feasible_plan,
+    service_feasible_plan,
+    pipeline_feasible_plan,
+):
+    registry = DomainAdapterRegistry()
+
+    assert registry.select(feasible_plan).name == "cli"
+    assert registry.select(service_feasible_plan).name == "service"
+    assert registry.select(pipeline_feasible_plan).name == "pipeline"
+
+    assert CoderStage().generate(feasible_plan).artifact_manifest["metadata"]["domain_adapter"] == "cli"
+    assert CoderStage().generate(service_feasible_plan).artifact_manifest["metadata"]["domain_adapter"] == "service"
+    assert CoderStage().generate(pipeline_feasible_plan).artifact_manifest["metadata"]["domain_adapter"] == "pipeline"
+
+
+def test_domain_registry_uses_typed_plan_instead_of_raw_requirement(pipeline_feasible_plan):
+    misleading_spec = replace(
+        pipeline_feasible_plan.build_spec,
+        raw_requirement="Build a Python CLI for contracts CSV files.",
+        normalized_requirement="Build a Python CLI for contracts CSV files.",
+        target_artifact_type=ArtifactTargetType.PIPELINE,
+    )
+    typed_pipeline_plan = replace(pipeline_feasible_plan, build_spec=misleading_spec)
+
+    assert DomainAdapterRegistry().select(typed_pipeline_plan).name == "pipeline"
+
+    path_driven_spec = replace(misleading_spec, target_artifact_type=ArtifactTargetType.UNKNOWN)
+    windows_path_plan = replace(
+        typed_pipeline_plan,
+        build_spec=path_driven_spec,
+        file_tree_plan=[
+            replace(plan_file, path=plan_file.path.replace("/", "\\"))
+            for plan_file in typed_pipeline_plan.file_tree_plan
+        ],
+    )
+    assert DomainAdapterRegistry().select(windows_path_plan).name == "pipeline"
 
 
 def test_coder_stage_returns_typed_code_artifact(feasible_plan):
@@ -393,6 +433,7 @@ def test_pipeline_mode_generates_pipeline_artifacts_and_respects_entrypoint_cont
     assert watcher_module is not None
     assert validator_module is not None
     assert quarantine_module is not None
+    assert artifact.runnable_entrypoints == ["src/pipeline.py"]
 
     assert "from watcher import discover_csv_files" in pipeline_module.content
     assert "from validator import DEFAULT_SCHEMA, validate_row" in pipeline_module.content

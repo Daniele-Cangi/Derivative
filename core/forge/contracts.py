@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 class ArtifactTargetType(str, Enum):
     CLI = "cli"
     LIBRARY = "library"
+    PIPELINE = "pipeline"
     SERVICE = "service"
     SCRIPT = "script"
     UNKNOWN = "unknown"

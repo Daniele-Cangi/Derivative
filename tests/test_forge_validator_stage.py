@@ -10,6 +10,9 @@ from core.forge.contracts import CodeArtifact, FeasiblePlan, ValidationArtifact
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
+from core.forge.validation.adversarial import AdversarialValidationLayer
+from core.forge.validation.obligations import ObligationValidationLayer
+from core.forge.validation.runtime import RuntimeValidationLayer
 
 
 FEASIBLE_REQUIREMENT = (
@@ -61,11 +64,40 @@ def forge_pipeline(tmp_path_factory):
     }
 
 
+@pytest.fixture(scope="module")
+def pipeline_forge_pipeline(tmp_path_factory):
+    root = tmp_path_factory.mktemp("forge_validator_pipeline")
+    spec = RequirementCompiler().compile(PIPELINE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(root / "forge_audit.json"),
+        memory_file=str(root / "forge_memory.json"),
+        gene_pool_file=str(root / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+    return {
+        "build_spec": spec,
+        "plan": plan,
+        "artifact": artifact,
+        "validator": ValidatorStage(),
+    }
+
+
 def _find_file(artifact: CodeArtifact, path: str):
     for generated in artifact.files:
         if generated.path == path:
             return generated
     return None
+
+
+def test_validator_stage_is_a_thin_composition_root():
+    validator = ValidatorStage()
+
+    assert isinstance(validator.runtime_layer, RuntimeValidationLayer)
+    assert isinstance(validator.obligation_layer, ObligationValidationLayer)
+    assert isinstance(validator.adversarial_layer, AdversarialValidationLayer)
 
 
 def test_validator_passes_when_all_layers_pass(forge_pipeline):
@@ -300,21 +332,70 @@ def test_quality_contract_violation_when_bcrypt_not_available(tmp_path, monkeypa
     assert any("bcrypt required but not available" in failure for failure in result.failures)
 
 
-def test_pipeline_artifact_avoids_cli_import_failure_and_superficial_stub(tmp_path):
-    compiler = RequirementCompiler()
-    spec = compiler.compile(PIPELINE_REQUIREMENT)
-    planner = PlannerStage(
-        execution_mode="local-only",
-        audit_log_file=str(tmp_path / "forge_audit.json"),
-        memory_file=str(tmp_path / "forge_memory.json"),
-        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+def test_pipeline_artifact_avoids_cli_import_failure_and_superficial_stub(pipeline_forge_pipeline):
+    result = pipeline_forge_pipeline["validator"].validate(
+        pipeline_forge_pipeline["artifact"],
+        pipeline_forge_pipeline["plan"],
+        pipeline_forge_pipeline["build_spec"],
     )
-    plan_output = planner.plan(spec)
-    assert isinstance(plan_output, FeasiblePlan)
-
-    artifact = CoderStage().generate(plan_output)
-    result = ValidatorStage().validate(artifact, plan_output, spec)
 
     assert result.passed is True
     assert "import_failure" not in result.failure_signatures
     assert "superficial_stub" not in result.failure_signatures
+    assert result.layer1_result is not None
+    entrypoint = result.layer1_result.evidence["entrypoint_results"]["src/pipeline.py"]
+    assert entrypoint["executed"] is True
+    quality_checks = result.layer2_result.evidence["quality_contract_checks"]
+    assert quality_checks["passed"] is True
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new", "expected_signature"),
+    [
+        (
+            "src/pipeline.py",
+            "INSERT INTO audit_events",
+            "INSERT INTO removed_audit_events",
+            "quality_contract_violation",
+        ),
+        (
+            "src/pipeline.py",
+            "@app.get('/health')",
+            "@app.get('/status')",
+            "quality_contract_violation",
+        ),
+        (
+            "src/quarantine.py",
+            "def quarantine_row(",
+            "def disabled_quarantine_row(",
+            "import_failure",
+        ),
+        (
+            "src/pipeline.py",
+            "def run(",
+            "def disabled_run(",
+            "missing_entrypoint",
+        ),
+    ],
+)
+def test_pipeline_mutations_fail_closed(
+    pipeline_forge_pipeline,
+    path,
+    old,
+    new,
+    expected_signature,
+):
+    artifact = copy.deepcopy(pipeline_forge_pipeline["artifact"])
+    generated = _find_file(artifact, path)
+    assert generated is not None
+    assert old in generated.content
+    generated.content = generated.content.replace(old, new, 1)
+
+    result = pipeline_forge_pipeline["validator"].validate(
+        artifact,
+        pipeline_forge_pipeline["plan"],
+        pipeline_forge_pipeline["build_spec"],
+    )
+
+    assert result.passed is False
+    assert expected_signature in result.failure_signatures

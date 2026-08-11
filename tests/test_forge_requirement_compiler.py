@@ -1,3 +1,4 @@
+from core.forge.contracts import ArtifactTargetType
 from core.forge.requirement_compiler import RequirementCompiler
 
 
@@ -11,6 +12,13 @@ PRODUCTION_SERVICE_REQUIREMENT = (
     "using bcrypt, persistent per-user rate limiting that survives restarts, "
     "a full audit trail of all requests, structured JSON logging, "
     "and integration tests."
+)
+
+PIPELINE_REQUIREMENT = (
+    "Build a production-grade Python data pipeline that reads CSV files from a watched directory, "
+    "validates each row against a configurable schema, persists valid records to SQLite with full audit trail, "
+    "rejects and quarantines invalid rows with structured error logging, and exposes a REST health endpoint "
+    "showing pipeline statistics."
 )
 
 
@@ -41,3 +49,15 @@ def test_extract_quality_contract_for_production_service_requirement():
     assert qc.structured_logging is True
     assert qc.integration_tests is True
     assert 8 <= qc.overall_level <= 9
+
+
+def test_pipeline_requirement_is_typed_and_gets_software_build_obligations():
+    spec = RequirementCompiler().compile(PIPELINE_REQUIREMENT)
+
+    assert spec.target_artifact_type == ArtifactTargetType.PIPELINE
+    assert spec.obligation_contract is not None
+    assert spec.obligation_contract.mode == "software_build"
+    assert spec.obligation_contract.required_fields
+    assert spec.quality_contract.audit_trail is True
+    assert spec.quality_contract.health_endpoint is True
+    assert spec.quality_contract.structured_logging is True

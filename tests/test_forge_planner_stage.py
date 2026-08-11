@@ -337,6 +337,10 @@ def test_pipeline_requirement_generates_pipeline_plan_shape(tmp_path):
     output = planner.plan(build_spec)
 
     assert isinstance(output, FeasiblePlan)
+    assert output.build_spec.target_artifact_type == ArtifactTargetType.PIPELINE
+    assert output.obligation_mode == "software_build"
+    assert output.required_obligations
+    assert output.packaging_target == "python_pipeline_package"
     assert "data pipeline" in output.architecture_summary.lower()
     planned_paths = {item.path for item in output.file_tree_plan}
     assert "src/pipeline.py" in planned_paths

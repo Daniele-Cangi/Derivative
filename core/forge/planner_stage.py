@@ -432,6 +432,8 @@ class PlannerStage:
     def _packaging_target(self, artifact_type: ArtifactTargetType) -> str:
         if artifact_type == ArtifactTargetType.CLI:
             return "python_cli_package"
+        if artifact_type == ArtifactTargetType.PIPELINE:
+            return "python_pipeline_package"
         if artifact_type == ArtifactTargetType.SERVICE:
             return "python_service_package"
         if artifact_type == ArtifactTargetType.LIBRARY:

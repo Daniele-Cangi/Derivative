@@ -127,7 +127,17 @@ class RequirementCompiler:
             quality.audit_trail = True
 
         # Observability quality
-        if any(token in lowered for token in ("health check", "monitoring", "observability", "structured json logging", "structured logging")):
+        if any(
+            token in lowered
+            for token in (
+                "health check",
+                "monitoring",
+                "observability",
+                "structured json logging",
+                "structured logging",
+                "structured error logging",
+            )
+        ):
             quality.health_endpoint = True
             quality.structured_logging = True
         if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
@@ -343,6 +353,8 @@ class RequirementCompiler:
         lowered = requirement.lower()
         if re.search(r"\bcli\b|command[- ]line", lowered):
             return ArtifactTargetType.CLI
+        if re.search(r"\bdata\s+pipeline\b|\bpipeline\b", lowered):
+            return ArtifactTargetType.PIPELINE
         if re.search(r"\bservice\b|\bapi\b|\bserver\b", lowered):
             return ArtifactTargetType.SERVICE
         if re.search(r"\blibrary\b|\bpackage\b|\bsdk\b", lowered):
@@ -443,6 +455,7 @@ class RequirementCompiler:
             and target_artifact_type
             in {
                 ArtifactTargetType.CLI,
+                ArtifactTargetType.PIPELINE,
                 ArtifactTargetType.SERVICE,
                 ArtifactTargetType.LIBRARY,
                 ArtifactTargetType.SCRIPT,
