@@ -45,7 +45,11 @@ class BaseDomainAdapter:
         ]
         is_invoice = self._is_invoice_plan(plan)
         has_cli = "cli" in src_modules
-        has_main = "main" in src_modules
+        has_main = "main" in src_modules and any(
+            interface.interface_type == "cli_entrypoint"
+            or interface.name == "main"
+            for interface in plan.interfaces
+        )
         if has_cli or has_main:
             module_name = "cli" if has_cli else "main"
             if is_invoice:

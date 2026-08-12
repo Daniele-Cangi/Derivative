@@ -1,4 +1,5 @@
 import ast
+import copy
 import hashlib
 import json
 from dataclasses import asdict
@@ -17,6 +18,7 @@ from core.forge.contracts import (
 )
 from core.forge.domains.base import BaseDomainAdapter, DomainAdapterError
 from core.forge.domains.registry import DomainAdapterRegistry
+from core.forge.repair_backend import ArtifactRepairBackend
 
 
 class CoderStageError(Exception):
@@ -28,8 +30,13 @@ class MalformedPlanError(CoderStageError):
 
 
 class CoderStage:
-    def __init__(self, registry: DomainAdapterRegistry | None = None):
+    def __init__(
+        self,
+        registry: DomainAdapterRegistry | None = None,
+        repair_backend: ArtifactRepairBackend | None = None,
+    ):
         self.registry = registry or DomainAdapterRegistry()
+        self.repair_backend = repair_backend
 
     def generate(self, plan: FeasiblePlan) -> CodeArtifact:
         self._validate_plan(plan)
@@ -93,7 +100,6 @@ class CoderStage:
         validation: ValidationArtifact,
         directive: RepairDirective,
     ) -> RepairResult:
-        del validation
         previous_digest = self._artifact_digest(previous_artifact)
         if not directive.repairable:
             return RepairResult(
@@ -102,22 +108,112 @@ class CoderStage:
                 changed=False,
                 previous_digest=previous_digest,
                 repaired_digest=previous_digest,
+                stop_reason=directive.stop_reason,
             )
 
         canonical = self.generate(plan)
         changed_paths = self._changed_paths(previous_artifact, canonical)
-        if not changed_paths:
+        if changed_paths:
+            return self._finalize_repair(
+                plan=plan,
+                previous_artifact=previous_artifact,
+                repaired_artifact=canonical,
+                directive=directive,
+                changed_paths=changed_paths,
+                previous_digest=previous_digest,
+                backend_name="canonical",
+                backend_evidence={"strategy": "deterministic_plan_regeneration"},
+            )
+
+        if self.repair_backend is None:
             return RepairResult(
                 directive=directive,
                 artifact=previous_artifact,
                 changed=False,
                 previous_digest=previous_digest,
                 repaired_digest=previous_digest,
+                stop_reason="Canonical regeneration produced no material changes.",
             )
 
-        canonical.revision = max(1, previous_artifact.revision) + 1
-        canonical.parent_artifact_id = previous_artifact.artifact_id
-        canonical.artifact_id = f"{canonical.artifact_id}-r{canonical.revision:02d}"
+        try:
+            candidate = self.repair_backend.propose(
+                plan,
+                previous_artifact,
+                validation,
+                directive,
+            )
+        except Exception as exc:
+            return RepairResult(
+                directive=directive,
+                artifact=previous_artifact,
+                changed=False,
+                previous_digest=previous_digest,
+                repaired_digest=previous_digest,
+                backend_name=type(self.repair_backend).__name__,
+                backend_evidence={"error_type": type(exc).__name__},
+                stop_reason="Grounded repair backend failed before producing a candidate.",
+            )
+        candidate_evidence = dict(candidate.evidence)
+        candidate_evidence.setdefault("available", candidate.available)
+        candidate_evidence.setdefault("rejected_paths", list(candidate.rejected_paths))
+        revised = copy.deepcopy(previous_artifact)
+        files_by_path = {generated.path.replace("\\", "/"): generated for generated in revised.files}
+        allowed_targets = {
+            path.replace("\\", "/") for path in directive.target_paths
+        }
+        manifest_paths = {
+            path.replace("\\", "/") for path in revised.manifest_paths
+        }
+        backend_changed_paths: List[str] = []
+        for raw_path, content in candidate.files.items():
+            path = raw_path.replace("\\", "/")
+            generated = files_by_path.get(path)
+            if generated is None or path not in allowed_targets or path in manifest_paths:
+                continue
+            if generated.content == content:
+                continue
+            generated.content = content
+            backend_changed_paths.append(generated.path)
+
+        if not backend_changed_paths:
+            return RepairResult(
+                directive=directive,
+                artifact=previous_artifact,
+                changed=False,
+                previous_digest=previous_digest,
+                repaired_digest=previous_digest,
+                backend_name=candidate.backend_name,
+                backend_evidence=candidate_evidence,
+                stop_reason=candidate.stop_reason or "Backend revision produced no material changes.",
+            )
+
+        return self._finalize_repair(
+            plan=plan,
+            previous_artifact=previous_artifact,
+            repaired_artifact=revised,
+            directive=directive,
+            changed_paths=backend_changed_paths,
+            previous_digest=previous_digest,
+            backend_name=candidate.backend_name,
+            backend_evidence=candidate_evidence,
+        )
+
+    def _finalize_repair(
+        self,
+        plan: FeasiblePlan,
+        previous_artifact: CodeArtifact,
+        repaired_artifact: CodeArtifact,
+        directive: RepairDirective,
+        changed_paths: List[str],
+        previous_digest: str,
+        backend_name: str,
+        backend_evidence: Dict[str, object],
+    ) -> RepairResult:
+        repaired_artifact.revision = max(1, previous_artifact.revision) + 1
+        repaired_artifact.parent_artifact_id = previous_artifact.artifact_id
+        repaired_artifact.artifact_id = (
+            f"{self._artifact_id(plan.plan_id)}-r{repaired_artifact.revision:02d}"
+        )
         repair_record = {
             "repair_id": directive.repair_id,
             "attempt": directive.attempt,
@@ -129,40 +225,44 @@ class CoderStage:
             "changed_paths": list(changed_paths),
             "previous_artifact_id": previous_artifact.artifact_id,
             "previous_digest": previous_digest,
+            "backend_name": backend_name,
+            "backend_evidence": backend_evidence,
         }
-        canonical.repair_history = [*previous_artifact.repair_history, repair_record]
-        metadata = canonical.artifact_manifest.setdefault("metadata", {})
+        repaired_artifact.repair_history = [*previous_artifact.repair_history, repair_record]
+        metadata = repaired_artifact.artifact_manifest.setdefault("metadata", {})
         if isinstance(metadata, dict):
-            metadata["artifact_revision"] = canonical.revision
-            metadata["parent_artifact_id"] = canonical.parent_artifact_id
-            metadata["repair_history"] = list(canonical.repair_history)
+            metadata["artifact_revision"] = repaired_artifact.revision
+            metadata["parent_artifact_id"] = repaired_artifact.parent_artifact_id
+            metadata["repair_history"] = list(repaired_artifact.repair_history)
 
         manifest_file = next(
             (
                 generated
-                for generated in canonical.files
-                if generated.path in canonical.manifest_paths
+                for generated in repaired_artifact.files
+                if generated.path in repaired_artifact.manifest_paths
             ),
             None,
         )
         if manifest_file is not None:
             manifest_file.content = json.dumps(
-                canonical.artifact_manifest,
+                repaired_artifact.artifact_manifest,
                 indent=2,
                 sort_keys=True,
             )
             if manifest_file.path not in changed_paths:
                 changed_paths.append(manifest_file.path)
 
-        repaired_digest = self._artifact_digest(canonical)
+        repaired_digest = self._artifact_digest(repaired_artifact)
 
         return RepairResult(
             directive=directive,
-            artifact=canonical,
+            artifact=repaired_artifact,
             changed=True,
             changed_paths=sorted(changed_paths),
             previous_digest=previous_digest,
             repaired_digest=repaired_digest,
+            backend_name=backend_name,
+            backend_evidence=backend_evidence,
         )
 
     def _validate_plan(self, plan: FeasiblePlan) -> None:

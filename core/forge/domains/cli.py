@@ -10,8 +10,15 @@ class CliDomainAdapter(BaseDomainAdapter):
     def matches(self, plan: FeasiblePlan) -> bool:
         if plan.build_spec.target_artifact_type == ArtifactTargetType.CLI:
             return True
+        if plan.build_spec.target_artifact_type != ArtifactTargetType.UNKNOWN:
+            return False
         paths = {item.path.replace("\\", "/").lower() for item in plan.file_tree_plan}
-        return bool(paths & {"src/cli.py", "src/main.py"})
+        cli_modules = {
+            "src/contracts_csv.py",
+            "src/expiration_rules.py",
+            "src/summary_writer.py",
+        }
+        return "src/cli.py" in paths or cli_modules.issubset(paths)
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
         normalized = path.replace("\\", "/").lower()

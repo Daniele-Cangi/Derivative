@@ -5,7 +5,15 @@ from pathlib import Path
 import pytest
 
 from core.forge.coder_stage import CoderStage, MalformedPlanError
-from core.forge.contracts import ArtifactTargetType, CodeArtifact, FeasiblePlan, PlanFile, PlanInterface, PlanTest
+from core.forge.contracts import (
+    ArtifactTargetType,
+    CodeArtifact,
+    FeasiblePlan,
+    ImplementationBlueprint,
+    PlanFile,
+    PlanInterface,
+    PlanTest,
+)
 from core.forge.domains.registry import DomainAdapterRegistry
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
@@ -166,6 +174,52 @@ def test_domain_registry_uses_typed_plan_instead_of_raw_requirement(pipeline_fea
         ],
     )
     assert DomainAdapterRegistry().select(windows_path_plan).name == "pipeline"
+
+
+def test_script_main_path_does_not_route_to_cli_adapter(feasible_plan):
+    script_spec = replace(
+        feasible_plan.build_spec,
+        raw_requirement="Build a Python script with tests.",
+        normalized_requirement="Build a Python script with tests.",
+        target_artifact_type=ArtifactTargetType.SCRIPT,
+    )
+    script_plan = replace(
+        feasible_plan,
+        build_spec=script_spec,
+        architecture_summary="Python executable with explicit entrypoint and tests.",
+        implementation_blueprint=ImplementationBlueprint(
+            target_artifact_type=ArtifactTargetType.SCRIPT,
+            entrypoint_path="src/main.py",
+        ),
+        file_tree_plan=[
+            PlanFile(path="src/main.py", purpose="Executable workflow."),
+            PlanFile(path="tests/test_main.py", purpose="Workflow tests."),
+        ],
+        interfaces=[
+            PlanInterface(
+                name="run",
+                interface_type="entrypoint",
+                signature="run() -> int",
+            )
+        ],
+        required_tests=[
+            PlanTest(
+                test_name="test_main",
+                objective="Execute the script workflow.",
+            )
+        ],
+    )
+
+    assert DomainAdapterRegistry().select(script_plan).name == "generic"
+    artifact = CoderStage().generate(script_plan)
+    main_source = _find_generated_file(artifact, "src/main.py")
+    assert main_source is not None
+    assert "def run() -> int:" in main_source.content
+    assert "contracts_csv" not in main_source.content
+    generated_test = _find_generated_file(artifact, "tests/test_main.py")
+    assert generated_test is not None
+    assert "getattr(main, 'run', None)" in generated_test.content
+    assert "main.main(" not in generated_test.content
 
 
 def test_coder_stage_returns_typed_code_artifact(feasible_plan):

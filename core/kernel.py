@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import anthropic
 
@@ -93,6 +93,67 @@ class ReasoningKernel:
             draft_result,
             audit=audit,
         )
+
+    def propose_code_revision(
+        self,
+        repair_context: Dict[str, Any],
+        target_files: Dict[str, str],
+        lens_framings: List[CognitiveLens],
+    ) -> Dict[str, Any]:
+        """Return an untrusted file revision candidate for Forge validation."""
+        if not self.use_live_model or self.client is None:
+            return {
+                "status": "unavailable",
+                "files": [],
+                "reason": "Live model is unavailable in the selected execution mode.",
+            }
+
+        system_prompt = """You revise generated Python artifacts from validator evidence.
+Return exactly one JSON object with this structure:
+{
+  "status": "candidate",
+  "files": [{"path": "an allowed path", "content": "complete replacement content"}]
+}
+Only return complete replacements for supplied target files. Do not add files, alter paths, weaken requirements,
+remove tests, claim validation success, or include Markdown. Preserve public interfaces and plan constraints."""
+        lens_context = [
+            {
+                "name": framing.lens_name,
+                "framing": framing.framing,
+                "constraints": list(framing.constraints),
+                "blind_spots": list(framing.blind_spots),
+                "operator_primitives": list(framing.operator_primitives),
+            }
+            for framing in lens_framings
+        ]
+        request_payload = {
+            "repair_context": repair_context,
+            "cognitive_lenses": lens_context,
+            "allowed_target_files": target_files,
+        }
+        try:
+            response = self.client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=4000,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": json.dumps(request_payload, sort_keys=True),
+                    }
+                ],
+            )
+            data = extract_json_object(response.content[0].text)
+            data.setdefault("status", "candidate")
+            return data
+        except Exception as exc:
+            if self.allow_local_fallback:
+                return {
+                    "status": "unavailable",
+                    "files": [],
+                    "reason": f"Live revision failed: {type(exc).__name__}",
+                }
+            raise
 
     def _synthesize_with_live_model(
         self,

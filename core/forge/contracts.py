@@ -234,6 +234,16 @@ class RepairDirective:
 
 
 @dataclass
+class RepairPatchCandidate:
+    backend_name: str
+    files: Dict[str, str] = field(default_factory=dict)
+    evidence: Dict[str, Any] = field(default_factory=dict)
+    rejected_paths: List[str] = field(default_factory=list)
+    available: bool = True
+    stop_reason: str = ""
+
+
+@dataclass
 class CodeArtifact:
     artifact_id: str
     plan_id: str
@@ -256,6 +266,9 @@ class RepairResult:
     changed_paths: List[str] = field(default_factory=list)
     previous_digest: str = ""
     repaired_digest: str = ""
+    backend_name: str = "canonical"
+    backend_evidence: Dict[str, Any] = field(default_factory=dict)
+    stop_reason: str = ""
 
 
 @dataclass

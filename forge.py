@@ -23,6 +23,7 @@ from core.forge.contracts import (
 from core.forge.packaging_stage import PackagingStage
 from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
+from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
 
@@ -53,7 +54,17 @@ def run_forge(
     normalized_coder_attempts = max(1, int(max_coder_attempts))
     compiler = requirement_compiler or RequirementCompiler()
     planner = planner_stage or PlannerStage(execution_mode=execution_mode)
-    coder = coder_stage or CoderStage()
+    if coder_stage is not None:
+        coder = coder_stage
+    else:
+        repair_backend = None
+        if execution_mode != "local-only":
+            repair_backend = SubstrateRepairBackend(
+                execution_mode=execution_mode,
+                substrate=getattr(planner, "substrate", None),
+                kernel=getattr(planner, "kernel", None),
+            )
+        coder = CoderStage(repair_backend=repair_backend)
     validator = validator_stage or ValidatorStage()
     packager = packaging_stage or PackagingStage(output_root=packaging_output_root)
     repairs = repair_policy or RepairPolicy()
@@ -145,13 +156,25 @@ def run_forge(
                         "changed_paths": list(repair_result.changed_paths),
                         "previous_digest": repair_result.previous_digest,
                         "repaired_digest": repair_result.repaired_digest,
+                        "backend_name": repair_result.backend_name,
+                        "backend_evidence": repair_result.backend_evidence,
+                        "stop_reason": repair_result.stop_reason,
                     }
                     if not repair_result.changed:
                         validation = previous_validation
+                        repair_signature = "repair_no_change"
+                        if repair_result.backend_evidence.get("error_type"):
+                            repair_signature = "repair_backend_failure"
+                        elif (
+                            repair_result.backend_name != "canonical"
+                            and repair_result.backend_evidence.get("available") is False
+                        ):
+                            repair_signature = "repair_backend_unavailable"
                         _mark_repair_terminal(
                             validation,
-                            "repair_no_change",
-                            "Failure-guided repair produced no source, test, manifest, or provenance changes.",
+                            repair_signature,
+                            repair_result.stop_reason
+                            or "Failure-guided repair produced no source, test, manifest, or provenance changes.",
                             repair_trace,
                         )
                         force_terminal = True
