@@ -95,6 +95,9 @@ def test_package_manifest_includes_ids_and_validation_summary(forge_packaging_co
     assert manifest["build_id"] == forge_packaging_context["build_spec"].build_id
     assert manifest["plan_id"] == forge_packaging_context["plan"].plan_id
     assert manifest["artifact_id"] == forge_packaging_context["artifact"].artifact_id
+    assert manifest["artifact_revision"] == 1
+    assert manifest["parent_artifact_id"] is None
+    assert manifest["repair_history"] == []
     assert manifest["package_id"].startswith("pkg-")
     assert manifest["package_base_id"].startswith("pkg-")
     assert manifest["package_run_id"].startswith("pkg-")

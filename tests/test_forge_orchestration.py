@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from core.forge.contracts import (
@@ -16,6 +17,7 @@ from core.forge.contracts import (
     PlanFile,
     PlanInterface,
     PlanTest,
+    RepairResult,
     ValidationArtifact,
     ValidationStrategy,
 )
@@ -65,6 +67,23 @@ class _StubCoderStage:
     def generate(self, plan: FeasiblePlan) -> CodeArtifact:
         self.called += 1
         return self.code_artifact
+
+
+class _RepairingStubCoderStage(_StubCoderStage):
+    def repair(self, plan, previous_artifact, validation, directive):
+        self.called += 1
+        repaired = _code_artifact()
+        repaired.artifact_id = f"{previous_artifact.artifact_id}-r02"
+        repaired.revision = 2
+        repaired.parent_artifact_id = previous_artifact.artifact_id
+        return RepairResult(
+            directive=directive,
+            artifact=repaired,
+            changed=True,
+            changed_paths=["src/cli.py"],
+            previous_digest="before",
+            repaired_digest="after",
+        )
 
 
 class _StubValidatorStage:
@@ -275,6 +294,9 @@ def test_forge_orchestration_feasible_verified_path(tmp_path):
     assert coder.called == 1
     assert validator.called == 1
     assert packaging.called == 1
+    metadata_path = next((tmp_path / "runs").glob("*/run_metadata.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["attempt_trace"][0]["retry_route"] == ForgeRoute.TERMINAL_VERIFIED.value
     assert Path(tmp_path / "runs").exists()
     assert "Status: verified" in render_cli_output(result)
 
@@ -410,7 +432,7 @@ def test_forge_orchestration_retries_coder_on_implementation_failures(tmp_path):
     )
 
     planner = _StubPlannerStage(plan)
-    coder = _StubCoderStage(artifact)
+    coder = _RepairingStubCoderStage(artifact)
     validator = _SequenceValidatorStage([failing, passing])
     packaging = _StubPackagingStage(packaged)
 

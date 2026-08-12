@@ -4,7 +4,17 @@ import json
 from dataclasses import asdict
 from typing import Dict, List
 
-from core.forge.contracts import CodeArtifact, FeasiblePlan, GeneratedFile, PlanFile, PlanInterface, PlanTest
+from core.forge.contracts import (
+    CodeArtifact,
+    FeasiblePlan,
+    GeneratedFile,
+    PlanFile,
+    PlanInterface,
+    PlanTest,
+    RepairDirective,
+    RepairResult,
+    ValidationArtifact,
+)
 from core.forge.domains.base import BaseDomainAdapter, DomainAdapterError
 from core.forge.domains.registry import DomainAdapterRegistry
 
@@ -76,6 +86,85 @@ class CoderStage:
             traceability=traceability,
         )
 
+    def repair(
+        self,
+        plan: FeasiblePlan,
+        previous_artifact: CodeArtifact,
+        validation: ValidationArtifact,
+        directive: RepairDirective,
+    ) -> RepairResult:
+        del validation
+        previous_digest = self._artifact_digest(previous_artifact)
+        if not directive.repairable:
+            return RepairResult(
+                directive=directive,
+                artifact=previous_artifact,
+                changed=False,
+                previous_digest=previous_digest,
+                repaired_digest=previous_digest,
+            )
+
+        canonical = self.generate(plan)
+        changed_paths = self._changed_paths(previous_artifact, canonical)
+        if not changed_paths:
+            return RepairResult(
+                directive=directive,
+                artifact=previous_artifact,
+                changed=False,
+                previous_digest=previous_digest,
+                repaired_digest=previous_digest,
+            )
+
+        canonical.revision = max(1, previous_artifact.revision) + 1
+        canonical.parent_artifact_id = previous_artifact.artifact_id
+        canonical.artifact_id = f"{canonical.artifact_id}-r{canonical.revision:02d}"
+        repair_record = {
+            "repair_id": directive.repair_id,
+            "attempt": directive.attempt,
+            "route": directive.route.value,
+            "failure_signatures": list(directive.failure_signatures),
+            "target_paths": list(directive.target_paths),
+            "operations": list(directive.operations),
+            "evidence_refs": list(directive.evidence_refs),
+            "changed_paths": list(changed_paths),
+            "previous_artifact_id": previous_artifact.artifact_id,
+            "previous_digest": previous_digest,
+        }
+        canonical.repair_history = [*previous_artifact.repair_history, repair_record]
+        metadata = canonical.artifact_manifest.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            metadata["artifact_revision"] = canonical.revision
+            metadata["parent_artifact_id"] = canonical.parent_artifact_id
+            metadata["repair_history"] = list(canonical.repair_history)
+
+        manifest_file = next(
+            (
+                generated
+                for generated in canonical.files
+                if generated.path in canonical.manifest_paths
+            ),
+            None,
+        )
+        if manifest_file is not None:
+            manifest_file.content = json.dumps(
+                canonical.artifact_manifest,
+                indent=2,
+                sort_keys=True,
+            )
+            if manifest_file.path not in changed_paths:
+                changed_paths.append(manifest_file.path)
+
+        repaired_digest = self._artifact_digest(canonical)
+
+        return RepairResult(
+            directive=directive,
+            artifact=canonical,
+            changed=True,
+            changed_paths=sorted(changed_paths),
+            previous_digest=previous_digest,
+            repaired_digest=repaired_digest,
+        )
+
     def _validate_plan(self, plan: FeasiblePlan) -> None:
         if not plan.plan_id.strip():
             raise MalformedPlanError("FeasiblePlan.plan_id is required.")
@@ -103,6 +192,59 @@ class CoderStage:
     def _artifact_id(self, plan_id: str) -> str:
         digest = hashlib.sha256(plan_id.encode("utf-8")).hexdigest()[:12]
         return f"code-{digest}"
+
+    def _artifact_digest(self, artifact: CodeArtifact) -> str:
+        payload = {
+            "artifact_id": artifact.artifact_id,
+            "plan_id": artifact.plan_id,
+            "revision": artifact.revision,
+            "parent_artifact_id": artifact.parent_artifact_id,
+            "files": [
+                {
+                    "path": generated.path,
+                    "content": generated.content,
+                    "kind": generated.kind,
+                    "provenance": list(generated.generated_from_plan_sections),
+                }
+                for generated in sorted(artifact.files, key=lambda item: item.path)
+            ],
+            "test_paths": sorted(artifact.test_paths),
+            "manifest_paths": sorted(artifact.manifest_paths),
+            "runnable_entrypoints": sorted(artifact.runnable_entrypoints),
+            "artifact_manifest": artifact.artifact_manifest,
+            "traceability": artifact.traceability,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _changed_paths(previous: CodeArtifact, repaired: CodeArtifact) -> List[str]:
+        previous_by_path = {generated.path: generated for generated in previous.files}
+        repaired_by_path = {generated.path: generated for generated in repaired.files}
+        changed: List[str] = []
+        for path in sorted(set(previous_by_path) | set(repaired_by_path)):
+            before = previous_by_path.get(path)
+            after = repaired_by_path.get(path)
+            if before is None or after is None:
+                changed.append(path)
+                continue
+            if (
+                before.content != after.content
+                or before.kind != after.kind
+                or before.generated_from_plan_sections != after.generated_from_plan_sections
+            ):
+                changed.append(path)
+        if previous.artifact_manifest != repaired.artifact_manifest:
+            for manifest_path in repaired.manifest_paths:
+                if manifest_path not in changed:
+                    changed.append(manifest_path)
+        if previous.traceability != repaired.traceability:
+            changed.extend(
+                path
+                for path in sorted(set(previous.traceability) | set(repaired.traceability))
+                if path not in changed
+            )
+        return changed
 
     def _generate_from_plan_file(
         self,

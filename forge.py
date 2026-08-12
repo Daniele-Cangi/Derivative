@@ -22,6 +22,7 @@ from core.forge.contracts import (
 )
 from core.forge.packaging_stage import PackagingStage
 from core.forge.planner_stage import PlannerStage
+from core.forge.repair import RepairPolicy
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
 
@@ -39,12 +40,13 @@ def run_forge(
     output_root: str = "generated_artifacts/forge_runs",
     packaging_output_root: str = "generated_artifacts/forge_packages",
     max_planner_attempts: int = 1,
-    max_coder_attempts: int = 1,
+    max_coder_attempts: int = 2,
     requirement_compiler: RequirementCompiler | None = None,
     planner_stage: PlannerStage | None = None,
     coder_stage: CoderStage | None = None,
     validator_stage: ValidatorStage | None = None,
     packaging_stage: PackagingStage | None = None,
+    repair_policy: RepairPolicy | None = None,
 ) -> ForgeResult:
     started = time.perf_counter()
     normalized_planner_attempts = max(1, int(max_planner_attempts))
@@ -54,6 +56,7 @@ def run_forge(
     coder = coder_stage or CoderStage()
     validator = validator_stage or ValidatorStage()
     packager = packaging_stage or PackagingStage(output_root=packaging_output_root)
+    repairs = repair_policy or RepairPolicy()
 
     build_spec = compiler.compile(requirement)
     attempt_trace: list[dict[str, object]] = []
@@ -105,17 +108,71 @@ def run_forge(
 
         route_to_planner = False
         coder_attempt = 0
+        code_artifact: CodeArtifact | None = None
+        previous_validation: ValidationArtifact | None = None
+        pending_directive = None
         while coder_attempt < normalized_coder_attempts:
             coder_attempt += 1
-            code_artifact = coder.generate(planning_output)
-            validation = validator.validate(code_artifact, planning_output, build_spec)
+            repair_trace: dict[str, object] | None = None
+            force_terminal = False
+
+            if pending_directive is None:
+                code_artifact = coder.generate(planning_output)
+                validation = validator.validate(code_artifact, planning_output, build_spec)
+            else:
+                repair_method = getattr(coder, "repair", None)
+                if not callable(repair_method) or code_artifact is None or previous_validation is None:
+                    validation = previous_validation or ValidationArtifact(passed=False)
+                    _mark_repair_terminal(
+                        validation,
+                        "repair_not_supported",
+                        "CoderStage does not expose a grounded repair operation.",
+                        {"repair_id": pending_directive.repair_id},
+                    )
+                    force_terminal = True
+                else:
+                    repair_result = repair_method(
+                        planning_output,
+                        code_artifact,
+                        previous_validation,
+                        pending_directive,
+                    )
+                    repair_trace = {
+                        "repair_id": pending_directive.repair_id,
+                        "operations": list(pending_directive.operations),
+                        "target_paths": list(pending_directive.target_paths),
+                        "changed": repair_result.changed,
+                        "changed_paths": list(repair_result.changed_paths),
+                        "previous_digest": repair_result.previous_digest,
+                        "repaired_digest": repair_result.repaired_digest,
+                    }
+                    if not repair_result.changed:
+                        validation = previous_validation
+                        _mark_repair_terminal(
+                            validation,
+                            "repair_no_change",
+                            "Failure-guided repair produced no source, test, manifest, or provenance changes.",
+                            repair_trace,
+                        )
+                        force_terminal = True
+                    else:
+                        code_artifact = repair_result.artifact
+                        validation = validator.validate(code_artifact, planning_output, build_spec)
+
+            if code_artifact is None:
+                raise RuntimeError("Coder attempt did not produce a CodeArtifact.")
             latest_code_artifact = code_artifact
             latest_validation = validation
-            retry_route = _retry_route_for_validation(validation)
-            attempt_trace.append(
-                {
+            retry_route = (
+                ForgeRoute.TERMINAL_VALIDATION_FAILED
+                if force_terminal
+                else _retry_route_for_validation(validation)
+            )
+            attempt_entry: dict[str, object] = {
                     "planner_attempt": planner_attempt,
                     "coder_attempt": coder_attempt,
+                    "artifact_id": code_artifact.artifact_id,
+                    "artifact_revision": code_artifact.revision,
                     "validation_passed": validation.passed,
                     "retry_route": retry_route.value,
                     "failure_category": (
@@ -125,7 +182,9 @@ def run_forge(
                     ),
                     "failure_signatures": list(validation.failure_signatures),
                 }
-            )
+            if repair_trace is not None:
+                attempt_entry["repair"] = repair_trace
+            attempt_trace.append(attempt_entry)
 
             if validation.passed:
                 packaged_artifact = packager.package(build_spec, planning_output, code_artifact, validation)
@@ -162,7 +221,25 @@ def run_forge(
                 )
 
             if retry_route == ForgeRoute.TO_CODER and coder_attempt < normalized_coder_attempts:
-                continue
+                pending_directive = repairs.compile(
+                    validation=validation,
+                    plan=planning_output,
+                    artifact=code_artifact,
+                    attempt=coder_attempt + 1,
+                    route=retry_route,
+                )
+                attempt_entry["repair_directive"] = _to_jsonable(pending_directive)
+                if pending_directive.repairable:
+                    previous_validation = validation
+                    continue
+                _mark_repair_terminal(
+                    validation,
+                    "repair_not_applicable",
+                    pending_directive.stop_reason,
+                    {"repair_id": pending_directive.repair_id},
+                )
+                attempt_entry["failure_signatures"] = list(validation.failure_signatures)
+                attempt_entry["repair_terminal"] = validation.evidence.get("repair_terminal", {})
             if retry_route == ForgeRoute.TO_PLANNER and planner_attempt < normalized_planner_attempts:
                 route_to_planner = True
                 break
@@ -285,7 +362,7 @@ def main(
         help="Maximum planner attempts before terminal failure.",
     ),
     max_coder_attempts: int = typer.Option(
-        1,
+        2,
         "--max-coder-attempts",
         min=1,
         help="Maximum coder attempts per planner attempt.",
@@ -366,6 +443,8 @@ def _concise_validation_failures(validation: ValidationArtifact | None, limit: i
 
 
 def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:
+    if validation.passed:
+        return ForgeRoute.TERMINAL_VERIFIED
     signatures = set(validation.failure_signatures or [])
     planner_signatures = {
         "semantic_omission",
@@ -379,6 +458,22 @@ def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:
     if category in {FailureCategory.ARCHITECTURAL, FailureCategory.CONTRADICTION, FailureCategory.UNDERSPECIFIED}:
         return ForgeRoute.TO_PLANNER
     return ForgeRoute.TO_CODER
+
+
+def _mark_repair_terminal(
+    validation: ValidationArtifact,
+    signature: str,
+    failure: str,
+    evidence: dict[str, object],
+) -> None:
+    if signature not in validation.failure_signatures:
+        validation.failure_signatures.append(signature)
+    if failure and failure not in validation.failures:
+        validation.failures.append(failure)
+    validation.evidence["repair_terminal"] = dict(evidence)
+    validation.evidence["failure_signatures"] = list(validation.failure_signatures)
+    validation.metrics["failure_count"] = len(validation.failures)
+    validation.metrics["failure_signature_count"] = len(validation.failure_signatures)
 
 
 if __name__ == "__main__":

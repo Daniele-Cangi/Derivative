@@ -221,6 +221,19 @@ class GeneratedFile:
 
 
 @dataclass
+class RepairDirective:
+    repair_id: str
+    attempt: int
+    route: ForgeRoute
+    failure_signatures: List[str] = field(default_factory=list)
+    target_paths: List[str] = field(default_factory=list)
+    operations: List[str] = field(default_factory=list)
+    evidence_refs: List[str] = field(default_factory=list)
+    repairable: bool = True
+    stop_reason: str = ""
+
+
+@dataclass
 class CodeArtifact:
     artifact_id: str
     plan_id: str
@@ -230,6 +243,19 @@ class CodeArtifact:
     runnable_entrypoints: List[str] = field(default_factory=list)
     artifact_manifest: Dict[str, Any] = field(default_factory=dict)
     traceability: Dict[str, List[str]] = field(default_factory=dict)
+    revision: int = 1
+    parent_artifact_id: str = ""
+    repair_history: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class RepairResult:
+    directive: RepairDirective
+    artifact: CodeArtifact
+    changed: bool
+    changed_paths: List[str] = field(default_factory=list)
+    previous_digest: str = ""
+    repaired_digest: str = ""
 
 
 @dataclass
