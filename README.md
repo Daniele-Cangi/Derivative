@@ -153,6 +153,10 @@ Expected output style is prose and always includes:
 python -m pip install -r requirements.txt
 ```
 
+## License
+
+Derivative is released under the [MIT License](LICENSE).
+
 ## Tests
 
 Run all tests:
