@@ -70,7 +70,8 @@ class AdversarialValidationLayer(ValidationLayerBase):
             failures.append("Declared tests do not align with required_tests.")
             self._append_unique(signatures, "missing_acceptance_coverage")
 
-        non_semantic_tests = self._detect_non_semantic_tests(expected_test_paths, materialized)
+        declared_test_paths = set(code_artifact.test_paths)
+        non_semantic_tests = self._detect_non_semantic_tests(declared_test_paths, materialized)
         if non_semantic_tests:
             failures.append(f"Non-semantic tests detected: {non_semantic_tests}.")
             self._append_unique(signatures, "non_semantic_test")
@@ -205,21 +206,67 @@ class AdversarialValidationLayer(ValidationLayerBase):
             file_non_semantic = True
             for function in test_functions:
                 has_call = any(isinstance(node, ast.Call) for node in ast.walk(function))
-                has_assert_true = any(
-                    isinstance(node, ast.Assert)
-                    and isinstance(node.test, ast.Constant)
-                    and node.test.value is True
+                has_semantic_assertion = any(
+                    self._is_semantic_assertion(node)
                     for node in ast.walk(function)
+                    if isinstance(node, ast.Assert)
+                )
+                has_expected_exception = any(
+                    self._is_pytest_raises_context(node)
+                    for node in ast.walk(function)
+                    if isinstance(node, (ast.With, ast.AsyncWith))
                 )
                 is_placeholder_name = function.name in {"test_acceptance_requirement", "test_stub"}
-                if is_placeholder_name or has_assert_true:
+                if is_placeholder_name:
                     continue
-                if has_call:
+                if has_call and (has_semantic_assertion or has_expected_exception):
                     file_non_semantic = False
                     break
             if file_non_semantic:
                 self._append_unique(non_semantic, test_path)
         return non_semantic
+
+    @staticmethod
+    def _is_semantic_assertion(node: ast.Assert) -> bool:
+        test = node.test
+        if isinstance(test, ast.Constant):
+            return test.value is not True
+        if isinstance(test, ast.Call):
+            function_name = ""
+            if isinstance(test.func, ast.Name):
+                function_name = test.func.id
+            elif isinstance(test.func, ast.Attribute):
+                function_name = test.func.attr
+            if function_name in {"callable", "hasattr", "isinstance", "issubclass"}:
+                return False
+        if isinstance(test, ast.Compare):
+            values = [test.left, *test.comparators]
+            if any(
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id in {"callable", "hasattr", "isinstance", "issubclass"}
+                for value in values
+            ):
+                return False
+            if any(isinstance(value, ast.Name) and value.id == "target" for value in values):
+                return False
+        return True
+
+    @staticmethod
+    def _is_pytest_raises_context(node: ast.With | ast.AsyncWith) -> bool:
+        for item in node.items:
+            expression = item.context_expr
+            if not isinstance(expression, ast.Call):
+                continue
+            function = expression.func
+            if (
+                isinstance(function, ast.Attribute)
+                and isinstance(function.value, ast.Name)
+                and function.value.id == "pytest"
+                and function.attr == "raises"
+            ):
+                return True
+        return False
 
     def _validate_semantic_requirement_test_coverage(
         self,

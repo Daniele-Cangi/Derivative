@@ -92,6 +92,16 @@ class ObligationValidationLayer(ValidationLayerBase):
             self._append_unique(signatures, signature)
         evidence["requirement_coverage_checks"] = requirement_evidence
 
+        semantic_failures, semantic_signatures, semantic_evidence = self._validate_requirement_semantics(
+            build_spec=build_spec,
+            plan=plan,
+            code_artifact=code_artifact,
+        )
+        failures.extend(semantic_failures)
+        for signature in semantic_signatures:
+            self._append_unique(signatures, signature)
+        evidence["requirement_semantic_checks"] = semantic_evidence
+
         quality_contract_failures, quality_contract_evidence = self.quality_checker.check(
             materialized=materialized,
             code_artifact=code_artifact,
@@ -259,3 +269,107 @@ class ObligationValidationLayer(ValidationLayerBase):
         evidence["missing_coverage"] = missing_coverage
         evidence["universal_unproven"] = universal_unproven
         return failures, signatures, evidence
+
+    def _validate_requirement_semantics(
+        self,
+        build_spec: BuildSpec,
+        plan: FeasiblePlan,
+        code_artifact: CodeArtifact,
+    ) -> Tuple[List[str], List[str], Dict[str, object]]:
+        files_by_path = {generated.path: generated for generated in code_artifact.files}
+        mismatches: List[Dict[str, object]] = []
+        checks: Dict[str, object] = {}
+
+        for atom in build_spec.requirement_atoms:
+            if atom.category == "ambiguity" or not atom.evidence_terms:
+                continue
+            coverage = plan.requirement_coverage.get(atom.requirement_id, {})
+            source_paths = [
+                path
+                for path in coverage.get("files", [])
+                if path.startswith("src/") and path in files_by_path
+            ]
+            test_paths = [
+                f"tests/{name}.py"
+                for name in coverage.get("tests", [])
+                if f"tests/{name}.py" in files_by_path
+            ]
+            source_corpus = "\n".join(files_by_path[path].content.lower() for path in source_paths)
+            test_corpus = "\n".join(files_by_path[path].content.lower() for path in test_paths)
+            missing_source_terms = [
+                term for term in atom.evidence_terms if not self._semantic_term_present(term, source_corpus)
+            ]
+            missing_test_terms = [
+                term
+                for term in atom.evidence_terms
+                if not self._semantic_term_present(term, test_corpus, is_test=True)
+            ]
+            item = {
+                "text": atom.text,
+                "evidence_terms": list(atom.evidence_terms),
+                "source_paths": source_paths,
+                "test_paths": test_paths,
+                "missing_source_terms": missing_source_terms,
+                "missing_test_terms": missing_test_terms,
+            }
+            checks[atom.requirement_id] = item
+            if missing_source_terms or missing_test_terms:
+                mismatches.append({"requirement_id": atom.requirement_id, **item})
+
+        failures: List[str] = []
+        signatures: List[str] = []
+        source_mismatches = [item for item in mismatches if item["missing_source_terms"]]
+        test_mismatches = [item for item in mismatches if item["missing_test_terms"]]
+        if source_mismatches:
+            failed_ids = [str(item["requirement_id"]) for item in source_mismatches]
+            failures.append(
+                "Requirement content is not evidenced by generated source code: "
+                f"{failed_ids}."
+            )
+            signatures.extend(["semantic_omission", "semantic_content_mismatch"])
+        if test_mismatches:
+            failed_ids = [str(item["requirement_id"]) for item in test_mismatches]
+            failures.append(
+                "Requirement content is not evidenced by mapped behavioral tests: "
+                f"{failed_ids}."
+            )
+            self._append_unique(signatures, "missing_semantic_requirement_coverage")
+        return failures, signatures, {
+            "requirements": checks,
+            "semantic_content_mismatches": mismatches,
+            "source_semantic_mismatches": source_mismatches,
+            "test_semantic_mismatches": test_mismatches,
+        }
+
+    @staticmethod
+    def _semantic_term_present(term: str, corpus: str, is_test: bool = False) -> bool:
+        normalized = corpus.replace("-", "_").replace(" ", "_")
+        aliases = {
+            "cli_entrypoint": ("argparse", "typer", "click.command", "sys.argv"),
+            "cli_flow": ("argparse", "typer", "click.command", "sys.argv"),
+            "input_jsonl": ("json.loads", "json.load(", "jsonlines", "parse_jsonl"),
+            "jsonl": (".jsonl", "json_lines", "jsonl"),
+            "input_csv": ("csv.dictreader", "csv.reader", "read_csv"),
+            "summary_csv": ("csv.dictwriter", "csv.writer(", "write_summary", "summary_csv"),
+            "malformed_records": ("jsondecodeerror", "malformed", "invalid_json"),
+            "missing_fields": ("missing_field", "missing_fields"),
+            "invalid_timestamp": ("invalid_timestamp", "timestamp_error"),
+            "invalid_dates": ("invalid_date", "invalid_dates"),
+            "malformed_rows": ("malformed_row", "malformed_rows"),
+            "quarantine": ("quarantine", "quarantined"),
+            "minimum": ("min(", "minimum", "min_temperature", "['min']", '"min"'),
+            "maximum": ("max(", "maximum", "max_temperature", "['max']", '"max"'),
+            "average": ("average", "avg_temperature", "mean(", "['average']", "['avg']", '"average"'),
+            "aggregation": ("aggregate", "aggregation", "groupby", "group_by"),
+            "per_device": ("device_id", "per_device"),
+            "totals": ("total", "totals"),
+            "counts": ("count", "counts"),
+        }
+        candidates = aliases.get(term, (term,))
+        if is_test and term == "input_jsonl":
+            candidates = (*candidates, ".jsonl")
+        if is_test and term == "input_csv":
+            candidates = (*candidates, ".csv")
+        if is_test and term in {"cli_entrypoint", "cli_flow"}:
+            candidates = (*candidates, "cli.main(", "clirunner", "subprocess.run")
+        return any(candidate in corpus or candidate in normalized for candidate in candidates)

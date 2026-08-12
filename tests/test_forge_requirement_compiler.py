@@ -21,6 +21,13 @@ PIPELINE_REQUIREMENT = (
     "showing pipeline statistics."
 )
 
+TELEMETRY_REQUIREMENT = (
+    "Build a Python CLI that reads JSON Lines telemetry events with fields device_id, timestamp, and temperature_c, "
+    "rejects malformed records, missing fields, and invalid timestamps into a quarantine JSONL file, "
+    "computes per-device minimum, maximum, and average temperature, writes a summary CSV, and includes "
+    "behavioral tests for parsing, quarantine handling, aggregation, and the complete CLI flow."
+)
+
 
 def test_extract_quality_contract_for_base_service_requirement():
     spec = RequirementCompiler().compile(BASE_SERVICE_REQUIREMENT)
@@ -71,3 +78,17 @@ def test_pipeline_requirement_is_typed_and_gets_software_build_obligations():
     assert spec.quality_contract.audit_trail is True
     assert spec.quality_contract.health_endpoint is True
     assert spec.quality_contract.structured_logging is True
+
+
+def test_telemetry_requirement_is_split_into_evidence_bearing_atoms():
+    spec = RequirementCompiler().compile(TELEMETRY_REQUIREMENT)
+    atoms = {atom.requirement_id: atom for atom in spec.requirement_atoms}
+
+    assert len(atoms) == 6
+    assert atoms["R001"].evidence_terms == ["cli_entrypoint"]
+    assert atoms["R002"].evidence_terms == ["input_jsonl", "device_id", "temperature_c", "timestamp"]
+    assert {"malformed_records", "missing_fields", "invalid_timestamp", "quarantine"} <= set(
+        atoms["R003"].evidence_terms
+    )
+    assert {"minimum", "maximum", "average", "per_device"} <= set(atoms["R004"].evidence_terms)
+    assert atoms["R005"].evidence_terms == ["summary_csv"]

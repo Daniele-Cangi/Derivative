@@ -126,6 +126,135 @@ def test_canonical_artifact_cannot_fake_a_repair(repair_case):
     assert result.previous_digest == result.repaired_digest
 
 
+def test_non_semantic_repair_targets_only_validator_identified_tests(repair_case):
+    artifact = repair_case["artifact"]
+    failing_test = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Non-semantic test."],
+        failure_signatures=["non_semantic_test", "fake_acceptance_coverage"],
+        evidence={"layer3": {"non_semantic_tests": [failing_test]}},
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert directive.target_paths == [failing_test]
+
+
+def test_execution_repair_targets_only_pytest_failed_paths(repair_case):
+    artifact = repair_case["artifact"]
+    failing_test = artifact.test_paths[0]
+    passing_test = artifact.test_paths[1]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Generated tests failed."],
+        failure_signatures=["test_execution_failure"],
+        evidence={
+            "layer2": {
+                "test_execution": {
+                    "returncode": 1,
+                    "tests": [failing_test, passing_test],
+                    "stdout": f"FAILED {failing_test}::test_behavior - AssertionError",
+                    "stderr": "",
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=3,
+    )
+
+    assert directive.target_paths == [failing_test]
+
+
+def test_revision_two_uses_backend_instead_of_reverting_to_canonical(repair_case):
+    artifact = copy.deepcopy(repair_case["artifact"])
+    artifact.revision = 2
+    artifact.artifact_id = f"{artifact.artifact_id}-r02"
+    source = _file(artifact, "src/expiration_rules.py")
+    source.content += "\nREPAIRED_BEHAVIOR = True\n"
+    failing_test = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["One repaired test still fails."],
+        failure_signatures=["test_execution_failure"],
+        evidence={
+            "layer2": {
+                "test_execution": {
+                    "returncode": 1,
+                    "tests": [failing_test],
+                    "stdout": f"FAILED {failing_test}::test_behavior - AssertionError",
+                    "stderr": "",
+                }
+            }
+        },
+    )
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=3,
+    )
+
+    result = CoderStage().repair(
+        repair_case["plan"],
+        artifact,
+        validation,
+        directive,
+    )
+
+    assert result.changed is False
+    assert result.artifact is artifact
+    assert "REPAIRED_BEHAVIOR = True" in _file(result.artifact, "src/expiration_rules.py").content
+
+
+def test_semantic_content_mismatch_targets_mapped_sources_and_tests(repair_case):
+    artifact = repair_case["artifact"]
+    source_path = "src/expiration_rules.py"
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Requirement semantics are absent."],
+        failure_signatures=["semantic_omission", "semantic_content_mismatch"],
+        evidence={
+            "layer2": {
+                "requirement_semantic_checks": {
+                    "semantic_content_mismatches": [
+                        {
+                            "requirement_id": "R002",
+                            "source_paths": [source_path],
+                            "test_paths": [test_path],
+                            "missing_source_terms": ["summary_csv"],
+                            "missing_test_terms": ["summary_csv"],
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert directive.repairable is True
+    assert directive.operations == ["implement_missing_requirement_semantics"]
+    assert directive.target_paths == [source_path, test_path]
+    assert directive.evidence_refs == ["layer2.requirement_semantic_checks"]
+
+
 def test_repair_contract_is_domain_neutral():
     build_spec = BuildSpec(
         build_id="build-generic",

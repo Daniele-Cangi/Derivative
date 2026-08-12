@@ -1,15 +1,19 @@
 import json
-import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-
-import anthropic
 
 from audit.trail import AuditTrail
 from core.artifacts import DesignArtifact
 from core.designs import EmergentDesign
 from core.execution_loop import ExecutionLoop, ExecutionResult
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
+from core.model_provider import (
+    create_openai_client,
+    generate_text,
+    is_live_openai_key,
+    resolve_openai_api_key,
+    resolve_openai_model,
+)
 from core.runtime_mode import normalize_execution_mode
 from core.topology_solver import (
     TopologyCandidate,
@@ -41,16 +45,16 @@ class ReasoningResult:
 
 class ReasoningKernel:
     def __init__(self, api_key: Optional[str] = None, execution_mode: Optional[str] = None):
-        resolved_key = (api_key or os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        resolved_key = resolve_openai_api_key(api_key)
         self.api_key = resolved_key
+        self.model = resolve_openai_model()
         self.execution_mode = normalize_execution_mode(execution_mode)
         self.allow_local_fallback = self.execution_mode != "remote-only"
         self.use_live_model = (
             self.execution_mode in {"hybrid", "remote-only"}
-            and bool(resolved_key)
-            and resolved_key != "dummy_key_for_testing"
+            and is_live_openai_key(resolved_key)
         )
-        self.client = anthropic.Anthropic(api_key=resolved_key) if self.use_live_model else None
+        self.client = create_openai_client(resolved_key) if self.use_live_model else None
         self.execution_loop = ExecutionLoop()
 
     def synthesize(
@@ -78,7 +82,7 @@ class ReasoningKernel:
                 if self.allow_local_fallback:
                     draft_result = local_result
                 else:
-                    raise RuntimeError("ReasoningKernel requires remote mode with a valid ANTHROPIC_API_KEY.")
+                    raise RuntimeError("ReasoningKernel requires remote mode with a valid OPENAI_API_KEY.")
             else:
                 draft_result = self._synthesize_with_live_model(
                     problem,
@@ -112,10 +116,18 @@ class ReasoningKernel:
 Return exactly one JSON object with this structure:
 {
   "status": "candidate",
-  "files": [{"path": "an allowed path", "content": "complete replacement content"}]
+  "files": {"an allowed path": "complete replacement content"}
 }
 Only return complete replacements for supplied target files. Do not add files, alter paths, weaken requirements,
-remove tests, claim validation success, or include Markdown. Preserve public interfaces and plan constraints."""
+remove tests, claim validation success, or include Markdown. Return one replacement for every supplied target path.
+Preserve public interfaces and plan constraints. Tests must preserve existing import bootstrapping; when sources use a
+flat src/ layout, tests must add that src/ directory to sys.path before importing target modules. Every test replacement
+must invoke target code with non-trivial fixtures and assert concrete behavior, output, or expected exceptions.
+Treat related_repaired_source_files as executable API contracts. Source modules must integrate with their exact imports
+and signatures instead of duplicating incompatible implementations. Test replacements must call the exact signatures
+present in related sources, pass explicit temporary paths instead of mutating module constants after import, and must
+not use skip, pass, conditional assertions, tautologies, or optional checks. A CLI requirement must expose a real
+argparse, Typer, or Click entrypoint and tests must invoke that CLI path with explicit arguments."""
         lens_context = [
             {
                 "name": framing.lens_name,
@@ -132,18 +144,34 @@ remove tests, claim validation success, or include Markdown. Preserve public int
             "allowed_target_files": target_files,
         }
         try:
-            response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=4000,
-                system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": json.dumps(request_payload, sort_keys=True),
-                    }
-                ],
+            required_paths = list(target_files)
+            output_schema = {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["candidate"]},
+                    "files": {
+                        "type": "object",
+                        "properties": {
+                            path: {"type": "string"}
+                            for path in required_paths
+                        },
+                        "required": required_paths,
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["status", "files"],
+                "additionalProperties": False,
+            }
+            response_text = generate_text(
+                self.client,
+                model=self.model,
+                max_output_tokens=8000,
+                instructions=system_prompt,
+                input_text=json.dumps(request_payload, sort_keys=True),
+                output_schema=output_schema,
+                output_schema_name="forge_code_revision",
             )
-            data = extract_json_object(response.content[0].text)
+            data = extract_json_object(response_text)
             data.setdefault("status", "candidate")
             return data
         except Exception as exc:
@@ -194,22 +222,18 @@ Return one JSON object using this exact structure:
 Do not remove the idea of invention: prefer executable design moves over commentary."""
 
         try:
-            response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=2200,
-                system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Problem: {problem}\n\n"
-                            f"Lens Material:\n{framings_str}\n\n"
-                            f"Prior Design Lineage:\n{context_str}"
-                        ),
-                    }
-                ],
+            response_text = generate_text(
+                self.client,
+                model=self.model,
+                max_output_tokens=2200,
+                instructions=system_prompt,
+                input_text=(
+                    f"Problem: {problem}\n\n"
+                    f"Lens Material:\n{framings_str}\n\n"
+                    f"Prior Design Lineage:\n{context_str}"
+                ),
             )
-            data = extract_json_object(response.content[0].text)
+            data = extract_json_object(response_text)
             return ReasoningResult(
                 conclusion=local_result.conclusion,
                 reasoning_chain=self._coerce_steps(
@@ -1119,7 +1143,7 @@ Do not remove the idea of invention: prefer executable design moves over comment
             )
         if "file" in normalized_problem:
             risks.append("input parsing or encoding faults")
-        if any(token in normalized_problem for token in ("api", "auth", "token", "key", "anthropic")):
+        if any(token in normalized_problem for token in ("api", "auth", "token", "key", "openai")):
             risks.append("external service authentication or availability")
         if any(token in normalized_problem for token in ("distributed", "parallel", "concurrent", "thread")):
             risks.append("race conditions or partial failures across components")

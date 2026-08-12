@@ -1,6 +1,7 @@
 __pycache__/
 .pytest_cache/
 .pytest_tmp*/
+.codex_pytest*/
 generated_artifacts/
 
 .env

@@ -1,10 +1,15 @@
-import os
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional
-import anthropic
 
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
+from core.model_provider import (
+    create_openai_client,
+    generate_text,
+    is_live_openai_key,
+    resolve_openai_api_key,
+    resolve_openai_model,
+)
 from core.runtime_mode import normalize_execution_mode
 
 @dataclass
@@ -29,16 +34,16 @@ class BaseLens:
     default_blind_spots: tuple[str, ...] = ()
     
     def __init__(self, api_key: Optional[str] = None, execution_mode: Optional[str] = None):
-        resolved_key = (api_key or os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        resolved_key = resolve_openai_api_key(api_key)
         self.api_key = resolved_key
+        self.model = resolve_openai_model()
         self.execution_mode = normalize_execution_mode(execution_mode)
         self.allow_local_fallback = self.execution_mode != "remote-only"
         self.use_live_model = (
             self.execution_mode in {"hybrid", "remote-only"}
-            and bool(resolved_key)
-            and resolved_key != "dummy_key_for_testing"
+            and is_live_openai_key(resolved_key)
         )
-        self.client = anthropic.Anthropic(api_key=resolved_key) if self.use_live_model else None
+        self.client = create_openai_client(resolved_key) if self.use_live_model else None
 
     def frame(self, problem: str) -> CognitiveLens:
         local_lens = self._frame_locally(problem)
@@ -47,7 +52,7 @@ class BaseLens:
         if not self.use_live_model:
             if self.allow_local_fallback:
                 return local_lens
-            raise RuntimeError(f"{self.lens_name} requires remote mode with a valid ANTHROPIC_API_KEY.")
+            raise RuntimeError(f"{self.lens_name} requires remote mode with a valid OPENAI_API_KEY.")
 
         system_prompt = f"""You are a cognitive lens for an AI agent. 
 Your domain is {self.lens_name}, heavily influenced by the principles of the {self.library_focus} library.
@@ -64,15 +69,14 @@ Return exactly one JSON object using this schema:
 }}"""
 
         try:
-            response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=1000,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": f"Problem: {problem}"}
-                ]
+            response_text = generate_text(
+                self.client,
+                model=self.model,
+                max_output_tokens=1000,
+                instructions=system_prompt,
+                input_text=f"Problem: {problem}",
             )
-            data = extract_json_object(response.content[0].text)
+            data = extract_json_object(response_text)
 
             return CognitiveLens(
                 lens_name=self.lens_name,

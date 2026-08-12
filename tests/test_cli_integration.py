@@ -52,7 +52,7 @@ def _normalize_cli_output(raw: str) -> str:
 
 def _run_derivative_cli(prompt: str, workdir: Path) -> str:
     env = os.environ.copy()
-    env["ANTHROPIC_API_KEY"] = "dummy_key_for_testing"
+    env["OPENAI_API_KEY"] = "dummy_key_for_testing"
     existing_pythonpath = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = (
         f"{REPO_ROOT}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(REPO_ROOT)

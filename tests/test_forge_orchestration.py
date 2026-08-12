@@ -455,6 +455,47 @@ def test_forge_orchestration_retries_coder_on_implementation_failures(tmp_path):
     assert packaging.called == 1
 
 
+def test_semantic_content_mismatch_retries_coder_before_planner(tmp_path):
+    build_spec = _build_spec()
+    plan = _feasible_plan(build_spec)
+    artifact = _code_artifact()
+    failing = _failing_validation_with_category(
+        failure_signatures=["semantic_omission", "semantic_content_mismatch"],
+        failure_category=FailureCategory.IMPLEMENTATION,
+    )
+    passing = _passing_validation()
+    packaged = PackagedArtifact(
+        package_id="pkg-test",
+        package_root=str((tmp_path / "package").resolve()),
+        manifest_path=str((tmp_path / "package" / "forge_package_manifest.json").resolve()),
+        packaged_files=["src/cli.py", "forge_package_manifest.json"],
+        evidence_paths={"validation_evidence": "validation_evidence.json"},
+        verification_metadata={"terminal_status": TERMINAL_VERIFIED},
+    )
+    planner = _StubPlannerStage(plan)
+    coder = _RepairingStubCoderStage(artifact)
+    validator = _SequenceValidatorStage([failing, passing])
+    packaging = _StubPackagingStage(packaged)
+
+    result = run_forge(
+        requirement="build requirement",
+        output_root=str(tmp_path / "runs"),
+        requirement_compiler=_StubRequirementCompiler(build_spec),
+        planner_stage=planner,
+        coder_stage=coder,
+        validator_stage=validator,
+        packaging_stage=packaging,
+        max_planner_attempts=2,
+        max_coder_attempts=2,
+    )
+
+    assert result.terminal_status == TERMINAL_VERIFIED
+    assert planner.called == 1
+    assert coder.called == 2
+    assert validator.called == 2
+    assert packaging.called == 1
+
+
 def test_forge_orchestration_retries_planner_on_architectural_failures(tmp_path):
     build_spec = _build_spec()
     plan_first = _feasible_plan(build_spec)

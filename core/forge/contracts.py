@@ -36,6 +36,7 @@ class RequirementAtom:
     category: str
     strength: str
     source_fragment: str
+    evidence_terms: List[str] = field(default_factory=list)
 
 
 @dataclass

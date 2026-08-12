@@ -696,14 +696,12 @@ class PlannerStage:
         for atom in build_spec.requirement_atoms:
             lowered_atom = atom.text.lower()
             if lowered_path.endswith("src/pipeline.py"):
-                if any(
-                    token in lowered_atom
-                    for token in ("pipeline", "watch", "health", "stats", "ingest", "persist", "sqlite")
-                ):
+                if atom.category != "ambiguity":
                     ids.append(atom.requirement_id)
                     continue
             if lowered_path.endswith("src/watcher.py"):
-                if any(token in lowered_atom for token in ("watch", "directory", "csv", "poll")):
+                input_terms = {"input_jsonl", "input_csv"} & set(atom.evidence_terms)
+                if input_terms or any(token in lowered_atom for token in ("watch", "directory", "poll", "discover")):
                     ids.append(atom.requirement_id)
                     continue
             if lowered_path.endswith("src/validator.py"):

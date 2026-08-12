@@ -23,6 +23,8 @@ class RepairPolicy:
         "fake_acceptance_coverage": "rerender_semantic_tests",
         "missing_acceptance_coverage": "restore_acceptance_tests",
         "missing_obligation": "restore_obligation_provenance",
+        "semantic_content_mismatch": "implement_missing_requirement_semantics",
+        "missing_semantic_requirement_coverage": "rerender_semantic_tests",
         "quality_contract_violation": "rerender_quality_contract_targets",
         "capability_contract_violation": "restore_capability_contract",
         "missing_capability": "restore_capability_modules",
@@ -108,7 +110,14 @@ class RepairPolicy:
 
         test_execution = self._mapping(layer2.get("test_execution"))
         if test_execution.get("returncode") not in (None, 0):
-            self._extend_strings(paths, test_execution.get("tests"))
+            failed_test_paths = self._pytest_failure_paths(
+                test_execution,
+                artifact.test_paths,
+            )
+            if failed_test_paths:
+                paths.extend(failed_test_paths)
+            else:
+                self._extend_strings(paths, test_execution.get("tests"))
             refs.append("layer2.test_execution")
 
         capability_checks = self._mapping(layer2.get("capability_contract_checks"))
@@ -143,14 +152,24 @@ class RepairPolicy:
         if any(
             signature in signatures
             for signature in (
-                "test_execution_failure",
-                "non_semantic_test",
-                "fake_acceptance_coverage",
                 "missing_acceptance_coverage",
                 "missing_obligation",
             )
         ):
             paths.extend(artifact.test_paths)
+
+        if {
+            "semantic_content_mismatch",
+            "missing_semantic_requirement_coverage",
+        } & set(signatures):
+            semantic_checks = self._mapping(layer2.get("requirement_semantic_checks"))
+            for mismatch in self._list(semantic_checks.get("semantic_content_mismatches")):
+                if not isinstance(mismatch, dict):
+                    continue
+                if "semantic_content_mismatch" in signatures:
+                    self._extend_strings(paths, mismatch.get("source_paths"))
+                self._extend_strings(paths, mismatch.get("test_paths"))
+            refs.append("layer2.requirement_semantic_checks")
 
         if "missing_entrypoint" in signatures:
             paths.extend(artifact.runnable_entrypoints)
@@ -186,6 +205,26 @@ class RepairPolicy:
     def _extend_strings(target: List[str], value: Any) -> None:
         if isinstance(value, list):
             target.extend(item for item in value if isinstance(item, str))
+
+    @staticmethod
+    def _pytest_failure_paths(
+        test_execution: Dict[str, Any],
+        known_test_paths: List[str],
+    ) -> List[str]:
+        output = "\n".join(
+            str(test_execution.get(key, ""))
+            for key in ("stdout", "stderr")
+        ).replace("\\", "/")
+        failures: List[str] = []
+        for line in output.splitlines():
+            normalized = line.strip()
+            if not any(marker in normalized for marker in ("FAILED ", "ERROR ", "ERROR collecting")):
+                continue
+            for path in known_test_paths:
+                normalized_path = path.replace("\\", "/")
+                if normalized_path in normalized and path not in failures:
+                    failures.append(path)
+        return failures
 
     @staticmethod
     def _dedupe(values: Iterable[str]) -> List[str]:

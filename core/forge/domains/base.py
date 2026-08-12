@@ -120,6 +120,31 @@ class BaseDomainAdapter:
             f"'{plan_test.test_name}'. Plan does not provide a runnable module/interface mapping."
         )
 
+    def _template_generic_planned_test(self, plan: FeasiblePlan) -> str:
+        source_modules = [
+            item.path.split("/")[-1].removesuffix(".py")
+            for item in plan.file_tree_plan
+            if item.path.startswith("src/") and item.path.endswith(".py")
+        ]
+        if not source_modules:
+            raise DomainAdapterError("Generic planned test requires at least one Python source module.")
+        module_name = source_modules[0]
+        entrypoint_name = self._entrypoint_name(plan)
+        return (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "\n"
+            "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+            "\n"
+            f"import {module_name}\n"
+            "\n"
+            "\n"
+            "def test_planned_entrypoint_smoke(tmp_path, monkeypatch):\n"
+            "    monkeypatch.chdir(tmp_path)\n"
+            f"    result = {module_name}.{entrypoint_name}()\n"
+            "    assert result == 0\n"
+        )
+
     def _is_invoice_plan(self, plan: FeasiblePlan) -> bool:
         atom_text = " ".join(atom.text.lower() for atom in plan.build_spec.requirement_atoms)
         goal_text = " ".join(goal.lower() for goal in plan.build_spec.functional_goals)
@@ -135,6 +160,8 @@ class GenericDomainAdapter(BaseDomainAdapter):
         return True
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
+        if path.replace("\\", "/").lower().startswith("tests/"):
+            return self._template_generic_planned_test(plan)
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:

@@ -46,24 +46,20 @@ def test_kernel_synthesis_uses_local_fallback():
 def test_kernel_parses_live_json_and_falls_back_if_needed():
     kernel = ReasoningKernel(api_key="live-key")
 
-    class FakeMessages:
+    class FakeResponses:
         @staticmethod
         def create(**kwargs):
             return SimpleNamespace(
-                content=[
-                    SimpleNamespace(
-                        text=(
-                            '{"conclusion": "Parsed result", '
-                            '"reasoning_chain": [{"step_id": "1", "description": "step"}], '
-                            '"violated_constraints": [], '
-                            '"epistemic_confidence": 0.7, '
-                            '"lens_contributions": {"MockLens1": 1.0}}'
-                        )
-                    )
-                ]
+                output_text=(
+                    '{"conclusion": "Parsed result", '
+                    '"reasoning_chain": [{"step_id": "1", "description": "step"}], '
+                    '"violated_constraints": [], '
+                    '"epistemic_confidence": 0.7, '
+                    '"lens_contributions": {"MockLens1": 1.0}}'
+                )
             )
 
-    kernel.client = SimpleNamespace(messages=FakeMessages())
+    kernel.client = SimpleNamespace(responses=FakeResponses())
     lenses = [CognitiveLens("MockLens1", "framing1", ["constraint1"], ["spot1"], 0.8, "deductive")]
 
     result = kernel.synthesize("Analyze this system", lenses)

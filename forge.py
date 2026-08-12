@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from dotenv import load_dotenv
 
 from core.forge.coder_stage import CoderStage
 from core.forge.contracts import (
@@ -27,6 +28,8 @@ from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
 
+load_dotenv(Path(__file__).resolve().with_name(".env"))
+
 
 TERMINAL_VERIFIED = "verified"
 TERMINAL_INFEASIBLE_PROVEN = "infeasible_proven"
@@ -41,7 +44,7 @@ def run_forge(
     output_root: str = "generated_artifacts/forge_runs",
     packaging_output_root: str = "generated_artifacts/forge_packages",
     max_planner_attempts: int = 1,
-    max_coder_attempts: int = 2,
+    max_coder_attempts: int = 3,
     requirement_compiler: RequirementCompiler | None = None,
     planner_stage: PlannerStage | None = None,
     coder_stage: CoderStage | None = None,
@@ -385,7 +388,7 @@ def main(
         help="Maximum planner attempts before terminal failure.",
     ),
     max_coder_attempts: int = typer.Option(
-        2,
+        3,
         "--max-coder-attempts",
         min=1,
         help="Maximum coder attempts per planner attempt.",
@@ -469,6 +472,8 @@ def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:
     if validation.passed:
         return ForgeRoute.TERMINAL_VERIFIED
     signatures = set(validation.failure_signatures or [])
+    if "semantic_content_mismatch" in signatures:
+        return ForgeRoute.TO_CODER
     planner_signatures = {
         "semantic_omission",
         "missing_requirement_coverage",

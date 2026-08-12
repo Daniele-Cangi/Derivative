@@ -204,7 +204,7 @@ def test_script_main_path_does_not_route_to_cli_adapter(feasible_plan):
         ],
         required_tests=[
             PlanTest(
-                test_name="test_main",
+                test_name="test_script_workflow",
                 objective="Execute the script workflow.",
             )
         ],
@@ -216,10 +216,14 @@ def test_script_main_path_does_not_route_to_cli_adapter(feasible_plan):
     assert main_source is not None
     assert "def run() -> int:" in main_source.content
     assert "contracts_csv" not in main_source.content
-    generated_test = _find_generated_file(artifact, "tests/test_main.py")
-    assert generated_test is not None
-    assert "getattr(main, 'run', None)" in generated_test.content
-    assert "main.main(" not in generated_test.content
+    planned_test = _find_generated_file(artifact, "tests/test_main.py")
+    required_test = _find_generated_file(artifact, "tests/test_script_workflow.py")
+    assert planned_test is not None
+    assert required_test is not None
+    assert "result = main.run()" in planned_test.content
+    assert "assert result == 0" in planned_test.content
+    assert "getattr(main, 'run', None)" in required_test.content
+    assert "main.main(" not in required_test.content
 
 
 def test_coder_stage_returns_typed_code_artifact(feasible_plan):

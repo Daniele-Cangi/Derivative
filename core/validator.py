@@ -1,13 +1,17 @@
 import dataclasses
 import json
-import os
 from dataclasses import dataclass
 from typing import List, Optional
 
-import anthropic
-
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
 from core.kernel import ReasoningResult
+from core.model_provider import (
+    create_openai_client,
+    generate_text,
+    is_live_openai_key,
+    resolve_openai_api_key,
+    resolve_openai_model,
+)
 from core.problem_classifier import ProblemClassification, ProblemClassifier, ProblemType
 from core.runtime_mode import normalize_execution_mode
 
@@ -221,16 +225,16 @@ class NumericAnswerCheck:
 
 class AdversarialValidator:
     def __init__(self, api_key: Optional[str] = None, execution_mode: Optional[str] = None):
-        resolved_key = (api_key or os.getenv("ANTHROPIC_API_KEY") or "").strip()
+        resolved_key = resolve_openai_api_key(api_key)
         self.api_key = resolved_key
+        self.model = resolve_openai_model()
         self.execution_mode = normalize_execution_mode(execution_mode)
         self.allow_local_fallback = self.execution_mode != "remote-only"
         self.use_live_model = (
             self.execution_mode in {"hybrid", "remote-only"}
-            and bool(resolved_key)
-            and resolved_key != "dummy_key_for_testing"
+            and is_live_openai_key(resolved_key)
         )
-        self.client = anthropic.Anthropic(api_key=resolved_key) if self.use_live_model else None
+        self.client = create_openai_client(resolved_key) if self.use_live_model else None
 
     def validate(self, result: ReasoningResult, original_problem: str) -> ValidationReport:
         if result.violated_constraints:
@@ -266,7 +270,7 @@ class AdversarialValidator:
         if not self.use_live_model:
             if self.allow_local_fallback:
                 return local_report
-            raise RuntimeError("AdversarialValidator requires remote mode with a valid ANTHROPIC_API_KEY.")
+            raise RuntimeError("AdversarialValidator requires remote mode with a valid OPENAI_API_KEY.")
 
         system_prompt = """You are the Adversarial Validator for the Derivative AI.
 Your job is to relentlessly attack the proposed solution, find edge cases, and evaluate confidence.
@@ -285,18 +289,17 @@ Return one JSON object only."""
         result_dict = dataclasses.asdict(result)
 
         try:
-            response = self.client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=1000,
-                system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": f"Problem: {original_problem}\n\nResult:\n{json.dumps(result_dict, indent=2)}",
-                    }
-                ],
+            response_text = generate_text(
+                self.client,
+                model=self.model,
+                max_output_tokens=1000,
+                instructions=system_prompt,
+                input_text=(
+                    f"Problem: {original_problem}\n\n"
+                    f"Result:\n{json.dumps(result_dict, indent=2)}"
+                ),
             )
-            data = extract_json_object(response.content[0].text)
+            data = extract_json_object(response_text)
 
             confidence_adjusted = clamp_float(
                 data.get("confidence_adjusted"),
@@ -344,7 +347,7 @@ Return one JSON object only."""
             edge_cases.append("Short reasoning chains can miss compound interactions between constraints.")
         if "file" in normalized_problem:
             edge_cases.append("Large or malformed file inputs can invalidate the abstraction layer.")
-        if any(token in normalized_problem for token in ("api", "auth", "token", "key", "anthropic")):
+        if any(token in normalized_problem for token in ("api", "auth", "token", "key", "openai")):
             edge_cases.append("External authentication and upstream availability remain operational failure points.")
         if any(token in normalized_problem for token in ("distributed", "parallel", "concurrent", "thread")):
             edge_cases.append("Concurrency can surface race conditions, stale reads, or partial failures.")

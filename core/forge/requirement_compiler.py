@@ -185,6 +185,7 @@ class RequirementCompiler:
                     category=category,
                     strength=strength,
                     source_fragment=clause,
+                    evidence_terms=self._extract_evidence_terms(normalized_clause),
                 )
             )
             index += 1
@@ -550,7 +551,7 @@ class RequirementCompiler:
     def _extract_atomic_clauses(self, body: str) -> List[str]:
         verb_pattern = re.compile(
             r"\b(reads?|extracts?|flags?|writes?|includes?|guarantees?|supports?|validates?|"
-            r"processes?|identifies?|produces?|parses?|builds?)\b",
+            r"processes?|identifies?|produces?|parses?|builds?|rejects?|computes?|aggregates?)\b",
             re.IGNORECASE,
         )
         matches = list(verb_pattern.finditer(body))
@@ -646,7 +647,8 @@ class RequirementCompiler:
         if any(token in lowered for token in validation_tokens):
             return "validation"
         if re.match(
-            r"^(reads?|extracts?|flags?|writes?|includes?|processes?|identifies?|produces?|parses?|builds?)\b",
+            r"^(reads?|extracts?|flags?|writes?|includes?|processes?|identifies?|produces?|parses?|builds?|"
+            r"rejects?|computes?|aggregates?)\b",
             lowered,
         ):
             return "functional"
@@ -657,6 +659,48 @@ class RequirementCompiler:
         if any(token in lowered for token in functional_tokens):
             return "functional"
         return "ambiguity"
+
+    def _extract_evidence_terms(self, clause: str) -> List[str]:
+        lowered = clause.lower()
+        terms: List[str] = []
+
+        def add(term: str) -> None:
+            if term not in terms:
+                terms.append(term)
+
+        if re.search(r"\bcli\b", lowered):
+            add("cli_entrypoint")
+        if re.search(r"\b(?:json\s+lines?|jsonl)\b", lowered):
+            add("input_jsonl" if re.match(r"^(reads?|parses?|processes?)\b", lowered) else "jsonl")
+        if re.search(r"\breads?\b.*\bcsv\b", lowered):
+            add("input_csv")
+        if "summary csv" in lowered:
+            add("summary_csv")
+
+        for identifier in re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", lowered):
+            add(identifier)
+
+        semantic_patterns = (
+            ("timestamp", r"\btimestamps?\b"),
+            ("malformed_records", r"\bmalformed\b"),
+            ("missing_fields", r"\bmissing\s+fields?\b"),
+            ("invalid_timestamp", r"\binvalid\s+timestamps?\b"),
+            ("quarantine", r"\bquarantin(?:e|es|ed|ing)\b"),
+            ("minimum", r"\bminimum\b"),
+            ("maximum", r"\bmaximum\b"),
+            ("average", r"\baverage\b"),
+            ("aggregation", r"\baggregat(?:e|es|ed|ing|ion)\b"),
+            ("per_device", r"\bper[-\s]+device\b"),
+            ("totals", r"\btotals?\b"),
+            ("counts", r"\bcounts?\b"),
+            ("invalid_dates", r"\binvalid\s+dates?\b"),
+            ("malformed_rows", r"\bmalformed\s+rows?\b"),
+            ("cli_flow", r"\bcli\s+flow\b"),
+        )
+        for term, pattern in semantic_patterns:
+            if re.search(pattern, lowered):
+                add(term)
+        return terms
 
     def _strength_for_clause(self, clause: str, category: str) -> str:
         lowered = clause.lower()

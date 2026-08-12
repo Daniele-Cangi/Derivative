@@ -113,7 +113,7 @@ class CoderStage:
 
         canonical = self.generate(plan)
         changed_paths = self._changed_paths(previous_artifact, canonical)
-        if changed_paths:
+        if previous_artifact.revision == 1 and changed_paths:
             return self._finalize_repair(
                 plan=plan,
                 previous_artifact=previous_artifact,

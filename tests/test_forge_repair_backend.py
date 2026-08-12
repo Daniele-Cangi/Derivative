@@ -6,6 +6,7 @@ from core.forge.contracts import (
     ArtifactTargetType,
     BuildSpec,
     FeasiblePlan,
+    GeneratedFile,
     ObligationContract,
     PlanFile,
     PlanInterface,
@@ -170,6 +171,138 @@ class _StaticRepairBackend:
         )
 
 
+class _PerTargetKernel:
+    use_live_model = True
+
+    def __init__(self):
+        self.calls = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        target_paths = list(target_files)
+        target_path = target_paths[0] if len(target_paths) == 1 else "source_transaction"
+        self.calls.append(
+            {
+                "target_path": target_path,
+                "target_paths": target_paths,
+                "target_count": len(target_files),
+                "related_sources": dict(repair_context["related_repaired_source_files"]),
+            }
+        )
+        return {
+            "status": "candidate",
+            "files": {
+                path: f"{content}\n# revised:{path}\n"
+                for path, content in target_files.items()
+            },
+        }
+
+
+class _OmittingAtomicKernel:
+    use_live_model = True
+
+    def __init__(self):
+        self.calls = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        self.calls.append(list(target_files))
+        path, content = next(iter(target_files.items()))
+        return {"status": "candidate", "files": {path: content + "\n# partial\n"}}
+
+
+def test_substrate_backend_revises_each_grounded_target_separately():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Superficial implementation and test."],
+        failure_signatures=["superficial_stub", "non_semantic_test"],
+        evidence={
+            "layer3": {
+                "superficial_interfaces": ["run"],
+                "non_semantic_tests": [test_path],
+            }
+        },
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    kernel = _PerTargetKernel()
+    backend = SubstrateRepairBackend(substrate=_StaticSubstrate(), kernel=kernel)
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert set(candidate.files) == {"src/component.py", test_path}
+    assert candidate.evidence["omitted_paths"] == []
+    assert candidate.evidence["kernel_status"] == "candidate"
+    assert len(kernel.calls) == 2
+    assert all(call["target_count"] == 1 for call in kernel.calls)
+    source_call, test_call = kernel.calls
+    assert source_call["target_path"] == "src/component.py"
+    assert source_call["related_sources"] == {}
+    assert test_call["target_path"] == test_path
+    assert "src/component.py" in test_call["related_sources"]
+
+
+def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_tests():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    artifact.files.append(
+        GeneratedFile(
+            path="src/helper.py",
+            content="def transform(value):\n    return value\n",
+            kind="python_module",
+        )
+    )
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Cross-file behavior is inconsistent."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", test_path, "src/helper.py"]
+    kernel = _PerTargetKernel()
+    backend = SubstrateRepairBackend(substrate=_StaticSubstrate(), kernel=kernel)
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["target_path"] for call in kernel.calls] == ["source_transaction", test_path]
+    assert kernel.calls[0]["target_paths"] == ["src/component.py", "src/helper.py"]
+    assert kernel.calls[0]["related_sources"] == {}
+    assert set(kernel.calls[1]["related_sources"]) == {"src/component.py", "src/helper.py"}
+    assert "# revised:src/component.py" in kernel.calls[1]["related_sources"]["src/component.py"]
+    assert "# revised:src/helper.py" in kernel.calls[1]["related_sources"]["src/helper.py"]
+    assert set(candidate.files) == {"src/component.py", "src/helper.py", test_path}
+
+
+def test_atomic_source_repair_rejects_partial_revision_and_skips_tests():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    artifact.files.append(
+        GeneratedFile(path="src/helper.py", content="VALUE = 1\n", kind="python_module")
+    )
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Semantic mismatch."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", "src/helper.py", test_path]
+    kernel = _OmittingAtomicKernel()
+    backend = SubstrateRepairBackend(substrate=_StaticSubstrate(), kernel=kernel)
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert len(kernel.calls) == 1
+    assert set(kernel.calls[0]) == {"src/component.py", "src/helper.py"}
+    assert candidate.files == {}
+    assert candidate.available is True
+    assert set(candidate.evidence["omitted_paths"]) == {"src/component.py", "src/helper.py", test_path}
+    assert "Atomic source revision omitted required targets" in candidate.stop_reason
+
+
 def test_coder_applies_grounded_candidate_with_revision_and_lineage():
     plan = _generic_plan()
     original = CoderStage().generate(plan)
@@ -233,29 +366,25 @@ def test_coder_fails_closed_when_grounded_backend_raises():
     assert "failed" in result.stop_reason.lower()
 
 
-class _Messages:
+class _Responses:
     def __init__(self):
         self.request = None
 
     def create(self, **kwargs):
         self.request = kwargs
         return SimpleNamespace(
-            content=[
-                SimpleNamespace(
-                    text=(
-                        '{"status":"candidate","files":'
-                        '[{"path":"src/component.py","content":"def run():\\n    return 2\\n"}]}'
-                    )
-                )
-            ]
+            output_text=(
+                '{"status":"candidate","files":'
+                '[{"path":"src/component.py","content":"def run():\\n    return 2\\n"}]}'
+            )
         )
 
 
 def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claims():
     kernel = ReasoningKernel(api_key="dummy_key_for_testing", execution_mode="local-only")
-    messages = _Messages()
+    responses = _Responses()
     kernel.use_live_model = True
-    kernel.client = SimpleNamespace(messages=messages)
+    kernel.client = SimpleNamespace(responses=responses)
     framing = SimpleNamespace(
         lens_name="Formal Logic",
         framing="Preserve interfaces.",
@@ -272,5 +401,13 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
 
     assert payload["status"] == "candidate"
     assert payload["files"][0]["path"] == "src/component.py"
-    assert "complete replacements" in messages.request["system"]
-    assert messages.request["max_tokens"] == 4000
+    assert "complete replacements" in responses.request["instructions"]
+    assert responses.request["max_output_tokens"] == 8000
+    assert responses.request["model"] == "gpt-4.1-mini"
+    revision_schema = responses.request["text"]["format"]["schema"]
+    assert revision_schema["properties"]["files"]["required"] == ["src/component.py"]
+    assert revision_schema["properties"]["files"]["additionalProperties"] is False
+    assert "one replacement for every supplied target path" in responses.request["instructions"]
+    assert "flat src/ layout" in responses.request["instructions"]
+    assert "related_repaired_source_files" in responses.request["instructions"]
+    assert "must not use skip" in " ".join(responses.request["instructions"].split())

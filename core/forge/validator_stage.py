@@ -134,6 +134,8 @@ class ValidatorStage:
         signature_set = set(signatures)
         if not signature_set:
             return None
+        if "semantic_content_mismatch" in signature_set:
+            return FailureCategory.IMPLEMENTATION
         if {"missing_required_file", "manifest_mismatch", "provenance_mismatch"} & signature_set:
             return FailureCategory.ARCHITECTURAL
         if {

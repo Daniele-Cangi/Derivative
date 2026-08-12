@@ -25,6 +25,13 @@ BASE_REQUIREMENT = (
     "flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
 )
 
+TELEMETRY_REQUIREMENT = (
+    "Build a Python CLI that reads JSON Lines telemetry events with fields device_id, timestamp, and temperature_c, "
+    "rejects malformed records, missing fields, and invalid timestamps into a quarantine JSONL file, "
+    "computes per-device minimum, maximum, and average temperature, writes a summary CSV, and includes "
+    "behavioral tests for parsing, quarantine handling, aggregation, and the complete CLI flow."
+)
+
 
 def _planner(tmp_path: Path) -> PlannerStage:
     return PlannerStage(
@@ -102,3 +109,30 @@ def test_trivial_generated_test_is_rejected_as_non_semantic(tmp_path):
     assert validation.passed is False
     assert "non_semantic_test" in validation.failure_signatures
     assert "fake_acceptance_coverage" in validation.failure_signatures
+
+
+def test_invoice_csv_template_cannot_verify_jsonl_telemetry_requirement(tmp_path):
+    compiler = RequirementCompiler()
+    spec = compiler.compile(TELEMETRY_REQUIREMENT)
+    plan_output = _planner(tmp_path).plan(spec)
+    assert isinstance(plan_output, FeasiblePlan)
+    assert "src/pipeline.py" in plan_output.requirement_coverage["R002"]["files"]
+    assert "src/pipeline.py" in plan_output.requirement_coverage["R004"]["files"]
+    assert "src/pipeline.py" in plan_output.requirement_coverage["R005"]["files"]
+    assert "src/watcher.py" not in plan_output.requirement_coverage["R005"]["files"]
+
+    artifact = CoderStage().generate(plan_output)
+    validation = ValidatorStage().validate(artifact, plan_output, spec)
+
+    assert validation.passed is False
+    assert "semantic_omission" in validation.failure_signatures
+    assert "semantic_content_mismatch" in validation.failure_signatures
+    assert validation.failure_category is not None
+    assert validation.failure_category.value == "implementation"
+    checks = validation.layer2_result.evidence["requirement_semantic_checks"]
+    mismatches = {item["requirement_id"]: item for item in checks["semantic_content_mismatches"]}
+    assert "cli_entrypoint" in mismatches["R001"]["missing_source_terms"]
+    assert "input_jsonl" in mismatches["R002"]["missing_source_terms"]
+    assert "device_id" in mismatches["R002"]["missing_source_terms"]
+    assert "minimum" in mismatches["R004"]["missing_source_terms"]
+    assert "summary_csv" in mismatches["R005"]["missing_source_terms"]

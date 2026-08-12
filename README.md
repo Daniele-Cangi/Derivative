@@ -159,6 +159,15 @@ Expected output style is prose and always includes:
 python -m pip install -r requirements.txt
 ```
 
+Live `hybrid` and `remote-only` reasoning use the OpenAI Responses API. Configure:
+
+```dotenv
+OPENAI_API_KEY="your-api-key-here"
+OPENAI_MODEL="gpt-4.1-mini"
+```
+
+`local-only` does not require an API key.
+
 ## License
 
 Derivative is released under the [MIT License](LICENSE).

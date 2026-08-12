@@ -344,6 +344,48 @@ def test_missing_semantic_requirement_coverage_is_detected(forge_pipeline):
     assert result.failure_category is not None and result.failure_category.value == "validation"
 
 
+def test_callability_and_return_type_only_do_not_count_as_semantic_coverage(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = forge_pipeline["build_spec"]
+    required_path = f"tests/{plan.required_tests[0].test_name}.py"
+    generated = _find_file(artifact, required_path)
+    assert generated is not None
+    generated.content = (
+        "def test_invokes_target_but_proves_no_behavior():\n"
+        "    target = lambda: 0\n"
+        "    assert callable(target)\n"
+        "    result = target()\n"
+        "    assert isinstance(result, int)\n"
+    )
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "non_semantic_test" in result.failure_signatures
+    assert "fake_acceptance_coverage" in result.failure_signatures
+    assert required_path in result.layer3_result.evidence["non_semantic_tests"]
+
+
+def test_every_declared_test_path_is_attacked_for_semantic_content(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = forge_pipeline["build_spec"]
+    required_paths = {f"tests/{test.test_name}.py" for test in plan.required_tests if test.required}
+    extra_path = next(path for path in artifact.test_paths if path not in required_paths)
+    generated = _find_file(artifact, extra_path)
+    assert generated is not None
+    generated.content = "def helper_only():\n    return 0\n"
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "non_semantic_test" in result.failure_signatures
+    assert extra_path in result.layer3_result.evidence["non_semantic_tests"]
+
+
 def test_validator_uses_invoice_smoke_input_for_invoice_specs():
     validator = ValidatorStage()
     invoice_spec = RequirementCompiler().compile(INVOICE_REQUIREMENT)
