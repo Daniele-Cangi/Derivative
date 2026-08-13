@@ -127,6 +127,37 @@ def test_validator_stage_is_a_thin_composition_root():
     assert isinstance(validator.adversarial_layer, AdversarialValidationLayer)
 
 
+def test_validator_workspace_cleanup_errors_cannot_abort_validation(
+    monkeypatch,
+    forge_pipeline,
+):
+    original_temporary_directory = validator_stage_module.tempfile.TemporaryDirectory
+    calls = []
+
+    def tracked_temporary_directory(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return original_temporary_directory(*args, **kwargs)
+
+    monkeypatch.setattr(
+        validator_stage_module.tempfile,
+        "TemporaryDirectory",
+        tracked_temporary_directory,
+    )
+
+    result = forge_pipeline["validator"].validate(
+        forge_pipeline["artifact"],
+        forge_pipeline["plan"],
+        forge_pipeline["build_spec"],
+    )
+
+    assert result.passed is True
+    validator_workspace_calls = [
+        call for call in calls if call.get("prefix") == "forge_validator_"
+    ]
+    assert validator_workspace_calls
+    assert validator_workspace_calls[0]["ignore_cleanup_errors"] is True
+
+
 def test_capability_contract_matches_composed_service(production_service_forge_pipeline, tmp_path):
     checker = CapabilityContractChecker()
     artifact = production_service_forge_pipeline["artifact"]
@@ -386,6 +417,23 @@ def test_every_declared_test_path_is_attacked_for_semantic_content(forge_pipelin
     assert extra_path in result.layer3_result.evidence["non_semantic_tests"]
 
 
+def test_every_declared_test_path_is_executed(forge_pipeline):
+    artifact = copy.deepcopy(forge_pipeline["artifact"])
+    planned_test = next(item for item in artifact.files if item.path == "tests/test_cli_flow.py")
+    planned_test.content = "def test_planned_regression():\n    assert False\n"
+
+    result = forge_pipeline["validator"].validate(
+        artifact,
+        forge_pipeline["plan"],
+        forge_pipeline["build_spec"],
+    )
+
+    assert result.passed is False
+    assert "test_execution_failure" in result.failure_signatures
+    executed = result.layer2_result.evidence["test_execution"]["tests"]
+    assert "tests/test_cli_flow.py" in executed
+
+
 def test_validator_uses_invoice_smoke_input_for_invoice_specs():
     validator = ValidatorStage()
     invoice_spec = RequirementCompiler().compile(INVOICE_REQUIREMENT)
@@ -525,3 +573,26 @@ def test_pipeline_mutations_fail_closed(
 
     assert result.passed is False
     assert expected_signature in result.failure_signatures
+
+
+def test_non_cli_workflow_cannot_be_replaced_by_click_command(forge_pipeline):
+    artifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan = copy.deepcopy(forge_pipeline["plan"])
+    target_interface = next(interface for interface in plan.interfaces if interface.name == "main")
+    target_interface.interface_type = "function"
+    cli_file = next(item for item in artifact.files if item.path == "src/cli.py")
+    cli_file.content = cli_file.content.replace(
+        "def main(",
+        "@click.command()\ndef main(",
+        1,
+    )
+    cli_file.content = "import click\n" + cli_file.content
+
+    result = forge_pipeline["validator"].validate(
+        artifact,
+        plan,
+        forge_pipeline["build_spec"],
+    )
+
+    assert result.passed is False
+    assert "interface_contract_mismatch" in result.failure_signatures

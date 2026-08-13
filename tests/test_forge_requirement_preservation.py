@@ -5,6 +5,7 @@ from core.forge.contracts import FeasiblePlan
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
+from core.forge.validation.obligations import ObligationValidationLayer
 from forge import run_forge
 
 
@@ -131,8 +132,38 @@ def test_invoice_csv_template_cannot_verify_jsonl_telemetry_requirement(tmp_path
     assert validation.failure_category.value == "implementation"
     checks = validation.layer2_result.evidence["requirement_semantic_checks"]
     mismatches = {item["requirement_id"]: item for item in checks["semantic_content_mismatches"]}
-    assert "cli_entrypoint" in mismatches["R001"]["missing_source_terms"]
+    assert "cli_entrypoint" not in mismatches["R001"]["missing_source_terms"]
+    assert "cli_entrypoint" in mismatches["R001"]["missing_test_terms"]
     assert "input_jsonl" in mismatches["R002"]["missing_source_terms"]
     assert "device_id" in mismatches["R002"]["missing_source_terms"]
     assert "minimum" in mismatches["R004"]["missing_source_terms"]
     assert "summary_csv" in mismatches["R005"]["missing_source_terms"]
+
+
+def test_semantic_gate_recognizes_executed_cli_and_aggregation_apis():
+    test_corpus = (
+        "result = pipeline.main([str(input_path), str(quarantine_path), str(summary_path)])\n"
+        "summary = pipeline.compute_summary(device_temps)\n"
+        "assert summary[0]['average_temperature_c'] == 15.0\n"
+    )
+    source_corpus = (
+        "def compute_summary(device_temps):\n"
+        "    return {'minimum': min(device_temps), 'maximum': max(device_temps)}\n"
+    )
+
+    assert ObligationValidationLayer._semantic_term_present(
+        "cli_entrypoint",
+        test_corpus,
+        is_test=True,
+    )
+    assert ObligationValidationLayer._semantic_term_present(
+        "cli_flow",
+        test_corpus,
+        is_test=True,
+    )
+    assert ObligationValidationLayer._semantic_term_present("aggregation", source_corpus)
+    assert ObligationValidationLayer._semantic_term_present(
+        "aggregation",
+        test_corpus,
+        is_test=True,
+    )

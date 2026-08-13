@@ -183,12 +183,20 @@ class RuntimeValidationLayer(ValidationLayerBase):
         result["function_present"] = True
 
         module_name = target.stem
-        input_csv = workspace / "validator_input.csv"
+        is_jsonl_pipeline = self._is_jsonl_pipeline(build_spec)
+        input_csv = workspace / ("validator_input.jsonl" if is_jsonl_pipeline else "validator_input.csv")
         output_csv = workspace / "validator_output.csv"
-        input_csv.write_text(self._sample_input_csv_content(build_spec), encoding="utf-8")
+        input_csv.write_text(self._sample_input_content(build_spec), encoding="utf-8")
         call_args = ""
-        if candidate == "main" and entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
-            call_args = f"[{str(input_csv)!r}, {str(output_csv)!r}]"
+        if candidate == "main":
+            if is_jsonl_pipeline:
+                quarantine_jsonl = workspace / "validator_quarantine.jsonl"
+                call_args = (
+                    f"[{str(input_csv)!r}, {str(quarantine_jsonl)!r}, "
+                    f"{str(output_csv)!r}]"
+                )
+            elif entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
+                call_args = f"[{str(input_csv)!r}, {str(output_csv)!r}]"
         script = (
             "import importlib\n"
             "import json\n"
@@ -208,7 +216,9 @@ class RuntimeValidationLayer(ValidationLayerBase):
         result["executed"] = completed.returncode == 0
         return result
 
-    def _sample_input_csv_content(self, build_spec: BuildSpec) -> str:
+    def _sample_input_content(self, build_spec: BuildSpec) -> str:
+        if self._is_jsonl_pipeline(build_spec):
+            return '{"device_id":"device-1","timestamp":"2026-01-15T12:00:00Z","temperature_c":21.5}\n'
         atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
         if "invoice" in atom_text or "due_date" in atom_text:
             return (
@@ -216,6 +226,15 @@ class RuntimeValidationLayer(ValidationLayerBase):
                 "INV-1,2026-01-15,100.00,Acme\n"
             )
         return "contract_id,expiration_date\nA,2026-01-15\n"
+
+    def _sample_input_csv_content(self, build_spec: BuildSpec) -> str:
+        return self._sample_input_content(build_spec)
+
+    def _is_jsonl_pipeline(self, build_spec: BuildSpec) -> bool:
+        return any(
+            bool({"input_jsonl", "jsonl"} & set(atom.evidence_terms))
+            for atom in build_spec.requirement_atoms
+        )
 
     def _run_subprocess(self, script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

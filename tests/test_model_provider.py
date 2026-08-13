@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from core.model_provider import (
     DEFAULT_OPENAI_MODEL,
     generate_text,
@@ -91,6 +93,28 @@ def test_generate_text_passes_strict_json_schema_to_responses_api():
             "strict": True,
         }
     }
+
+
+def test_generate_text_reports_incomplete_response_without_payload_content():
+    response = SimpleNamespace(
+        output_text="",
+        output=[],
+        status="incomplete",
+        incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+    )
+    client = SimpleNamespace(responses=_Responses(response))
+
+    with pytest.raises(
+        ValueError,
+        match=r"status=incomplete, reason=max_output_tokens",
+    ):
+        generate_text(
+            client,
+            instructions="Return JSON.",
+            input_text="sensitive payload must not appear",
+            max_output_tokens=100,
+            model="gpt-4.1-mini",
+        )
 
 
 def test_openai_configuration_is_deterministic(monkeypatch):

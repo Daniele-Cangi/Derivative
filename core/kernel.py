@@ -120,14 +120,36 @@ Return exactly one JSON object with this structure:
 }
 Only return complete replacements for supplied target files. Do not add files, alter paths, weaken requirements,
 remove tests, claim validation success, or include Markdown. Return one replacement for every supplied target path.
-Preserve public interfaces and plan constraints. Tests must preserve existing import bootstrapping; when sources use a
+Every replacement must be complete, syntactically valid Python source, never a requirement sentence or objective text.
+Preserve plan-declared public interfaces and plan constraints. Legacy helpers not declared by the plan may be removed
+when they contradict the requirement or file_tree_plan purposes. Tests must preserve existing import bootstrapping; when sources use a
 flat src/ layout, tests must add that src/ directory to sys.path before importing target modules. Every test replacement
 must invoke target code with non-trivial fixtures and assert concrete behavior, output, or expected exceptions.
 Treat related_repaired_source_files as executable API contracts. Source modules must integrate with their exact imports
 and signatures instead of duplicating incompatible implementations. Test replacements must call the exact signatures
-present in related sources, pass explicit temporary paths instead of mutating module constants after import, and must
-not use skip, pass, conditional assertions, tautologies, or optional checks. A CLI requirement must expose a real
-argparse, Typer, or Click entrypoint and tests must invoke that CLI path with explicit arguments."""
+present in source_api_contracts, pass explicit temporary paths instead of relying on process working-directory defaults
+or mutating module constants after import, and must not use skip, pass, conditional assertions, tautologies, or optional
+checks. Generate the supplied test targets as one coherent suite and obey each test_generation_contract. Derive expected
+counts directly from the fixture records, and do not assert incidental behavior that is absent from the requirement and
+plan, even if a legacy source API exposes it. Obey forbidden_unrequested_behaviors in every test contract. If
+candidate_test_suite and preflight_test_execution are present during source revision, treat only assertions grounded in
+test_generation_contracts as executable specifications: fix source defects demonstrated by those assertions while
+preserving valid source behavior; do not implement incidental SQLite, database, audit, health, or polling behavior merely
+because a candidate test invented it.
+If preflight_test_execution is present during test revision, repair concrete test defects without deleting semantic
+checks or weakening expected behavior. Never call a stdin-based CLI with no input and assert success; provide an explicit
+fixture path or use subprocess input. Treat decorated Click or Typer commands as command objects, not ordinary Python
+functions: invoke them with CliRunner or subprocess and pass Windows paths as complete argument-list items. Never call a
+click.Command directly with positional business arguments. Use CliRunner only when source_api_contracts shows Click or
+Typer decorators on that exact function. If decorators is empty and main accepts argv, invoke main([...]) directly and
+never pass it to CliRunner. When a plan interface declares an ordinary function such as
+run() -> int, keep it undecorated and put Click/Typer behavior in a separate main or cli wrapper. A CLI requirement must
+expose a real argparse, Typer, or Click entrypoint and tests must invoke that CLI path with explicit arguments and verify
+exit status plus observable output. A test contract containing cli_entrypoint or cli_flow must invoke the declared CLI
+entrypoint such as main(argv), CliRunner, or a subprocess; invoking only the internal run function is insufficient. A
+test contract containing aggregation must invoke the aggregation API or the full workflow and assert concrete grouped
+minimum, maximum, average, total, or count values. Preserve and update planned test modules included in the transaction;
+do not leave stale tests for a superseded input format."""
         lens_context = [
             {
                 "name": framing.lens_name,
@@ -165,7 +187,7 @@ argparse, Typer, or Click entrypoint and tests must invoke that CLI path with ex
             response_text = generate_text(
                 self.client,
                 model=self.model,
-                max_output_tokens=8000,
+                max_output_tokens=12000,
                 instructions=system_prompt,
                 input_text=json.dumps(request_payload, sort_keys=True),
                 output_schema=output_schema,
@@ -176,10 +198,12 @@ argparse, Typer, or Click entrypoint and tests must invoke that CLI path with ex
             return data
         except Exception as exc:
             if self.allow_local_fallback:
+                detail = " ".join(str(exc).split())[:240]
+                suffix = f": {detail}" if detail else ""
                 return {
                     "status": "unavailable",
                     "files": [],
-                    "reason": f"Live revision failed: {type(exc).__name__}",
+                    "reason": f"Live revision failed: {type(exc).__name__}{suffix}",
                 }
             raise
 

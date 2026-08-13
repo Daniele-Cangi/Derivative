@@ -65,6 +65,15 @@ class AdversarialValidationLayer(ValidationLayerBase):
             self._append_unique(signatures, "missing_entrypoint")
         evidence["missing_entrypoint_interfaces"] = missing_entrypoint_declarations
 
+        interface_contract_mismatches = self._detect_interface_contract_mismatches(plan, materialized)
+        if interface_contract_mismatches:
+            failures.append(
+                "Generated interfaces violate their declared callable contracts: "
+                f"{interface_contract_mismatches}."
+            )
+            self._append_unique(signatures, "interface_contract_mismatch")
+        evidence["interface_contract_mismatches"] = interface_contract_mismatches
+
         expected_test_paths = {f"tests/{test.test_name}.py" for test in plan.required_tests if test.required}
         if not expected_test_paths.issubset(set(code_artifact.test_paths)):
             failures.append("Declared tests do not align with required_tests.")
@@ -117,6 +126,51 @@ class AdversarialValidationLayer(ValidationLayerBase):
             evidence=evidence,
             metrics=metrics,
         )
+
+    def _detect_interface_contract_mismatches(
+        self,
+        plan: FeasiblePlan,
+        materialized: Dict[str, Path],
+    ) -> List[str]:
+        non_cli_interfaces = {
+            interface.name
+            for interface in plan.interfaces
+            if interface.interface_type in {"function", "entrypoint"}
+        }
+        if not non_cli_interfaces:
+            return []
+
+        mismatches: List[str] = []
+        for path, target in materialized.items():
+            if not path.startswith("src/") or not path.endswith(".py"):
+                continue
+            try:
+                tree = ast.parse(target.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name not in non_cli_interfaces:
+                    continue
+                decorators = [self._decorator_name(item).lower() for item in node.decorator_list]
+                if any(
+                    name.endswith(("click.command", "click.group", "typer.command"))
+                    or name in {"command", "click.command", "click.group", "app.command"}
+                    for name in decorators
+                ):
+                    mismatches.append(f"{path}:{node.name}:decorated_cli_command")
+        return mismatches
+
+    def _decorator_name(self, node: ast.expr) -> str:
+        if isinstance(node, ast.Call):
+            return self._decorator_name(node.func)
+        if isinstance(node, ast.Attribute):
+            prefix = self._decorator_name(node.value)
+            return f"{prefix}.{node.attr}" if prefix else node.attr
+        if isinstance(node, ast.Name):
+            return node.id
+        return ""
 
     def _interface_declared_in_entrypoint(
         self,

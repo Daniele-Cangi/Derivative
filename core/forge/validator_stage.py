@@ -42,7 +42,10 @@ class ValidatorStage:
         evidence: Dict[str, object] = {}
         metrics: Dict[str, object] = {}
 
-        with tempfile.TemporaryDirectory(prefix="forge_validator_") as tmp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="forge_validator_",
+            ignore_cleanup_errors=True,
+        ) as tmp_dir:
             workspace = Path(tmp_dir)
             materialized = self._materialize_workspace(code_artifact, workspace)
             evidence["workspace"] = str(workspace)
@@ -152,7 +155,14 @@ class ValidatorStage:
             "fake_acceptance_coverage",
         } & signature_set:
             return FailureCategory.VALIDATION
-        if {"syntax_error", "import_failure", "missing_entrypoint", "test_execution_failure", "superficial_stub"} & signature_set:
+        if {
+            "syntax_error",
+            "import_failure",
+            "missing_entrypoint",
+            "test_execution_failure",
+            "superficial_stub",
+            "interface_contract_mismatch",
+        } & signature_set:
             return FailureCategory.IMPLEMENTATION
         return FailureCategory.UNKNOWN
 

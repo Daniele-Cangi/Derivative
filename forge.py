@@ -35,7 +35,10 @@ TERMINAL_VERIFIED = "verified"
 TERMINAL_INFEASIBLE_PROVEN = "infeasible_proven"
 TERMINAL_VALIDATION_FAILED = "validation_failed"
 
-app = typer.Typer(help="Forge - execution-grounded software build orchestrator.")
+app = typer.Typer(
+    help="Forge - execution-grounded software build orchestrator.",
+    pretty_exceptions_show_locals=False,
+)
 
 
 def run_forge(

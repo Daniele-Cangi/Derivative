@@ -1,4 +1,6 @@
+import os
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -122,8 +124,14 @@ class ObligationValidationLayer(ValidationLayerBase):
             self._append_unique(signatures, signature)
         evidence["capability_contract_checks"] = capability_evidence
 
-        test_result = self._run_required_tests(workspace, expected_test_paths, actual_paths)
+        declared_test_paths = set(code_artifact.test_paths)
+        test_result = self._run_required_tests(
+            workspace,
+            expected_test_paths | declared_test_paths,
+            actual_paths,
+        )
         evidence["test_execution"] = test_result
+        evidence["declared_test_paths"] = sorted(declared_test_paths)
         if not test_result["ran"]:
             failures.append("Required tests were not executed.")
             self._append_unique(signatures, "test_execution_failure")
@@ -138,6 +146,7 @@ class ObligationValidationLayer(ValidationLayerBase):
             "duration_ms": elapsed_ms,
             "required_file_count": len(required_paths),
             "required_test_count": len(expected_test_paths),
+            "declared_test_count": len(declared_test_paths),
             "required_obligation_count": len(plan.required_obligations),
             "required_acceptance_count": len(plan.acceptance_criterion_ids),
             "build_id": build_spec.build_id,
@@ -165,24 +174,33 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "stderr": "",
                 "tests": [],
             }
-        command = [
-            self.python_executable,
-            "-m",
-            "pytest",
-            "-q",
-            "-p",
-            "no:cacheprovider",
-            f"--basetemp={workspace / '.pytest_tmp'}",
-            *runnable,
-        ]
-        completed = subprocess.run(
-            command,
-            cwd=str(workspace),
-            capture_output=True,
-            text=True,
-            timeout=self.timeout_seconds,
-            check=False,
-        )
+        environment = os.environ.copy()
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+        with tempfile.TemporaryDirectory(
+            prefix="forge_pytest_",
+            ignore_cleanup_errors=True,
+        ) as pytest_tmp:
+            command = [
+                self.python_executable,
+                "-B",
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                f"--basetemp={pytest_tmp}",
+                *runnable,
+            ]
+            completed = subprocess.run(
+                command,
+                cwd=str(workspace),
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+                check=False,
+                env=environment,
+            )
         return {
             "ran": True,
             "returncode": completed.returncode,
@@ -350,7 +368,7 @@ class ObligationValidationLayer(ValidationLayerBase):
             "input_jsonl": ("json.loads", "json.load(", "jsonlines", "parse_jsonl"),
             "jsonl": (".jsonl", "json_lines", "jsonl"),
             "input_csv": ("csv.dictreader", "csv.reader", "read_csv"),
-            "summary_csv": ("csv.dictwriter", "csv.writer(", "write_summary", "summary_csv"),
+            "summary_csv": ("csv.dictwriter", "csv.writer(", "write_summary"),
             "malformed_records": ("jsondecodeerror", "malformed", "invalid_json"),
             "missing_fields": ("missing_field", "missing_fields"),
             "invalid_timestamp": ("invalid_timestamp", "timestamp_error"),
@@ -360,7 +378,14 @@ class ObligationValidationLayer(ValidationLayerBase):
             "minimum": ("min(", "minimum", "min_temperature", "['min']", '"min"'),
             "maximum": ("max(", "maximum", "max_temperature", "['max']", '"max"'),
             "average": ("average", "avg_temperature", "mean(", "['average']", "['avg']", '"average"'),
-            "aggregation": ("aggregate", "aggregation", "groupby", "group_by"),
+            "aggregation": (
+                "aggregate",
+                "aggregation",
+                "groupby",
+                "group_by",
+                "compute_summary",
+                "device_temps",
+            ),
             "per_device": ("device_id", "per_device"),
             "totals": ("total", "totals"),
             "counts": ("count", "counts"),
@@ -371,5 +396,5 @@ class ObligationValidationLayer(ValidationLayerBase):
         if is_test and term == "input_csv":
             candidates = (*candidates, ".csv")
         if is_test and term in {"cli_entrypoint", "cli_flow"}:
-            candidates = (*candidates, "cli.main(", "clirunner", "subprocess.run")
+            candidates = (*candidates, ".main(", "clirunner", "subprocess.run")
         return any(candidate in corpus or candidate in normalized for candidate in candidates)

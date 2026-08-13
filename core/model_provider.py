@@ -64,4 +64,10 @@ def generate_text(
                 fragments.append(text)
     if fragments:
         return "\n".join(fragments)
-    raise ValueError("OpenAI response did not contain text output.")
+    status = str(getattr(response, "status", "unknown") or "unknown")
+    incomplete_details = getattr(response, "incomplete_details", None)
+    incomplete_reason = getattr(incomplete_details, "reason", None)
+    reason_suffix = f", reason={incomplete_reason}" if incomplete_reason else ""
+    raise ValueError(
+        f"OpenAI response did not contain text output (status={status}{reason_suffix})."
+    )

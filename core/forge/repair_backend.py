@@ -1,4 +1,4 @@
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from core.forge.contracts import (
     CodeArtifact,
@@ -9,6 +9,12 @@ from core.forge.contracts import (
 )
 from core.kernel import ReasoningKernel
 from core.substrate import CognitiveSubstrate
+from core.forge.repair_support import (
+    preflight_has_source_failure,
+    run_test_preflight,
+    source_api_contracts,
+    test_generation_contracts,
+)
 
 
 class ArtifactRepairBackend(Protocol):
@@ -29,9 +35,29 @@ class SubstrateRepairBackend:
         execution_mode: str = "hybrid",
         substrate: CognitiveSubstrate | None = None,
         kernel: ReasoningKernel | None = None,
+        preflight_timeout_seconds: int = 60,
+        max_source_preflight_corrections: int = 2,
+        max_test_preflight_corrections: int = 3,
+        test_preflight_runner: Callable[[dict[str, str], list[str]], dict[str, Any]] | None = None,
     ) -> None:
         self.substrate = substrate or CognitiveSubstrate(execution_mode=execution_mode)
         self.kernel = kernel or ReasoningKernel(execution_mode=execution_mode)
+        self.preflight_timeout_seconds = preflight_timeout_seconds
+        self.max_source_preflight_corrections = max(
+            1,
+            int(max_source_preflight_corrections),
+        )
+        self.max_test_preflight_corrections = max(
+            1,
+            int(max_test_preflight_corrections),
+        )
+        self.test_preflight_runner = test_preflight_runner or (
+            lambda candidate_files, test_paths: run_test_preflight(
+                candidate_files,
+                test_paths,
+                timeout_seconds=self.preflight_timeout_seconds,
+            )
+        )
 
     def propose(
         self,
@@ -71,16 +97,32 @@ class SubstrateRepairBackend:
         accepted: dict[str, str] = {}
         rejected: list[str] = []
         kernel_calls: list[dict[str, Any]] = []
+        preflight_attempts: list[dict[str, Any]] = []
         available_call_count = 0
         synthetic_reasons: list[str] = []
 
-        def invoke(target_paths: list[str], *, atomic: bool) -> bool:
+        def invoke(
+            target_paths: list[str],
+            *,
+            atomic: bool,
+            context_updates: dict[str, Any] | None = None,
+            target_contents: dict[str, str] | None = None,
+        ) -> bool:
             nonlocal available_call_count
             target_paths = sorted(target_paths)
             target_set = set(target_paths)
             repair_context = dict(base_context)
-            repair_context["current_target_path"] = target_paths[0] if len(target_paths) == 1 else "source_transaction"
+            repair_context.setdefault("repair_phase", "file_revision")
+            if len(target_paths) == 1:
+                transaction_name = target_paths[0]
+            elif all(path.startswith("tests/") for path in target_paths):
+                transaction_name = "test_suite_transaction"
+            else:
+                transaction_name = "source_transaction"
+            repair_context["current_target_path"] = transaction_name
             repair_context["current_target_paths"] = target_paths
+            if context_updates:
+                repair_context.update(context_updates)
             if atomic:
                 repair_context["related_repaired_source_files"] = {
                     path: accepted.get(path, content)
@@ -94,9 +136,26 @@ class SubstrateRepairBackend:
                     accepted,
                     artifact,
                 )
+            if any(path.startswith("tests/") for path in target_paths):
+                related_sources = repair_context["related_repaired_source_files"]
+                repair_context["source_api_contracts"] = source_api_contracts(
+                    related_sources
+                )
+                repair_context["test_generation_contracts"] = test_generation_contracts(
+                    target_paths,
+                    plan,
+                    artifact,
+                )
+            current_targets = {
+                path: (target_contents or {}).get(
+                    path,
+                    accepted.get(path, files_by_path[path]),
+                )
+                for path in target_paths
+            }
             payload = self.kernel.propose_code_revision(
                 repair_context=repair_context,
-                target_files={path: files_by_path[path] for path in target_paths},
+                target_files=current_targets,
                 lens_framings=framings,
             )
             status = str(payload.get("status", "candidate"))
@@ -117,16 +176,17 @@ class SubstrateRepairBackend:
                 accepted.update(eligible)
             elif atomic and omitted and status != "unavailable":
                 synthetic_reasons.append(
-                    f"Atomic source revision omitted required targets: {', '.join(omitted)}"
+                    f"Atomic revision omitted required targets: {', '.join(omitted)}"
                 )
             kernel_calls.append(
                 {
-                    "target_path": target_paths[0] if len(target_paths) == 1 else "source_transaction",
+                    "target_path": transaction_name,
                     "target_paths": target_paths,
                     "status": status,
                     "reason": reason,
                     "accepted": str(target_accepted).lower(),
                     "omitted_paths": omitted,
+                    "repair_phase": repair_context.get("repair_phase", "file_revision"),
                 }
             )
             return target_accepted
@@ -134,19 +194,161 @@ class SubstrateRepairBackend:
         source_paths = sorted(path for path in allowed_paths if path.startswith("src/"))
         test_paths = sorted(path for path in allowed_paths if path.startswith("tests/"))
         other_paths = sorted(path for path in allowed_paths if path not in source_paths and path not in test_paths)
-        semantic_transaction = "implement_missing_requirement_semantics" in directive.operations
-
+        impact_expanded_paths: list[str] = []
+        if source_paths:
+            required_test_paths = {
+                f"tests/{planned_test.test_name}.py"
+                for planned_test in plan.required_tests
+                if planned_test.required
+            }
+            required_test_paths.update(
+                self._normalize_path(plan_file.path)
+                for plan_file in plan.file_tree_plan
+                if self._normalize_path(plan_file.path).startswith("tests/")
+            )
+            impact_expanded_paths = sorted(
+                path
+                for path in required_test_paths
+                if path in files_by_path and path not in test_paths
+            )
+            test_paths = sorted({*test_paths, *impact_expanded_paths})
+            allowed_paths = [*allowed_paths, *impact_expanded_paths]
         source_ready = True
-        if semantic_transaction and source_paths:
+        if source_paths:
             source_ready = invoke(source_paths, atomic=True)
-        else:
-            for target_path in source_paths:
-                invoke([target_path], atomic=False)
         for target_path in other_paths:
             invoke([target_path], atomic=False)
-        if source_ready:
-            for target_path in test_paths:
-                invoke([target_path], atomic=False)
+        if source_ready and test_paths:
+            tests_ready = invoke(
+                test_paths,
+                atomic=True,
+                context_updates={"repair_phase": "test_suite_generation"},
+            )
+            if tests_ready:
+                first_candidate = {path: accepted.pop(path) for path in test_paths}
+                preflight = self.test_preflight_runner(
+                    {**files_by_path, **accepted, **first_candidate},
+                    test_paths,
+                )
+                preflight_attempts.append(preflight)
+                if preflight.get("passed", False):
+                    accepted.update(first_candidate)
+                else:
+                    source_correction_attempt = 0
+                    while (
+                        source_paths
+                        and not preflight.get("passed", False)
+                        and source_correction_attempt < self.max_source_preflight_corrections
+                        and (
+                            source_correction_attempt == 0
+                            or preflight_has_source_failure(preflight)
+                        )
+                    ):
+                        source_correction_attempt += 1
+                        source_corrected = invoke(
+                            source_paths,
+                            atomic=True,
+                            context_updates={
+                                "repair_phase": "source_preflight_correction",
+                                "source_preflight_correction_attempt": source_correction_attempt,
+                                "preflight_test_execution": preflight,
+                                "candidate_test_suite": first_candidate,
+                            },
+                            target_contents={
+                                path: accepted.get(path, files_by_path[path])
+                                for path in source_paths
+                            },
+                        )
+                        if not source_corrected:
+                            break
+                        preflight = self.test_preflight_runner(
+                            {**files_by_path, **accepted, **first_candidate},
+                            test_paths,
+                        )
+                        preflight_attempts.append(preflight)
+                    if preflight.get("passed", False):
+                        accepted.update(first_candidate)
+                    else:
+                        current_test_candidate = first_candidate
+                        test_suite_passed = False
+                        correction_returned_all_paths = True
+                        for correction_attempt in range(
+                            1,
+                            self.max_test_preflight_corrections + 1,
+                        ):
+                            corrected = invoke(
+                                test_paths,
+                                atomic=True,
+                                context_updates={
+                                    "repair_phase": "test_suite_correction",
+                                    "preflight_correction_attempt": correction_attempt,
+                                    "preflight_test_execution": preflight,
+                                },
+                                target_contents=current_test_candidate,
+                            )
+                            if not corrected:
+                                correction_returned_all_paths = False
+                                break
+                            current_test_candidate = {
+                                path: accepted.pop(path)
+                                for path in test_paths
+                            }
+                            preflight = self.test_preflight_runner(
+                                {
+                                    **files_by_path,
+                                    **accepted,
+                                    **current_test_candidate,
+                                },
+                                test_paths,
+                            )
+                            preflight_attempts.append(preflight)
+                            while (
+                                source_paths
+                                and not preflight.get("passed", False)
+                                and source_correction_attempt < self.max_source_preflight_corrections
+                                and preflight_has_source_failure(preflight)
+                            ):
+                                source_correction_attempt += 1
+                                source_corrected = invoke(
+                                    source_paths,
+                                    atomic=True,
+                                    context_updates={
+                                        "repair_phase": "source_preflight_correction",
+                                        "source_preflight_correction_attempt": source_correction_attempt,
+                                        "preflight_test_execution": preflight,
+                                        "candidate_test_suite": current_test_candidate,
+                                    },
+                                    target_contents={
+                                        path: accepted.get(path, files_by_path[path])
+                                        for path in source_paths
+                                    },
+                                )
+                                if not source_corrected:
+                                    break
+                                preflight = self.test_preflight_runner(
+                                    {
+                                        **files_by_path,
+                                        **accepted,
+                                        **current_test_candidate,
+                                    },
+                                    test_paths,
+                                )
+                                preflight_attempts.append(preflight)
+                            if preflight.get("passed", False):
+                                accepted.update(current_test_candidate)
+                                test_suite_passed = True
+                                break
+                        if not test_suite_passed:
+                            for path in source_paths:
+                                accepted.pop(path, None)
+                            if correction_returned_all_paths:
+                                synthetic_reasons.append(
+                                    "Generated source and test transaction failed executable preflight after bounded corrections."
+                                )
+                            else:
+                                synthetic_reasons.append(
+                                    "Generated test suite correction did not return every required test path."
+                                )
 
         omitted_paths = sorted(path for path in allowed_paths if path not in accepted)
         reasons = self._dedupe_strings(
@@ -168,6 +370,7 @@ class SubstrateRepairBackend:
             "operations": list(directive.operations),
             "failure_signatures": list(directive.failure_signatures),
             "allowed_paths": allowed_paths,
+            "impact_expanded_paths": impact_expanded_paths,
             "accepted_paths": sorted(accepted),
             "rejected_paths": sorted(set(rejected)),
             "omitted_paths": omitted_paths,
@@ -175,6 +378,7 @@ class SubstrateRepairBackend:
             "kernel_status": kernel_status,
             "kernel_reason": kernel_reason,
             "kernel_calls": kernel_calls,
+            "test_preflight_attempts": preflight_attempts,
         }
         return RepairPatchCandidate(
             backend_name="substrate",
@@ -249,6 +453,14 @@ class SubstrateRepairBackend:
                     "signature": interface.signature,
                 }
                 for interface in plan.interfaces
+            ],
+            "file_tree_plan": [
+                {
+                    "path": plan_file.path,
+                    "purpose": plan_file.purpose,
+                    "requirement_ids": list(plan_file.source_requirement_refs),
+                }
+                for plan_file in plan.file_tree_plan
             ],
             "quality_contract": vars(plan.quality_contract),
             "required_obligations": list(plan.required_obligations),

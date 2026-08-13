@@ -221,6 +221,11 @@ class PlannerStage:
 
     def _build_architecture_summary(self, build_spec: BuildSpec) -> str:
         if self._is_pipeline_build(build_spec):
+            if self._is_jsonl_pipeline(build_spec):
+                return (
+                    "Python CLI data pipeline with JSON Lines telemetry ingestion, record validation, "
+                    "JSONL quarantine output, per-device aggregation, and summary CSV generation."
+                )
             return (
                 "Python data pipeline with watched-directory ingestion, configurable row-schema validation, "
                 "quarantine handling for invalid rows, SQLite persistence with audit trail, and REST health stats."
@@ -248,6 +253,37 @@ class PlannerStage:
         implementation_blueprint: ImplementationBlueprint | None = None,
     ) -> List[PlanFile]:
         if self._is_pipeline_build(build_spec):
+            if self._is_jsonl_pipeline(build_spec):
+                return [
+                    PlanFile(
+                        path="src/pipeline.py",
+                        purpose=(
+                            "JSON Lines telemetry orchestration, per-device aggregation, "
+                            "summary CSV writing, and CLI dispatch."
+                        ),
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/pipeline.py"),
+                    ),
+                    PlanFile(
+                        path="src/watcher.py",
+                        purpose="JSON Lines input iteration with line-number preservation.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/watcher.py"),
+                    ),
+                    PlanFile(
+                        path="src/validator.py",
+                        purpose="Telemetry field, type, and timestamp validation.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/validator.py"),
+                    ),
+                    PlanFile(
+                        path="src/quarantine.py",
+                        purpose="Malformed telemetry persistence to the requested quarantine JSONL file.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/quarantine.py"),
+                    ),
+                    PlanFile(
+                        path="tests/test_pipeline.py",
+                        purpose="End-to-end JSONL parsing, quarantine, aggregation, summary, and CLI tests.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_pipeline.py"),
+                    ),
+                ]
             return [
                 PlanFile(
                     path="src/pipeline.py",
@@ -360,11 +396,35 @@ class PlannerStage:
 
     def _derive_interfaces(self, build_spec: BuildSpec) -> List[PlanInterface]:
         if self._is_pipeline_build(build_spec):
+            if self._requires_pipeline_cli(build_spec):
+                return [
+                    PlanInterface(
+                        name="run",
+                        interface_type="function",
+                        signature=(
+                            "run(input_path: str, quarantine_path: str, "
+                            "summary_csv_path: str) -> int"
+                        ),
+                        description=(
+                            "Processes one input file, writes rejected records and the summary, "
+                            "and returns a status code."
+                        ),
+                    ),
+                    PlanInterface(
+                        name="main",
+                        interface_type="cli_entrypoint",
+                        signature="main(argv: Optional[list[str]] = None) -> int",
+                        description="Parses CLI paths and delegates exactly once to run.",
+                    ),
+                ]
             return [
                 PlanInterface(
                     name="run",
                     interface_type="entrypoint",
-                    signature="run() -> int",
+                    signature=(
+                        "run(watch_dir: str, db_path: str, quarantine_dir: str, "
+                        "poll_once: bool = True) -> int"
+                    ),
                     description="Runs one polling cycle of the data pipeline and returns status code.",
                 )
             ]
@@ -480,10 +540,13 @@ class PlannerStage:
         return "python_package"
 
     def _derive_implementation_blueprint(self, build_spec: BuildSpec) -> ImplementationBlueprint:
+        if self._is_pipeline_build(build_spec):
+            return ImplementationBlueprint(
+                target_artifact_type=build_spec.target_artifact_type,
+                entrypoint_path="src/pipeline.py",
+            )
         if build_spec.target_artifact_type != ArtifactTargetType.SERVICE:
             entrypoint = "src/cli.py" if build_spec.target_artifact_type == ArtifactTargetType.CLI else ""
-            if build_spec.target_artifact_type == ArtifactTargetType.PIPELINE:
-                entrypoint = "src/pipeline.py"
             return ImplementationBlueprint(
                 target_artifact_type=build_spec.target_artifact_type,
                 entrypoint_path=entrypoint,
@@ -759,6 +822,20 @@ class PlannerStage:
             "quarantine",
         )
         return any(token in combined for token in pipeline_tokens)
+
+    def _requires_pipeline_cli(self, build_spec: BuildSpec) -> bool:
+        if build_spec.target_artifact_type == ArtifactTargetType.CLI:
+            return True
+        return any(
+            "cli_entrypoint" in atom.evidence_terms
+            for atom in build_spec.requirement_atoms
+        )
+
+    def _is_jsonl_pipeline(self, build_spec: BuildSpec) -> bool:
+        return any(
+            bool({"input_jsonl", "jsonl"} & set(atom.evidence_terms))
+            for atom in build_spec.requirement_atoms
+        )
 
     def _build_requirement_coverage(
         self,

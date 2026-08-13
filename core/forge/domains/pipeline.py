@@ -39,7 +39,7 @@ class PipelineDomainAdapter(BaseDomainAdapter):
 
     def _template_pipeline_entrypoint(self, plan: FeasiblePlan) -> str:
         quality = plan.quality_contract
-        entrypoint_name = self._entrypoint_name(plan, default="run")
+        entrypoint_name = self._pipeline_workflow_name(plan)
         lines = [
             "import csv",
             "import json",
@@ -228,7 +228,45 @@ class PipelineDomainAdapter(BaseDomainAdapter):
             "    app = None",
             "",
         ]
+        cli_entrypoint = next(
+            (
+                interface.name
+                for interface in plan.interfaces
+                if interface.interface_type == "cli_entrypoint" and interface.name.isidentifier()
+            ),
+            "",
+        )
+        if cli_entrypoint:
+            lines.extend(
+                [
+                    "",
+                    f"def {cli_entrypoint}(argv: list[str] | None = None) -> int:",
+                    "    import argparse",
+                    "",
+                    "    parser = argparse.ArgumentParser()",
+                    "    parser.add_argument('input_path')",
+                    "    parser.add_argument('quarantine_path')",
+                    "    parser.add_argument('summary_csv_path')",
+                    "    args = parser.parse_args(argv)",
+                    f"    return {entrypoint_name}(",
+                    "        watch_dir=str(Path(args.input_path).parent),",
+                    "        db_path=str(Path(args.summary_csv_path).with_suffix('.db')),",
+                    "        quarantine_dir=str(Path(args.quarantine_path).parent),",
+                    "        poll_once=True,",
+                    "    )",
+                    "",
+                ]
+            )
         return "\n".join(lines)
+
+    def _pipeline_workflow_name(self, plan: FeasiblePlan) -> str:
+        for interface in plan.interfaces:
+            if interface.interface_type == "entrypoint" and interface.name.isidentifier():
+                return interface.name
+        for interface in plan.interfaces:
+            if interface.interface_type == "function" and interface.name == "run":
+                return interface.name
+        return "run"
 
     def _template_pipeline_watcher(self) -> str:
         return (
@@ -324,7 +362,7 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         )
 
     def _template_pipeline_plan_test_module(self, plan: FeasiblePlan) -> str:
-        entrypoint_name = self._entrypoint_name(plan, default="run")
+        entrypoint_name = self._pipeline_workflow_name(plan)
         return (
             "import sqlite3\n"
             "from pathlib import Path\n"
@@ -359,7 +397,7 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         )
 
     def _template_pipeline_suite_executes_test(self, plan: FeasiblePlan) -> str:
-        entrypoint_name = self._entrypoint_name(plan, default="run")
+        entrypoint_name = self._pipeline_workflow_name(plan)
         return (
             "import sqlite3\n"
             "from pathlib import Path\n"
@@ -405,7 +443,7 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         )
 
     def _template_pipeline_requirement_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
-        entrypoint_name = self._entrypoint_name(plan, default="run")
+        entrypoint_name = self._pipeline_workflow_name(plan)
         objective = plan_test.objective.lower()
         if any(token in objective for token in ("quarantine", "invalid", "schema")):
             return (

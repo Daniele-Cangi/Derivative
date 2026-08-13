@@ -49,6 +49,14 @@ PIPELINE_REQUIREMENT = (
     "showing pipeline statistics."
 )
 
+TELEMETRY_CLI_REQUIREMENT = (
+    "Build a Python CLI that reads JSON Lines telemetry events with fields device_id, timestamp, "
+    "and temperature_c, rejects malformed records, missing fields, and invalid timestamps into a "
+    "quarantine JSONL file, computes per-device minimum, maximum, and average temperature, writes "
+    "a summary CSV, and includes behavioral tests for parsing, quarantine handling, aggregation, "
+    "and the complete CLI flow."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -550,3 +558,25 @@ def test_pipeline_mode_generates_pipeline_artifacts_and_respects_entrypoint_cont
     assert "import contracts_csv" not in pipeline_module.content
     assert "import expiration_rules" not in pipeline_module.content
     assert "import summary_writer" not in pipeline_module.content
+
+
+def test_pipeline_cli_entrypoint_uses_blueprint_path_and_keeps_run_callable(tmp_path):
+    spec = RequirementCompiler().compile(TELEMETRY_CLI_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    )
+    plan = planner.plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan)
+    pipeline_module = _find_generated_file(artifact, "src/pipeline.py")
+
+    assert pipeline_module is not None
+    assert artifact.runnable_entrypoints == ["src/pipeline.py"]
+    assert "def run(" in pipeline_module.content
+    assert "def main(argv: list[str] | None = None) -> int:" in pipeline_module.content
+    assert "@click.command" not in pipeline_module.content
+    assert "interface:main" in pipeline_module.generated_from_plan_sections

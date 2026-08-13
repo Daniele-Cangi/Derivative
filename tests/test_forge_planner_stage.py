@@ -38,6 +38,14 @@ PIPELINE_REQUIREMENT = (
     "showing pipeline statistics."
 )
 
+TELEMETRY_CLI_REQUIREMENT = (
+    "Build a Python CLI that reads JSON Lines telemetry events with fields device_id, timestamp, "
+    "and temperature_c, rejects malformed records, missing fields, and invalid timestamps into a "
+    "quarantine JSONL file, computes per-device minimum, maximum, and average temperature, writes "
+    "a summary CSV, and includes behavioral tests for parsing, quarantine handling, aggregation, "
+    "and the complete CLI flow."
+)
+
 PRODUCTION_SERVICE_REQUIREMENT = (
     "Build a production-grade Python REST microservice with hashed API keys using bcrypt, "
     "persistent per-user rate limiting that survives restarts, a full audit trail of all requests, "
@@ -398,3 +406,27 @@ def test_pipeline_requirement_generates_pipeline_plan_shape(tmp_path):
     assert "src/validator.py" in planned_paths
     assert "src/quarantine.py" in planned_paths
     assert any(interface.name == "run" for interface in output.interfaces)
+
+
+def test_jsonl_cli_pipeline_separates_workflow_from_cli_entrypoint(tmp_path):
+    compiler = RequirementCompiler()
+    build_spec = compiler.compile(TELEMETRY_CLI_REQUIREMENT)
+    planner = _build_planner(tmp_path)
+
+    output = planner.plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    interfaces = {interface.name: interface for interface in output.interfaces}
+    assert interfaces["run"].interface_type == "function"
+    assert interfaces["run"].signature == (
+        "run(input_path: str, quarantine_path: str, summary_csv_path: str) -> int"
+    )
+    assert interfaces["main"].interface_type == "cli_entrypoint"
+    assert output.implementation_blueprint.entrypoint_path == "src/pipeline.py"
+    assert "json lines telemetry" in output.architecture_summary.lower()
+    purposes = {item.path: item.purpose for item in output.file_tree_plan}
+    assert "json lines telemetry" in purposes["src/pipeline.py"].lower()
+    assert "line-number" in purposes["src/watcher.py"].lower()
+    assert "timestamp validation" in purposes["src/validator.py"].lower()
+    assert "quarantine jsonl" in purposes["src/quarantine.py"].lower()
+    assert "sqlite" not in " ".join(purposes.values()).lower()

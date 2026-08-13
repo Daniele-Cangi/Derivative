@@ -11,6 +11,7 @@ from core.forge.contracts import (
     PlanFile,
     PlanInterface,
     PlanTest,
+    RequirementAtom,
     RepairPatchCandidate,
     ValidationArtifact,
     ValidationStrategy,
@@ -26,6 +27,16 @@ def _generic_plan() -> FeasiblePlan:
         raw_requirement="Build an executable Python component with tests.",
         normalized_requirement="Build an executable Python component with tests.",
         functional_goals=["Execute a workflow."],
+        requirement_atoms=[
+            RequirementAtom(
+                requirement_id="R001",
+                text="Execute a workflow.",
+                category="functional",
+                strength="hard",
+                source_fragment="executable Python component",
+                evidence_terms=["workflow"],
+            )
+        ],
         acceptance_contract=AcceptanceContract(),
         obligation_contract=ObligationContract(mode="software_build"),
         target_artifact_type=ArtifactTargetType.UNKNOWN,
@@ -36,7 +47,13 @@ def _generic_plan() -> FeasiblePlan:
         architecture_summary="Executable Python component.",
         file_tree_plan=[PlanFile(path="src/component.py", purpose="Workflow implementation.")],
         interfaces=[PlanInterface(name="run", interface_type="entrypoint")],
-        required_tests=[PlanTest(test_name="test_component", objective="Execute the workflow.")],
+        required_tests=[
+            PlanTest(
+                test_name="test_component",
+                objective="Execute the workflow.",
+                requirement_ids=["R001"],
+            )
+        ],
         validation_strategy=ValidationStrategy(),
         packaging_target="python_package",
     )
@@ -79,6 +96,17 @@ class _StaticSubstrate:
         return [SimpleNamespace(lens_name="Formal Logic")]
 
 
+def _passing_preflight(candidate_files, test_paths):
+    return {
+        "ran": True,
+        "passed": True,
+        "returncode": 0,
+        "tests": list(test_paths),
+        "stdout": "1 passed",
+        "stderr": "",
+    }
+
+
 class _StaticKernel:
     use_live_model = True
 
@@ -89,6 +117,13 @@ class _StaticKernel:
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         self.received_targets = target_files
         assert repair_context["failure_signatures"] == ["syntax_error"]
+        assert repair_context["file_tree_plan"] == [
+            {
+                "path": "src/component.py",
+                "purpose": "Workflow implementation.",
+                "requirement_ids": [],
+            }
+        ]
         assert lens_framings[0].lens_name == "Formal Logic"
         return {"status": "candidate", "files": self.files}
 
@@ -107,6 +142,7 @@ class _UnavailableResponseKernel:
 def test_substrate_backend_rejects_files_outside_validator_target_allowlist():
     plan = _generic_plan()
     artifact = CoderStage().generate(plan)
+    plan.required_tests = []
     validation = ValidationArtifact(
         passed=False,
         failures=["Syntax error."],
@@ -179,13 +215,18 @@ class _PerTargetKernel:
 
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         target_paths = list(target_files)
-        target_path = target_paths[0] if len(target_paths) == 1 else "source_transaction"
+        target_path = repair_context["current_target_path"]
         self.calls.append(
             {
                 "target_path": target_path,
                 "target_paths": target_paths,
                 "target_count": len(target_files),
                 "related_sources": dict(repair_context["related_repaired_source_files"]),
+                "source_api_contracts": dict(repair_context.get("source_api_contracts", {})),
+                "test_generation_contracts": dict(
+                    repair_context.get("test_generation_contracts", {})
+                ),
+                "repair_phase": repair_context.get("repair_phase"),
             }
         )
         return {
@@ -226,7 +267,11 @@ def test_substrate_backend_revises_each_grounded_target_separately():
     )
     directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
     kernel = _PerTargetKernel()
-    backend = SubstrateRepairBackend(substrate=_StaticSubstrate(), kernel=kernel)
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=_passing_preflight,
+    )
 
     candidate = backend.propose(plan, artifact, validation, directive)
 
@@ -262,7 +307,11 @@ def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_test
     directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
     directive.target_paths = ["src/component.py", test_path, "src/helper.py"]
     kernel = _PerTargetKernel()
-    backend = SubstrateRepairBackend(substrate=_StaticSubstrate(), kernel=kernel)
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=_passing_preflight,
+    )
 
     candidate = backend.propose(plan, artifact, validation, directive)
 
@@ -272,7 +321,66 @@ def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_test
     assert set(kernel.calls[1]["related_sources"]) == {"src/component.py", "src/helper.py"}
     assert "# revised:src/component.py" in kernel.calls[1]["related_sources"]["src/component.py"]
     assert "# revised:src/helper.py" in kernel.calls[1]["related_sources"]["src/helper.py"]
+    assert "src/component.py" in kernel.calls[1]["source_api_contracts"]
+    assert test_path in kernel.calls[1]["test_generation_contracts"]
+    assert kernel.calls[1]["repair_phase"] == "test_suite_generation"
     assert set(candidate.files) == {"src/component.py", "src/helper.py", test_path}
+    assert candidate.evidence["test_preflight_attempts"][0]["passed"] is True
+
+
+def test_source_repair_expands_to_every_required_acceptance_test():
+    plan = _generic_plan()
+    plan.file_tree_plan.append(
+        PlanFile(
+            path="tests/test_plan_smoke.py",
+            purpose="Planned end-to-end regression test.",
+            source_requirement_refs=["R001"],
+        )
+    )
+    plan.required_tests.append(
+        PlanTest(
+            test_name="test_regression",
+            objective="Preserve existing workflow behavior.",
+            requirement_ids=["R001"],
+        )
+    )
+    artifact = CoderStage().generate(plan)
+    primary_test = "tests/test_component.py"
+    regression_test = "tests/test_regression.py"
+    planned_test = "tests/test_plan_smoke.py"
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Source behavior is incomplete."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", primary_test]
+    kernel = _PerTargetKernel()
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=_passing_preflight,
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["target_path"] for call in kernel.calls] == [
+        "src/component.py",
+        "test_suite_transaction",
+    ]
+    assert set(kernel.calls[1]["target_paths"]) == {
+        primary_test,
+        planned_test,
+        regression_test,
+    }
+    assert candidate.evidence["impact_expanded_paths"] == [planned_test, regression_test]
+    assert set(candidate.files) == {
+        "src/component.py",
+        primary_test,
+        planned_test,
+        regression_test,
+    }
 
 
 def test_atomic_source_repair_rejects_partial_revision_and_skips_tests():
@@ -300,7 +408,368 @@ def test_atomic_source_repair_rejects_partial_revision_and_skips_tests():
     assert candidate.files == {}
     assert candidate.available is True
     assert set(candidate.evidence["omitted_paths"]) == {"src/component.py", "src/helper.py", test_path}
-    assert "Atomic source revision omitted required targets" in candidate.stop_reason
+    assert "Atomic revision omitted required targets" in candidate.stop_reason
+
+
+def test_substrate_backend_generates_multiple_tests_as_one_atomic_suite():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    second_path = "tests/test_secondary.py"
+    artifact.files.append(
+        GeneratedFile(
+            path=second_path,
+            content="def test_secondary():\n    assert True\n",
+            kind="python_test",
+            generated_from_plan_sections=["requirement:R001"],
+        )
+    )
+    artifact.test_paths.append(second_path)
+    artifact.traceability[second_path] = ["requirement:R001"]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Tests are non-semantic."],
+        failure_signatures=["non_semantic_test"],
+        evidence={
+            "layer3": {
+                "non_semantic_tests": list(artifact.test_paths),
+            }
+        },
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    kernel = _PerTargetKernel()
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=_passing_preflight,
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert len(kernel.calls) == 1
+    assert set(kernel.calls[0]["target_paths"]) == set(artifact.test_paths)
+    assert kernel.calls[0]["target_count"] == 2
+    assert kernel.calls[0]["target_path"] == "test_suite_transaction"
+    assert kernel.calls[0]["repair_phase"] == "test_suite_generation"
+    assert set(kernel.calls[0]["test_generation_contracts"]) == set(artifact.test_paths)
+    primary_contract = kernel.calls[0]["test_generation_contracts"][artifact.test_paths[0]]
+    assert primary_contract["requirements"] == [
+        {
+            "id": "R001",
+            "text": "Execute a workflow.",
+            "evidence_terms": ["workflow"],
+        }
+    ]
+    assert primary_contract["forbidden_unrequested_behaviors"] == [
+        "SQLite or database persistence assertions",
+        "records, audit, or schema table assertions",
+    ]
+    assert primary_contract["declared_plan_interfaces"][0]["name"] == "run"
+    assert set(candidate.files) == set(artifact.test_paths)
+
+
+class _PreflightCorrectionKernel:
+    use_live_model = True
+
+    def __init__(self):
+        self.calls = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        self.calls.append(
+            {
+                "phase": repair_context.get("repair_phase"),
+                "preflight": repair_context.get("preflight_test_execution"),
+                "targets": list(target_files),
+            }
+        )
+        path = next(iter(target_files))
+        if repair_context.get("repair_phase") == "test_suite_correction":
+            content = (
+                "from pathlib import Path\n"
+                "import sys\n"
+                "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+                "from component import run\n\n"
+                "def test_component():\n"
+                "    assert run() == 0\n"
+            )
+        else:
+            content = "def test_component():\n    assert 1 == 2\n"
+        return {"status": "candidate", "files": {path: content}}
+
+
+class _SourcePreflightCorrectionKernel:
+    use_live_model = True
+
+    def __init__(self):
+        self.calls = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        phase = repair_context.get("repair_phase", "file_revision")
+        self.calls.append(
+            {
+                "phase": phase,
+                "targets": list(target_files),
+                "preflight": repair_context.get("preflight_test_execution"),
+                "candidate_tests": repair_context.get("candidate_test_suite"),
+            }
+        )
+        files = {}
+        for path, content in target_files.items():
+            if path.startswith("src/"):
+                return_value = 0 if phase == "source_preflight_correction" else 1
+                files[path] = f"def run() -> int:\n    return {return_value}\n"
+            else:
+                files[path] = (
+                    "from pathlib import Path\n"
+                    "import sys\n"
+                    "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
+                    "from component import run\n\n"
+                    "def test_component():\n"
+                    "    assert run() == 0\n"
+                )
+        return {"status": "candidate", "files": files}
+
+
+def test_substrate_backend_uses_real_preflight_failure_to_correct_test_suite():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Generated test is non-semantic."],
+        failure_signatures=["non_semantic_test"],
+        evidence={"layer3": {"non_semantic_tests": [test_path]}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    kernel = _PreflightCorrectionKernel()
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        preflight_timeout_seconds=20,
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["phase"] for call in kernel.calls] == [
+        "test_suite_generation",
+        "test_suite_correction",
+    ]
+    assert kernel.calls[1]["preflight"]["returncode"] == 1
+    assert "1 failed" in kernel.calls[1]["preflight"]["stdout"]
+    assert "from component import run" in candidate.files[test_path]
+    assert [attempt["passed"] for attempt in candidate.evidence["test_preflight_attempts"]] == [
+        False,
+        True,
+    ]
+
+
+def test_substrate_backend_routes_application_preflight_failure_back_to_sources():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Source semantics are incomplete."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", test_path]
+    kernel = _SourcePreflightCorrectionKernel()
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        preflight_timeout_seconds=20,
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["phase"] for call in kernel.calls] == [
+        "file_revision",
+        "test_suite_generation",
+        "source_preflight_correction",
+    ]
+    source_correction = kernel.calls[2]
+    assert source_correction["preflight"]["returncode"] == 1
+    assert test_path in source_correction["candidate_tests"]
+    assert "return 0" in candidate.files["src/component.py"]
+    assert "assert run() == 0" in candidate.files[test_path]
+    assert [attempt["passed"] for attempt in candidate.evidence["test_preflight_attempts"]] == [
+        False,
+        True,
+    ]
+
+
+def test_substrate_backend_retries_source_when_source_correction_introduces_new_error():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Source semantics are incomplete."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", test_path]
+    kernel = _PerTargetKernel()
+    preflight_results = iter(
+        [
+            {
+                "ran": True,
+                "passed": False,
+                "returncode": 1,
+                "tests": [test_path],
+                "stdout": "src/component.py:2: TypeError",
+                "stderr": "",
+            },
+            {
+                "ran": True,
+                "passed": False,
+                "returncode": 2,
+                "tests": [test_path],
+                "stdout": "C:\\Temp\\run\\src\\component.py:1: NameError: Any",
+                "stderr": "",
+            },
+            {
+                "ran": True,
+                "passed": True,
+                "returncode": 0,
+                "tests": [test_path],
+                "stdout": "1 passed",
+                "stderr": "",
+            },
+        ]
+    )
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=lambda files, paths: next(preflight_results),
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["repair_phase"] for call in kernel.calls] == [
+        "file_revision",
+        "test_suite_generation",
+        "source_preflight_correction",
+        "source_preflight_correction",
+    ]
+    assert [attempt["passed"] for attempt in candidate.evidence["test_preflight_attempts"]] == [
+        False,
+        False,
+        True,
+    ]
+    assert set(candidate.files) == {"src/component.py", test_path}
+
+
+def test_substrate_backend_returns_to_source_after_test_correction_exposes_source_failure():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Source and tests require semantic repair."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", test_path]
+    kernel = _PerTargetKernel()
+    preflight_results = iter(
+        [
+            {
+                "ran": True,
+                "passed": False,
+                "returncode": 2,
+                "tests": [test_path],
+                "stdout": "tests/test_component.py:1: SyntaxError",
+                "stderr": "",
+            },
+            {
+                "ran": True,
+                "passed": False,
+                "returncode": 2,
+                "tests": [test_path],
+                "stdout": "tests/test_component.py:1: SyntaxError",
+                "stderr": "",
+            },
+            {
+                "ran": True,
+                "passed": False,
+                "returncode": 1,
+                "tests": [test_path],
+                "stdout": "src/component.py:2: AttributeError",
+                "stderr": "",
+            },
+            {
+                "ran": True,
+                "passed": True,
+                "returncode": 0,
+                "tests": [test_path],
+                "stdout": "1 passed",
+                "stderr": "",
+            },
+        ]
+    )
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=lambda files, paths: next(preflight_results),
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["repair_phase"] for call in kernel.calls] == [
+        "file_revision",
+        "test_suite_generation",
+        "source_preflight_correction",
+        "test_suite_correction",
+        "source_preflight_correction",
+    ]
+    assert [attempt["passed"] for attempt in candidate.evidence["test_preflight_attempts"]] == [
+        False,
+        False,
+        False,
+        True,
+    ]
+    assert set(candidate.files) == {"src/component.py", test_path}
+
+
+def test_substrate_backend_discards_test_suite_when_preflight_correction_still_fails():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Generated test is non-semantic."],
+        failure_signatures=["non_semantic_test"],
+        evidence={"layer3": {"non_semantic_tests": [test_path]}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    kernel = _PerTargetKernel()
+
+    def failing_preflight(candidate_files, test_paths):
+        return {
+            "ran": True,
+            "passed": False,
+            "returncode": 1,
+            "tests": list(test_paths),
+            "stdout": "1 failed",
+            "stderr": "",
+        }
+
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=failing_preflight,
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert candidate.files == {}
+    assert candidate.evidence["omitted_paths"] == [test_path]
+    assert len(candidate.evidence["test_preflight_attempts"]) == 4
+    assert "failed executable preflight" in candidate.stop_reason
 
 
 def test_coder_applies_grounded_candidate_with_revision_and_lineage():
@@ -402,7 +871,7 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert payload["status"] == "candidate"
     assert payload["files"][0]["path"] == "src/component.py"
     assert "complete replacements" in responses.request["instructions"]
-    assert responses.request["max_output_tokens"] == 8000
+    assert responses.request["max_output_tokens"] == 12000
     assert responses.request["model"] == "gpt-4.1-mini"
     revision_schema = responses.request["text"]["format"]["schema"]
     assert revision_schema["properties"]["files"]["required"] == ["src/component.py"]
@@ -411,3 +880,28 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert "flat src/ layout" in responses.request["instructions"]
     assert "related_repaired_source_files" in responses.request["instructions"]
     assert "must not use skip" in " ".join(responses.request["instructions"].split())
+    assert "source_api_contracts" in responses.request["instructions"]
+    assert "preflight_test_execution" in responses.request["instructions"]
+
+
+def test_reasoning_kernel_preserves_sanitized_live_revision_error_detail():
+    kernel = ReasoningKernel(api_key="dummy_key_for_testing", execution_mode="local-only")
+
+    class FailingResponses:
+        @staticmethod
+        def create(**kwargs):
+            raise ValueError("response incomplete: max_output_tokens")
+
+    kernel.use_live_model = True
+    kernel.client = SimpleNamespace(responses=FailingResponses())
+
+    payload = kernel.propose_code_revision(
+        repair_context={"failure_signatures": ["semantic_content_mismatch"]},
+        target_files={"src/component.py": "def run():\n    return 1\n"},
+        lens_framings=[],
+    )
+
+    assert payload["status"] == "unavailable"
+    assert payload["reason"] == (
+        "Live revision failed: ValueError: response incomplete: max_output_tokens"
+    )

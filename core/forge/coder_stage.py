@@ -281,12 +281,14 @@ class CoderStage:
 
         cli_interfaces = [interface for interface in plan.interfaces if interface.interface_type == "cli_entrypoint"]
         if cli_interfaces:
+            declared_entrypoint = plan.implementation_blueprint.entrypoint_path.replace("\\", "/")
             has_cli_file = any(
-                path.path in {"src/cli.py", "src/main.py"} for path in plan.file_tree_plan
+                path.path.replace("\\", "/") in {"src/cli.py", "src/main.py", declared_entrypoint}
+                for path in plan.file_tree_plan
             )
             if not has_cli_file:
                 raise MalformedPlanError(
-                    "Plan declares cli_entrypoint interface but lacks src/cli.py or src/main.py."
+                    "Plan declares cli_entrypoint interface but its blueprint entrypoint is not planned."
                 )
 
     def _artifact_id(self, plan_id: str) -> str:
@@ -361,7 +363,11 @@ class CoderStage:
             f"plan_file:{path}",
             f"plan_purpose:{plan_file.purpose}",
         ]
-        interface_refs = self._interfaces_for_path(path, plan.interfaces)
+        interface_refs = self._interfaces_for_path(
+            path,
+            plan.interfaces,
+            entrypoint_path=plan.implementation_blueprint.entrypoint_path,
+        )
         generated_from.extend(f"interface:{name}" for name in interface_refs)
         generated_from.extend(f"requirement:{requirement_id}" for requirement_id in plan_file.source_requirement_refs)
         capability = next(
@@ -486,12 +492,22 @@ class CoderStage:
             },
         }
 
-    def _interfaces_for_path(self, path: str, interfaces: List[PlanInterface]) -> List[str]:
+    def _interfaces_for_path(
+        self,
+        path: str,
+        interfaces: List[PlanInterface],
+        entrypoint_path: str = "",
+    ) -> List[str]:
         refs: List[str] = []
-        lowered = path.lower()
+        lowered = path.replace("\\", "/").lower()
+        normalized_entrypoint = entrypoint_path.replace("\\", "/").lower()
         for interface in interfaces:
             name = interface.name.lower()
-            if interface.interface_type == "cli_entrypoint" and lowered in {"src/cli.py", "src/main.py"}:
+            if interface.interface_type == "cli_entrypoint" and lowered in {
+                "src/cli.py",
+                "src/main.py",
+                normalized_entrypoint,
+            }:
                 refs.append(interface.name)
                 continue
             if name in lowered:
