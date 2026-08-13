@@ -11,6 +11,8 @@ from core.forge.contracts import CodeArtifact, FeasiblePlan
 
 
 def preflight_has_source_failure(preflight: dict[str, Any]) -> bool:
+    if preflight.get("source_failed_paths"):
+        return True
     output = "\n".join(
         str(preflight.get(field, ""))
         for field in ("stdout", "stderr")
@@ -23,6 +25,47 @@ def preflight_has_source_failure(preflight: dict[str, Any]) -> bool:
         )
         or re.search(r"\bsrc[\\/][^\s:'\"]+\.py(?::\d+)?", output, re.IGNORECASE)
     )
+
+
+def preflight_failed_paths(
+    preflight: dict[str, Any],
+    *,
+    prefix: str | None = None,
+) -> list[str]:
+    paths = [
+        str(path).replace("\\", "/")
+        for path in preflight.get("failed_paths", [])
+        if str(path).strip()
+    ]
+    if not paths:
+        output = "\n".join(
+            str(preflight.get(field, ""))
+            for field in ("stdout", "stderr")
+        )
+        paths.extend(
+            match.replace("\\", "/")
+            for match in re.findall(
+                r"(?:FAILED|ERROR)\s+([^\s:]+\.py)(?:::|\s|$)",
+                output,
+                re.IGNORECASE,
+            )
+        )
+        paths.extend(
+            match.replace("\\", "/")
+            for match in re.findall(
+                r"\b((?:src|tests)[\\/][^\s:'\"]+\.py)(?::\d+)?",
+                output,
+                re.IGNORECASE,
+            )
+        )
+    unique: list[str] = []
+    for path in paths:
+        normalized = path.lstrip("./")
+        if prefix and not normalized.startswith(prefix):
+            continue
+        if normalized not in unique:
+            unique.append(normalized)
+    return unique
 
 
 def source_api_contracts(source_files: dict[str, str]) -> dict[str, Any]:
@@ -154,12 +197,17 @@ def run_test_preflight(
     timeout_seconds: int,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
+        "phase": "materialization",
         "ran": False,
         "passed": False,
         "returncode": None,
         "tests": list(test_paths),
         "stdout": "",
         "stderr": "",
+        "failed_paths": [],
+        "source_failed_paths": [],
+        "test_failed_paths": [],
+        "failures": [],
     }
     try:
         with tempfile.TemporaryDirectory(
@@ -176,6 +224,90 @@ def run_test_preflight(
                     )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="utf-8")
+
+            syntax_failures: list[dict[str, Any]] = []
+            for path, content in sorted(candidate_files.items()):
+                if not path.endswith(".py"):
+                    continue
+                try:
+                    ast.parse(content, filename=path)
+                except SyntaxError as exc:
+                    syntax_failures.append(
+                        {
+                            "path": path.replace("\\", "/"),
+                            "kind": "syntax_error",
+                            "line": exc.lineno,
+                            "message": exc.msg,
+                        }
+                    )
+            if syntax_failures:
+                failed_paths = [failure["path"] for failure in syntax_failures]
+                result.update(
+                    {
+                        "phase": "syntax",
+                        "failures": syntax_failures,
+                        "failed_paths": failed_paths,
+                        "source_failed_paths": [
+                            path for path in failed_paths if path.startswith("src/")
+                        ],
+                        "test_failed_paths": [
+                            path for path in failed_paths if path.startswith("tests/")
+                        ],
+                    }
+                )
+                return result
+
+            import_script = (
+                "import importlib, pathlib, sys\n"
+                "root = pathlib.Path(sys.argv[1]).resolve()\n"
+                "sys.path[:0] = [str(root), str(root / 'src')]\n"
+                "path = pathlib.PurePosixPath(sys.argv[2])\n"
+                "module_name = '.'.join(path.with_suffix('').parts)\n"
+                "importlib.import_module(module_name)\n"
+            )
+            import_failures: list[dict[str, Any]] = []
+            for path in sorted(
+                path
+                for path in candidate_files
+                if path.startswith("src/") and path.endswith(".py")
+            ):
+                imported = subprocess.run(
+                    [sys.executable, "-B", "-c", import_script, str(workspace), path],
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout_seconds,
+                    env={
+                        **os.environ,
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                    },
+                    check=False,
+                )
+                if imported.returncode != 0:
+                    import_failures.append(
+                        {
+                            "path": path.replace("\\", "/"),
+                            "kind": "import_failure",
+                            "line": None,
+                            "message": (imported.stderr or imported.stdout)[-4000:],
+                        }
+                    )
+            if import_failures:
+                failed_paths = [failure["path"] for failure in import_failures]
+                result.update(
+                    {
+                        "phase": "import",
+                        "returncode": 1,
+                        "stderr": "\n".join(
+                            failure["message"] for failure in import_failures
+                        )[-12000:],
+                        "failures": import_failures,
+                        "failed_paths": failed_paths,
+                        "source_failed_paths": failed_paths,
+                    }
+                )
+                return result
+
             command = [
                 sys.executable,
                 "-B",
@@ -201,6 +333,7 @@ def run_test_preflight(
             )
             result.update(
                 {
+                    "phase": "tests",
                     "ran": True,
                     "passed": completed.returncode == 0,
                     "returncode": completed.returncode,
@@ -208,9 +341,32 @@ def run_test_preflight(
                     "stderr": completed.stderr[-12000:],
                 }
             )
+            if completed.returncode != 0:
+                failed_paths = preflight_failed_paths(result)
+                result.update(
+                    {
+                        "failed_paths": failed_paths,
+                        "source_failed_paths": [
+                            path for path in failed_paths if path.startswith("src/")
+                        ],
+                        "test_failed_paths": [
+                            path for path in failed_paths if path.startswith("tests/")
+                        ],
+                        "failures": [
+                            {
+                                "path": path,
+                                "kind": "test_failure",
+                                "line": None,
+                                "message": "pytest reported a failure for this file",
+                            }
+                            for path in failed_paths
+                        ],
+                    }
+                )
     except subprocess.TimeoutExpired as exc:
         result.update(
             {
+                "phase": result.get("phase", "tests"),
                 "ran": True,
                 "error_type": "TimeoutExpired",
                 "stdout": str(exc.stdout or "")[-12000:],
@@ -220,6 +376,7 @@ def run_test_preflight(
     except Exception as exc:
         result.update(
             {
+                "phase": result.get("phase", "materialization"),
                 "error_type": type(exc).__name__,
                 "stderr": str(exc),
             }

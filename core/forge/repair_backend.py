@@ -10,6 +10,7 @@ from core.forge.contracts import (
 from core.kernel import ReasoningKernel
 from core.substrate import CognitiveSubstrate
 from core.forge.repair_support import (
+    preflight_failed_paths,
     preflight_has_source_failure,
     run_test_preflight,
     source_api_contracts,
@@ -240,23 +241,31 @@ class SubstrateRepairBackend:
                         and not preflight.get("passed", False)
                         and source_correction_attempt < self.max_source_preflight_corrections
                         and (
-                            source_correction_attempt == 0
+                            (
+                                source_correction_attempt == 0
+                                and self._should_attempt_initial_source_correction(preflight)
+                            )
                             or preflight_has_source_failure(preflight)
                         )
                     ):
                         source_correction_attempt += 1
-                        source_corrected = invoke(
+                        correction_source_paths = self._preflight_target_paths(
+                            preflight,
                             source_paths,
+                        ) or source_paths
+                        source_corrected = invoke(
+                            correction_source_paths,
                             atomic=True,
                             context_updates={
                                 "repair_phase": "source_preflight_correction",
                                 "source_preflight_correction_attempt": source_correction_attempt,
                                 "preflight_test_execution": preflight,
+                                "preflight_failed_paths": preflight_failed_paths(preflight),
                                 "candidate_test_suite": first_candidate,
                             },
                             target_contents={
                                 path: accepted.get(path, files_by_path[path])
-                                for path in source_paths
+                                for path in correction_source_paths
                             },
                         )
                         if not source_corrected:
@@ -276,23 +285,29 @@ class SubstrateRepairBackend:
                             1,
                             self.max_test_preflight_corrections + 1,
                         ):
-                            corrected = invoke(
+                            correction_test_paths = self._preflight_target_paths(
+                                preflight,
                                 test_paths,
+                            ) or test_paths
+                            corrected = invoke(
+                                correction_test_paths,
                                 atomic=True,
                                 context_updates={
                                     "repair_phase": "test_suite_correction",
                                     "preflight_correction_attempt": correction_attempt,
                                     "preflight_test_execution": preflight,
+                                    "preflight_failed_paths": preflight_failed_paths(preflight),
                                 },
-                                target_contents=current_test_candidate,
+                                target_contents={
+                                    path: current_test_candidate[path]
+                                    for path in correction_test_paths
+                                },
                             )
                             if not corrected:
                                 correction_returned_all_paths = False
                                 break
-                            current_test_candidate = {
-                                path: accepted.pop(path)
-                                for path in test_paths
-                            }
+                            for path in correction_test_paths:
+                                current_test_candidate[path] = accepted.pop(path)
                             preflight = self.test_preflight_runner(
                                 {
                                     **files_by_path,
@@ -309,18 +324,23 @@ class SubstrateRepairBackend:
                                 and preflight_has_source_failure(preflight)
                             ):
                                 source_correction_attempt += 1
-                                source_corrected = invoke(
+                                correction_source_paths = self._preflight_target_paths(
+                                    preflight,
                                     source_paths,
+                                ) or source_paths
+                                source_corrected = invoke(
+                                    correction_source_paths,
                                     atomic=True,
                                     context_updates={
                                         "repair_phase": "source_preflight_correction",
                                         "source_preflight_correction_attempt": source_correction_attempt,
                                         "preflight_test_execution": preflight,
+                                        "preflight_failed_paths": preflight_failed_paths(preflight),
                                         "candidate_test_suite": current_test_candidate,
                                     },
                                     target_contents={
                                         path: accepted.get(path, files_by_path[path])
-                                        for path in source_paths
+                                        for path in correction_source_paths
                                     },
                                 )
                                 if not source_corrected:
@@ -515,6 +535,25 @@ class SubstrateRepairBackend:
             if text and text not in deduplicated:
                 deduplicated.append(text)
         return deduplicated
+
+    @staticmethod
+    def _preflight_target_paths(
+        preflight: dict[str, Any],
+        eligible_paths: list[str],
+    ) -> list[str]:
+        eligible = set(eligible_paths)
+        return [
+            path
+            for path in preflight_failed_paths(preflight)
+            if path in eligible
+        ]
+
+    @staticmethod
+    def _should_attempt_initial_source_correction(preflight: dict[str, Any]) -> bool:
+        phase = str(preflight.get("phase", "")).lower()
+        if phase in {"syntax", "import"}:
+            return bool(preflight.get("source_failed_paths"))
+        return True
 
     @staticmethod
     def _normalize_path(path: str) -> str:

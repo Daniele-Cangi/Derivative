@@ -207,6 +207,21 @@ class _StaticRepairBackend:
         )
 
 
+class _ImpactExpandedRepairBackend:
+    def propose(self, plan, artifact, validation, directive):
+        source = next(file.content for file in artifact.files if file.path == "src/component.py")
+        test_path = artifact.test_paths[0]
+        test_content = next(file.content for file in artifact.files if file.path == test_path)
+        return RepairPatchCandidate(
+            backend_name="impact_expanded_backend",
+            files={
+                "src/component.py": f"{source}\nSOURCE_REPAIR = True\n",
+                test_path: f"{test_content}\n# impact regression repair\n",
+            },
+            evidence={"impact_expanded_paths": [test_path]},
+        )
+
+
 class _PerTargetKernel:
     use_live_model = True
 
@@ -735,6 +750,72 @@ def test_substrate_backend_returns_to_source_after_test_correction_exposes_sourc
     assert set(candidate.files) == {"src/component.py", test_path}
 
 
+def test_substrate_backend_corrects_only_the_test_identified_by_candidate_gate():
+    plan = _generic_plan()
+    plan.required_tests.append(
+        PlanTest(
+            test_name="test_other",
+            objective="Verify another workflow behavior.",
+            requirement_ids=["R001"],
+        )
+    )
+    artifact = CoderStage().generate(plan)
+    first_test, second_test = sorted(artifact.test_paths)
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Generated tests require correction."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    directive.target_paths = ["src/component.py", first_test]
+    kernel = _PerTargetKernel()
+    preflight_results = iter(
+        [
+            {
+                "phase": "syntax",
+                "ran": False,
+                "passed": False,
+                "returncode": None,
+                "tests": [first_test, second_test],
+                "stdout": "",
+                "stderr": "",
+                "failed_paths": [first_test],
+                "source_failed_paths": [],
+                "test_failed_paths": [first_test],
+            },
+            {
+                "phase": "tests",
+                "ran": True,
+                "passed": True,
+                "returncode": 0,
+                "tests": [first_test, second_test],
+                "stdout": "2 passed",
+                "stderr": "",
+                "failed_paths": [],
+                "source_failed_paths": [],
+                "test_failed_paths": [],
+            },
+        ]
+    )
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=lambda files, paths: next(preflight_results),
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert [call["repair_phase"] for call in kernel.calls] == [
+        "file_revision",
+        "test_suite_generation",
+        "test_suite_correction",
+    ]
+    assert kernel.calls[1]["target_paths"] == [first_test, second_test]
+    assert kernel.calls[2]["target_paths"] == [first_test]
+    assert set(candidate.files) == {"src/component.py", first_test, second_test}
+
+
 def test_substrate_backend_discards_test_suite_when_preflight_correction_still_fails():
     plan = _generic_plan()
     artifact = CoderStage().generate(plan)
@@ -803,6 +884,35 @@ def test_coder_applies_grounded_candidate_with_revision_and_lineage():
         file.content for file in original.files if file.path == "tests/test_component.py"
     )
     assert repaired_test == original_test
+
+
+def test_coder_applies_preflighted_impact_expanded_tests_with_source_repair():
+    plan = _generic_plan()
+    original = CoderStage().generate(plan)
+    test_path = original.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Source behavior requires repair."],
+        failure_signatures=["semantic_content_mismatch"],
+        evidence={"layer2": {}},
+    )
+    directive = RepairPolicy().compile(validation, plan, original, attempt=2)
+    directive.target_paths = ["src/component.py"]
+
+    result = CoderStage(repair_backend=_ImpactExpandedRepairBackend()).repair(
+        plan,
+        original,
+        validation,
+        directive,
+    )
+
+    assert result.changed is True
+    assert "src/component.py" in result.changed_paths
+    assert test_path in result.changed_paths
+    repaired_test = next(
+        file.content for file in result.artifact.files if file.path == test_path
+    )
+    assert "impact regression repair" in repaired_test
 
 
 class _RaisingRepairBackend:

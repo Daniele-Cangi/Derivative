@@ -112,7 +112,7 @@ def test_trivial_generated_test_is_rejected_as_non_semantic(tmp_path):
     assert "fake_acceptance_coverage" in validation.failure_signatures
 
 
-def test_invoice_csv_template_cannot_verify_jsonl_telemetry_requirement(tmp_path):
+def test_jsonl_telemetry_requirement_uses_matching_domain_and_verifies(tmp_path):
     compiler = RequirementCompiler()
     spec = compiler.compile(TELEMETRY_REQUIREMENT)
     plan_output = _planner(tmp_path).plan(spec)
@@ -125,19 +125,23 @@ def test_invoice_csv_template_cannot_verify_jsonl_telemetry_requirement(tmp_path
     artifact = CoderStage().generate(plan_output)
     validation = ValidatorStage().validate(artifact, plan_output, spec)
 
-    assert validation.passed is False
-    assert "semantic_omission" in validation.failure_signatures
-    assert "semantic_content_mismatch" in validation.failure_signatures
-    assert validation.failure_category is not None
-    assert validation.failure_category.value == "implementation"
+    assert validation.passed is True
+    assert validation.failure_signatures == []
+    pipeline_source = next(
+        generated.content
+        for generated in artifact.files
+        if generated.path == "src/pipeline.py"
+    )
+    assert "aggregate_per_device" in pipeline_source
+    assert "write_summary_csv" in pipeline_source
+    assert "discover_csv_files" not in pipeline_source
+    assert "invoice_id,due_date,amount,customer_name" not in pipeline_source
     checks = validation.layer2_result.evidence["requirement_semantic_checks"]
-    mismatches = {item["requirement_id"]: item for item in checks["semantic_content_mismatches"]}
-    assert "cli_entrypoint" not in mismatches["R001"]["missing_source_terms"]
-    assert "cli_entrypoint" in mismatches["R001"]["missing_test_terms"]
-    assert "input_jsonl" in mismatches["R002"]["missing_source_terms"]
-    assert "device_id" in mismatches["R002"]["missing_source_terms"]
-    assert "minimum" in mismatches["R004"]["missing_source_terms"]
-    assert "summary_csv" in mismatches["R005"]["missing_source_terms"]
+    assert checks["semantic_content_mismatches"] == []
+    assert all(
+        not details["missing_source_terms"] and not details["missing_test_terms"]
+        for details in checks["requirements"].values()
+    )
 
 
 def test_semantic_gate_recognizes_executed_cli_and_aggregation_apis():

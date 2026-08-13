@@ -764,7 +764,10 @@ class PlannerStage:
                     continue
             if lowered_path.endswith("src/watcher.py"):
                 input_terms = {"input_jsonl", "input_csv"} & set(atom.evidence_terms)
-                if input_terms or any(token in lowered_atom for token in ("watch", "directory", "poll", "discover")):
+                parser_terms = {"malformed_records"} & set(atom.evidence_terms)
+                if input_terms or parser_terms or any(
+                    token in lowered_atom for token in ("watch", "directory", "poll", "discover")
+                ):
                     ids.append(atom.requirement_id)
                     continue
             if lowered_path.endswith("src/validator.py"):

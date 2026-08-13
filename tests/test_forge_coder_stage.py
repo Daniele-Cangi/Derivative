@@ -580,3 +580,51 @@ def test_pipeline_cli_entrypoint_uses_blueprint_path_and_keeps_run_callable(tmp_
     assert "def main(argv: list[str] | None = None) -> int:" in pipeline_module.content
     assert "@click.command" not in pipeline_module.content
     assert "interface:main" in pipeline_module.generated_from_plan_sections
+
+
+def test_jsonl_telemetry_plan_generates_domain_specific_behavior(tmp_path):
+    spec = RequirementCompiler().compile(TELEMETRY_CLI_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    )
+    plan = planner.plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan)
+    pipeline_module = _find_generated_file(artifact, "src/pipeline.py")
+    watcher_module = _find_generated_file(artifact, "src/watcher.py")
+    validator_module = _find_generated_file(artifact, "src/validator.py")
+
+    assert pipeline_module is not None
+    assert watcher_module is not None
+    assert validator_module is not None
+    assert "def aggregate_per_device(" in pipeline_module.content
+    assert "minimum = min(temperatures)" in pipeline_module.content
+    assert "maximum = max(temperatures)" in pipeline_module.content
+    assert "average = sum(temperatures) / len(temperatures)" in pipeline_module.content
+    assert "def write_summary_csv(" in pipeline_module.content
+    assert "def main(argv: list[str] | None = None) -> int:" in pipeline_module.content
+    assert "def iter_jsonl(" in watcher_module.content
+    assert '"malformed_records"' in watcher_module.content
+    assert "invalid_timestamp" in validator_module.content
+    assert "discover_csv_files" not in pipeline_module.content
+    assert "sqlite3" not in pipeline_module.content
+
+    generated_tests = [
+        generated.content
+        for generated in artifact.files
+        if generated.path.startswith("tests/")
+    ]
+    corpus = "\n".join(generated_tests)
+    assert "input_jsonl" in corpus
+    assert "malformed_records" in corpus
+    assert "missing_fields:temperature_c" in corpus
+    assert "invalid_timestamp" in corpus
+    assert "minimum" in corpus
+    assert "maximum" in corpus
+    assert "average" in corpus
+    assert "summary_csv" in corpus
+    assert "cli_flow" in corpus

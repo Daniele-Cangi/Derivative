@@ -516,6 +516,34 @@ def test_pipeline_artifact_avoids_cli_import_failure_and_superficial_stub(pipeli
     assert result.passed is True
     assert "import_failure" not in result.failure_signatures
     assert "superficial_stub" not in result.failure_signatures
+
+
+def test_jsonl_telemetry_artifact_passes_all_validation_layers(tmp_path):
+    requirement = (
+        "Build a Python CLI that reads JSON Lines telemetry events with fields device_id, "
+        "timestamp, and temperature_c, rejects malformed records, missing fields, and invalid "
+        "timestamps into a quarantine JSONL file, computes per-device minimum, maximum, and "
+        "average temperature, writes a summary CSV, and includes behavioral tests for parsing, "
+        "quarantine handling, aggregation, and the complete CLI flow."
+    )
+    build_spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(build_spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+
+    result = ValidatorStage().validate(artifact, plan, build_spec)
+
+    assert result.passed is True
+    assert result.failure_signatures == []
+    assert result.layer1_result.passed is True
+    assert result.layer2_result.passed is True
+    assert result.layer3_result.passed is True
+    assert result.evidence["executed_tests"]["returncode"] == 0
     assert result.layer1_result is not None
     entrypoint = result.layer1_result.evidence["entrypoint_results"]["src/pipeline.py"]
     assert entrypoint["executed"] is True

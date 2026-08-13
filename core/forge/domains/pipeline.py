@@ -2,6 +2,11 @@ from typing import List
 
 from core.forge.contracts import ArtifactTargetType, FeasiblePlan, PlanInterface, PlanTest
 from core.forge.domains.base import BaseDomainAdapter
+from core.forge.domains.pipeline_jsonl import (
+    is_jsonl_pipeline,
+    render_jsonl_file,
+    render_jsonl_test,
+)
 
 
 class PipelineDomainAdapter(BaseDomainAdapter):
@@ -14,6 +19,10 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         return "src/pipeline.py" in paths or "src/quarantine.py" in paths
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
+        if is_jsonl_pipeline(plan):
+            rendered = render_jsonl_file(plan, path, interfaces)
+            if rendered is not None:
+                return rendered
         normalized = path.replace("\\", "/").lower()
         if normalized.endswith("src/pipeline.py"):
             return self._template_pipeline_entrypoint(plan)
@@ -28,6 +37,8 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
+        if is_jsonl_pipeline(plan):
+            return render_jsonl_test(plan, plan_test)
         name = plan_test.test_name.lower()
         objective = plan_test.objective.lower()
         if "suite_executes" in name or any(

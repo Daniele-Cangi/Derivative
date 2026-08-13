@@ -161,6 +161,16 @@ class CoderStage:
         allowed_targets = {
             path.replace("\\", "/") for path in directive.target_paths
         }
+        impact_expanded_paths = {
+            str(path).replace("\\", "/")
+            for path in candidate_evidence.get("impact_expanded_paths", [])
+        }
+        if any(path.startswith("src/") for path in allowed_targets):
+            allowed_targets.update(
+                path
+                for path in impact_expanded_paths
+                if path in previous_artifact.test_paths
+            )
         manifest_paths = {
             path.replace("\\", "/") for path in revised.manifest_paths
         }
