@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from core.forge.coder_stage import CoderStage
 from core.forge.contracts import FeasiblePlan
 from core.forge.planner_stage import PlannerStage
@@ -32,6 +34,33 @@ TELEMETRY_REQUIREMENT = (
     "computes per-device minimum, maximum, and average temperature, writes a summary CSV, and includes "
     "behavioral tests for parsing, quarantine handling, aggregation, and the complete CLI flow."
 )
+
+CSV_FEASIBLE_REGRESSIONS = [
+    (
+        "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, "
+        "customer_name, flags overdue invoices, writes a summary CSV with totals and counts, and "
+        "includes tests for malformed rows and invalid dates."
+    ),
+    (
+        "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts "
+        "expiring in less than 30 days, writes a summary CSV, and includes tests for invalid dates."
+    ),
+    (
+        "Build a Python CLI that reads a CSV of contracts with columns contract_id and expiration_date, "
+        "extracts expiration dates, flags contracts expiring in less than 120 days, writes a summary CSV, "
+        "and includes tests for malformed rows."
+    ),
+    (
+        "Build a Python CLI that reads a CSV of invoices with columns invoice_id, due_date, amount, "
+        "customer_name, flags overdue invoices, writes a summary CSV with totals and counts, and includes "
+        "tests for malformed rows and invalid dates."
+    ),
+    (
+        "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts "
+        "expiring in less than 45 days, writes a summary CSV with totals and counts, and includes tests "
+        "for malformed rows."
+    ),
+]
 
 
 def _planner(tmp_path: Path) -> PlannerStage:
@@ -142,6 +171,56 @@ def test_jsonl_telemetry_requirement_uses_matching_domain_and_verifies(tmp_path)
         not details["missing_source_terms"] and not details["missing_test_terms"]
         for details in checks["requirements"].values()
     )
+
+
+@pytest.mark.parametrize("requirement", CSV_FEASIBLE_REGRESSIONS)
+def test_test_only_validation_atoms_use_executed_test_evidence(requirement, tmp_path):
+    spec = RequirementCompiler().compile(requirement)
+    plan_output = _planner(tmp_path).plan(spec)
+    assert isinstance(plan_output, FeasiblePlan)
+    artifact = CoderStage().generate(plan_output)
+
+    validation = ValidatorStage().validate(artifact, plan_output, spec)
+
+    assert validation.passed is True
+    assert validation.failure_signatures == []
+    semantic_checks = validation.layer2_result.evidence["requirement_semantic_checks"]
+    test_only_atoms = [
+        atom
+        for atom in spec.requirement_atoms
+        if atom.category == "validation" and "test" in atom.text.lower()
+    ]
+    assert test_only_atoms
+    for atom in test_only_atoms:
+        check = semantic_checks["requirements"][atom.requirement_id]
+        assert check["source_evidence_required"] is False
+        assert check["missing_test_terms"] == []
+
+
+def test_operational_validation_atom_still_requires_source_evidence(tmp_path):
+    spec = RequirementCompiler().compile(TELEMETRY_REQUIREMENT)
+    plan_output = _planner(tmp_path).plan(spec)
+    assert isinstance(plan_output, FeasiblePlan)
+    artifact = CoderStage().generate(plan_output)
+    operational_atom = next(
+        atom
+        for atom in spec.requirement_atoms
+        if atom.text.lower().startswith("rejects malformed records")
+    )
+    for generated in artifact.files:
+        if generated.path == "src/watcher.py":
+            generated.content = generated.content.replace("json.JSONDecodeError", "ValueError")
+            generated.content = generated.content.replace('"malformed_records"', '"parse_error"')
+
+    validation = ValidatorStage().validate(artifact, plan_output, spec)
+
+    assert validation.passed is False
+    assert "semantic_content_mismatch" in validation.failure_signatures
+    check = validation.layer2_result.evidence["requirement_semantic_checks"][
+        "requirements"
+    ][operational_atom.requirement_id]
+    assert check["source_evidence_required"] is True
+    assert "malformed_records" in check["missing_source_terms"]
 
 
 def test_semantic_gate_recognizes_executed_cli_and_aggregation_apis():

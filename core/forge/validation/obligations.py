@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -314,9 +315,16 @@ class ObligationValidationLayer(ValidationLayerBase):
             ]
             source_corpus = "\n".join(files_by_path[path].content.lower() for path in source_paths)
             test_corpus = "\n".join(files_by_path[path].content.lower() for path in test_paths)
-            missing_source_terms = [
-                term for term in atom.evidence_terms if not self._semantic_term_present(term, source_corpus)
-            ]
+            source_evidence_required = self._requires_source_semantic_evidence(atom)
+            missing_source_terms = (
+                [
+                    term
+                    for term in atom.evidence_terms
+                    if not self._semantic_term_present(term, source_corpus)
+                ]
+                if source_evidence_required
+                else []
+            )
             missing_test_terms = [
                 term
                 for term in atom.evidence_terms
@@ -327,6 +335,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "evidence_terms": list(atom.evidence_terms),
                 "source_paths": source_paths,
                 "test_paths": test_paths,
+                "source_evidence_required": source_evidence_required,
                 "missing_source_terms": missing_source_terms,
                 "missing_test_terms": missing_test_terms,
             }
@@ -358,6 +367,18 @@ class ObligationValidationLayer(ValidationLayerBase):
             "source_semantic_mismatches": source_mismatches,
             "test_semantic_mismatches": test_mismatches,
         }
+
+    @staticmethod
+    def _requires_source_semantic_evidence(atom) -> bool:
+        if atom.category != "validation":
+            return True
+        normalized = " ".join(atom.text.lower().replace("-", " ").split())
+        test_obligation_patterns = (
+            r"\bincludes?\s+(?:behavioral\s+|integration\s+|end\s+to\s+end\s+|unit\s+)?tests?\b",
+            r"\btests?\s+for\b",
+            r"\btests?\s+(?:that\s+)?(?:cover|covers|verify|verifies|exercise|exercises)\b",
+        )
+        return not any(re.search(pattern, normalized) for pattern in test_obligation_patterns)
 
     @staticmethod
     def _semantic_term_present(term: str, corpus: str, is_test: bool = False) -> bool:
