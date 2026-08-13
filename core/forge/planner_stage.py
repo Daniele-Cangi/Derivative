@@ -232,12 +232,15 @@ class PlannerStage:
             )
         goals = " ".join(build_spec.functional_goals).lower()
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
-            if "csv" in goals and "expiration" in goals:
+            if self._is_csv_date_cli(build_spec):
                 return (
                     "Python CLI with modular pipeline: CSV input loader, expiration-date extractor, "
                     "horizon-based contract flagger, and summary CSV writer."
                 )
-            return "Python CLI with command entrypoint, processing pipeline, and output writer modules."
+            return (
+                "Python CLI with one declared command entrypoint, requirement-specific input processing, "
+                "validation, output persistence, and behavioral tests."
+            )
         if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
             return (
                 "Python service composed from separate API, domain, authentication, rate-limit, SQLite storage, "
@@ -312,6 +315,21 @@ class PlannerStage:
                 ),
             ]
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
+            if not self._is_csv_date_cli(build_spec):
+                return [
+                    PlanFile(
+                        path="src/cli.py",
+                        purpose=(
+                            "CLI argument parsing and complete requirement-specific workflow implementation."
+                        ),
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/cli.py"),
+                    ),
+                    PlanFile(
+                        path="tests/test_cli_flow.py",
+                        purpose="End-to-end behavioral verification of the declared CLI contract.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_cli_flow.py"),
+                    ),
+                ]
             return [
                 PlanFile(
                     path="src/cli.py",
@@ -429,13 +447,18 @@ class PlannerStage:
                 )
             ]
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
-            return [
+            interfaces = [
                 PlanInterface(
                     name="main",
                     interface_type="cli_entrypoint",
                     signature="main(argv: Optional[list[str]] = None) -> int",
                     description="Runs the CLI workflow and returns process exit code.",
-                ),
+                )
+            ]
+            if not self._is_csv_date_cli(build_spec):
+                return interfaces
+            return [
+                *interfaces,
                 PlanInterface(
                     name="load_contracts_csv",
                     interface_type="function",
@@ -729,6 +752,12 @@ class PlannerStage:
 
     def _semantic_test_spec(self, objective: str, index: int) -> tuple[str, str]:
         lowered = objective.lower()
+        if "merge" in lowered and "json" in lowered and "recurs" in lowered:
+            return "test_recursive_json_merge", "integration"
+        if "replac" in lowered and "list" in lowered:
+            return "test_replaces_json_lists", "unit"
+        if "non-object root" in lowered or "non object root" in lowered:
+            return "test_rejects_non_object_json_root", "validation"
         if "malformed" in lowered and "invalid date" in lowered:
             return "test_handles_malformed_rows_and_invalid_dates", "validation"
         if "malformed" in lowered:
@@ -825,6 +854,25 @@ class PlannerStage:
             "quarantine",
         )
         return any(token in combined for token in pipeline_tokens)
+
+    def _is_csv_date_cli(self, build_spec: BuildSpec) -> bool:
+        if build_spec.target_artifact_type != ArtifactTargetType.CLI:
+            return False
+        combined = " ".join(
+            [
+                build_spec.normalized_requirement.lower(),
+                " ".join(goal.lower() for goal in build_spec.functional_goals),
+                " ".join(atom.text.lower() for atom in build_spec.requirement_atoms),
+            ]
+        )
+        date_domain_tokens = (
+            "expiration",
+            "expiring",
+            "due_date",
+            "due date",
+            "overdue",
+        )
+        return "csv" in combined and any(token in combined for token in date_domain_tokens)
 
     def _requires_pipeline_cli(self, build_spec: BuildSpec) -> bool:
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:

@@ -28,6 +28,7 @@ class RepairPolicy:
         "quality_contract_violation": "rerender_quality_contract_targets",
         "capability_contract_violation": "restore_capability_contract",
         "missing_capability": "restore_capability_modules",
+        "adapter_capability_mismatch": "compile_uncovered_capabilities",
     }
 
     def compile(
@@ -50,6 +51,29 @@ class RepairPolicy:
             artifact,
             signatures,
         )
+        metadata = (
+            artifact.artifact_manifest.get("metadata", {})
+            if isinstance(artifact.artifact_manifest, dict)
+            else {}
+        )
+        if (
+            operations
+            and isinstance(metadata, dict)
+            and metadata.get("generator") == "forge_candidate_compiler"
+        ):
+            operations = self._dedupe([*operations, "recompile_candidate_transaction"])
+            manifest_paths = {
+                path.replace("\\", "/")
+                for path in artifact.manifest_paths
+            }
+            target_paths = self._dedupe(
+                generated.path
+                for generated in artifact.files
+                if generated.path.replace("\\", "/") not in manifest_paths
+            )
+            evidence_refs = self._dedupe(
+                [*evidence_refs, "artifact_manifest.metadata.candidate_compilation"]
+            )
         digest_source = "|".join(
             [plan.plan_id, str(attempt), *signatures, *operations, *target_paths]
         )
@@ -190,6 +214,18 @@ class RepairPolicy:
                     if plan_file.path.startswith("src/")
                 ]
             )
+
+        if "adapter_capability_mismatch" in signatures:
+            manifest_paths = {
+                path.replace("\\", "/")
+                for path in artifact.manifest_paths
+            }
+            paths.extend(
+                generated.path
+                for generated in artifact.files
+                if generated.path.replace("\\", "/") not in manifest_paths
+            )
+            refs.append("layer2.adapter_capability_checks")
 
         return self._dedupe(paths), self._dedupe(refs)
 

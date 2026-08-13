@@ -10,6 +10,7 @@ import typer
 from dotenv import load_dotenv
 
 from core.forge.coder_stage import CoderStage
+from core.forge.candidate_compiler import SubstrateCandidateCompiler
 from core.forge.contracts import (
     BuildSpec,
     CodeArtifact,
@@ -64,13 +65,22 @@ def run_forge(
         coder = coder_stage
     else:
         repair_backend = None
+        candidate_compiler = None
         if execution_mode != "local-only":
             repair_backend = SubstrateRepairBackend(
                 execution_mode=execution_mode,
                 substrate=getattr(planner, "substrate", None),
                 kernel=getattr(planner, "kernel", None),
             )
-        coder = CoderStage(repair_backend=repair_backend)
+            candidate_compiler = SubstrateCandidateCompiler(
+                execution_mode=execution_mode,
+                substrate=getattr(planner, "substrate", None),
+                kernel=getattr(planner, "kernel", None),
+            )
+        coder = CoderStage(
+            repair_backend=repair_backend,
+            candidate_compiler=candidate_compiler,
+        )
     validator = validator_stage or ValidatorStage()
     packager = packaging_stage or PackagingStage(output_root=packaging_output_root)
     repairs = repair_policy or RepairPolicy()

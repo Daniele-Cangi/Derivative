@@ -36,7 +36,7 @@ def main(
         "--benchmark-output-root",
     ),
     max_planner_attempts: int = typer.Option(1, "--max-planner-attempts", min=1),
-    max_coder_attempts: int = typer.Option(1, "--max-coder-attempts", min=1),
+    max_coder_attempts: int = typer.Option(3, "--max-coder-attempts", min=1),
     min_status_accuracy: float = typer.Option(0.0, min=0.0, max=1.0),
     min_external_verified_at_1: float = typer.Option(0.0, min=0.0, max=1.0),
     max_external_false_verified_rate: float = typer.Option(0.0, min=0.0, max=1.0),

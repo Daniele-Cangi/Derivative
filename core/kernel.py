@@ -147,6 +147,10 @@ run() -> int, keep it undecorated and put Click/Typer behavior in a separate mai
 expose a real argparse, Typer, or Click entrypoint and tests must invoke that CLI path with explicit arguments and verify
 exit status plus observable output. A test contract containing cli_entrypoint or cli_flow must invoke the declared CLI
 entrypoint such as main(argv), CliRunner, or a subprocess; invoking only the internal run function is insufficient. A
+candidate_correction_requirements list is mandatory executable guidance: satisfy every listed path-level correction
+without substituting a weaker return-code, helper-only, file-presence, or keyword-only assertion. A
+test contract that rejects invalid input must assert ValueError, TypeError, or SystemExit unless the requirement
+explicitly defines a return-code contract; a nonzero return assertion alone is insufficient. A
 test contract containing aggregation must invoke the aggregation API or the full workflow and assert concrete grouped
 minimum, maximum, average, total, or count values. Preserve and update planned test modules included in the transaction;
 do not leave stale tests for a superseded input format."""

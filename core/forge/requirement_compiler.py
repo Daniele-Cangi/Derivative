@@ -696,6 +696,19 @@ class RequirementCompiler:
             ("invalid_dates", r"\binvalid\s+dates?\b"),
             ("malformed_rows", r"\bmalformed\s+rows?\b"),
             ("cli_flow", r"\bcli\s+flow\b"),
+            (
+                "recursive_json_merge",
+                r"\b(?:merge|merges|merged)\b.*\bjson\b.*\brecursiv(?:e|ely)\b|"
+                r"\bjson\b.*\brecursiv(?:e|ely)\b.*\b(?:merge|merges|merged)\b",
+            ),
+            (
+                "json_list_replacement",
+                r"\breplac(?:e|es|ed|ing)\b.*\blists?\b|\blists?\b.*\breplac(?:e|es|ed|ing)\b",
+            ),
+            (
+                "json_object_root_validation",
+                r"\b(?:reject|rejects|validate|validates)\b.*\bnon[-\s]+object\s+root\b",
+            ),
         )
         for term, pattern in semantic_patterns:
             if re.search(pattern, lowered):

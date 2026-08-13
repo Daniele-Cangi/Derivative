@@ -1,4 +1,5 @@
 import re
+import hashlib
 from typing import Dict, List, Set, Tuple
 
 from core.forge.contracts import ArtifactTargetType, CodeArtifact, FeasiblePlan
@@ -14,9 +15,7 @@ class AdapterCapabilityContractChecker:
         code_artifact: CodeArtifact,
         plan: FeasiblePlan,
     ) -> Tuple[List[str], List[str], Dict[str, object]]:
-        adapter = self.registry.select(plan)
         required = self.required_capabilities(plan)
-        provided = set(adapter.provided_capabilities(plan))
         metadata = (
             code_artifact.artifact_manifest.get("metadata", {})
             if isinstance(code_artifact.artifact_manifest, dict)
@@ -31,6 +30,19 @@ class AdapterCapabilityContractChecker:
             for item in declared_raw
             if isinstance(declared_raw, list)
         }
+
+        if metadata.get("generator") == "forge_candidate_compiler":
+            return self._check_candidate_compiler(
+                code_artifact=code_artifact,
+                plan=plan,
+                required=required,
+                metadata=metadata,
+                declared_adapter=declared_adapter,
+                declared=declared,
+            )
+
+        adapter = self.registry.select(plan)
+        provided = set(adapter.provided_capabilities(plan))
 
         missing = sorted(required - provided)
         unexpected_declared = sorted(declared - provided)
@@ -68,6 +80,117 @@ class AdapterCapabilityContractChecker:
             "missing_capabilities": missing,
             "unexpected_declared_capabilities": unexpected_declared,
             "undeclared_provided_capabilities": undeclared_provided,
+            "passed": not failures,
+        }
+        return failures, signatures, evidence
+
+    def _check_candidate_compiler(
+        self,
+        code_artifact: CodeArtifact,
+        plan: FeasiblePlan,
+        required: Set[str],
+        metadata: Dict[str, object],
+        declared_adapter: str,
+        declared: Set[str],
+    ) -> Tuple[List[str], List[str], Dict[str, object]]:
+        compilation = metadata.get("candidate_compilation", {})
+        if not isinstance(compilation, dict):
+            compilation = {}
+        planned_paths = {
+            self._normalize_path(plan_file.path)
+            for plan_file in plan.file_tree_plan
+        }
+        planned_paths.update(
+            f"tests/{planned_test.test_name}.py"
+            for planned_test in plan.required_tests
+            if planned_test.required
+        )
+        manifest_paths = {
+            self._normalize_path(path)
+            for path in code_artifact.manifest_paths
+        }
+        planned_paths -= manifest_paths
+        transaction_paths = {
+            self._normalize_path(path)
+            for path in compilation.get("transaction_paths", [])
+            if isinstance(path, str)
+        }
+        files_by_path = {
+            self._normalize_path(generated.path): generated
+            for generated in code_artifact.files
+        }
+        declared_digests = compilation.get("file_sha256", {})
+        if not isinstance(declared_digests, dict):
+            declared_digests = {}
+        required_tokens = {
+            "candidate_compiler:openai",
+            *(f"candidate_capability:{capability}" for capability in required),
+        }
+        provenance_mismatches: List[str] = []
+        digest_mismatches: List[str] = []
+        for path in sorted(planned_paths):
+            generated = files_by_path.get(path)
+            if generated is None:
+                provenance_mismatches.append(path)
+                digest_mismatches.append(path)
+                continue
+            provenance = set(generated.generated_from_plan_sections)
+            has_transaction_token = any(
+                token.startswith("candidate_transaction:")
+                for token in provenance
+            )
+            if not required_tokens.issubset(provenance) or not has_transaction_token:
+                provenance_mismatches.append(path)
+            digest = hashlib.sha256(generated.content.encode("utf-8")).hexdigest()
+            if declared_digests.get(path) != digest:
+                digest_mismatches.append(path)
+
+        adapter_matches = declared_adapter == "candidate"
+        capabilities_match = declared == required
+        paths_match = transaction_paths == planned_paths
+        preflight_passed = compilation.get("preflight_passed") is True
+        compiler_contract_valid = all(
+            (
+                adapter_matches,
+                capabilities_match,
+                paths_match,
+                preflight_passed,
+                not provenance_mismatches,
+                not digest_mismatches,
+            )
+        )
+        failures: List[str] = []
+        signatures: List[str] = []
+        if not compiler_contract_valid:
+            failures.append(
+                "Candidate compiler manifest/provenance contract is invalid: "
+                f"adapter_matches={adapter_matches}, capabilities_match={capabilities_match}, "
+                f"paths_match={paths_match}, preflight_passed={preflight_passed}, "
+                f"provenance_mismatches={provenance_mismatches}, "
+                f"digest_mismatches={digest_mismatches}."
+            )
+            self._append_unique(signatures, "adapter_capability_manifest_mismatch")
+            self._append_unique(signatures, "adapter_capability_mismatch")
+
+        provided = set(required) if compiler_contract_valid else set()
+        missing = sorted(required - provided)
+        evidence: Dict[str, object] = {
+            "selected_adapter": "candidate",
+            "declared_adapter": declared_adapter,
+            "adapter_matches": adapter_matches,
+            "required_capabilities": sorted(required),
+            "provided_capabilities": sorted(provided),
+            "declared_capabilities": sorted(declared),
+            "missing_capabilities": missing,
+            "unexpected_declared_capabilities": sorted(declared - required),
+            "undeclared_provided_capabilities": sorted(provided - declared),
+            "candidate_transaction_paths": sorted(transaction_paths),
+            "planned_candidate_paths": sorted(planned_paths),
+            "paths_match": paths_match,
+            "preflight_passed": preflight_passed,
+            "provenance_mismatches": provenance_mismatches,
+            "digest_mismatches": digest_mismatches,
+            "compiler_contract_valid": compiler_contract_valid,
             "passed": not failures,
         }
         return failures, signatures, evidence
@@ -168,3 +291,7 @@ class AdapterCapabilityContractChecker:
     def _append_unique(collection: List[str], value: str) -> None:
         if value not in collection:
             collection.append(value)
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        return str(path).strip().replace("\\", "/").lstrip("./")

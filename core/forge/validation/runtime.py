@@ -184,6 +184,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
 
         module_name = target.stem
         is_jsonl_pipeline = self._is_jsonl_pipeline(build_spec)
+        is_json_merge_cli = self._is_json_merge_cli(build_spec)
         input_csv = workspace / ("validator_input.jsonl" if is_jsonl_pipeline else "validator_input.csv")
         output_csv = workspace / "validator_output.csv"
         input_csv.write_text(self._sample_input_content(build_spec), encoding="utf-8")
@@ -194,6 +195,22 @@ class RuntimeValidationLayer(ValidationLayerBase):
                 call_args = (
                     f"[{str(input_csv)!r}, {str(quarantine_jsonl)!r}, "
                     f"{str(output_csv)!r}]"
+                )
+            elif is_json_merge_cli:
+                base_json = workspace / "validator_base.json"
+                override_json = workspace / "validator_override.json"
+                output_json = workspace / "validator_output.json"
+                base_json.write_text(
+                    '{"service":{"host":"localhost","ports":[80]},"enabled":true}',
+                    encoding="utf-8",
+                )
+                override_json.write_text(
+                    '{"service":{"ports":[443]},"enabled":false}',
+                    encoding="utf-8",
+                )
+                call_args = (
+                    f"[{str(base_json)!r}, {str(override_json)!r}, "
+                    f"{str(output_json)!r}]"
                 )
             elif entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
                 call_args = f"[{str(input_csv)!r}, {str(output_csv)!r}]"
@@ -235,6 +252,14 @@ class RuntimeValidationLayer(ValidationLayerBase):
             bool({"input_jsonl", "jsonl"} & set(atom.evidence_terms))
             for atom in build_spec.requirement_atoms
         )
+
+    def _is_json_merge_cli(self, build_spec: BuildSpec) -> bool:
+        evidence_terms = {
+            term
+            for atom in build_spec.requirement_atoms
+            for term in atom.evidence_terms
+        }
+        return "recursive_json_merge" in evidence_terms
 
     def _run_subprocess(self, script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

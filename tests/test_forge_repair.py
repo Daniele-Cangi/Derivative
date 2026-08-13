@@ -146,6 +146,74 @@ def test_non_semantic_repair_targets_only_validator_identified_tests(repair_case
     assert directive.target_paths == [failing_test]
 
 
+def test_adapter_mismatch_compiles_one_complete_artifact_transaction(repair_case):
+    artifact = repair_case["artifact"]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Selected adapter lacks required capabilities."],
+        failure_signatures=["adapter_capability_mismatch"],
+        evidence={
+            "layer2": {
+                "adapter_capability_checks": {
+                    "missing_capabilities": ["unimplemented_capability"]
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert directive.operations == ["compile_uncovered_capabilities"]
+    assert set(directive.target_paths) == {
+        generated.path
+        for generated in artifact.files
+        if generated.path not in artifact.manifest_paths
+    }
+    assert directive.evidence_refs == ["layer2.adapter_capability_checks"]
+
+
+def test_candidate_followup_repair_remains_a_complete_transaction(repair_case):
+    artifact = copy.deepcopy(repair_case["artifact"])
+    artifact.artifact_manifest["metadata"]["generator"] = "forge_candidate_compiler"
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Mapped test does not invoke the CLI entrypoint."],
+        failure_signatures=["missing_semantic_requirement_coverage"],
+        evidence={
+            "layer2": {
+                "requirement_semantic_checks": {
+                    "semantic_content_mismatches": [
+                        {
+                            "source_paths": ["src/cli.py"],
+                            "test_paths": [artifact.test_paths[0]],
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=3,
+    )
+
+    assert "recompile_candidate_transaction" in directive.operations
+    assert set(directive.target_paths) == {
+        generated.path
+        for generated in artifact.files
+        if generated.path not in artifact.manifest_paths
+    }
+    assert "artifact_manifest.metadata.candidate_compilation" in directive.evidence_refs
+
+
 def test_execution_repair_targets_only_pytest_failed_paths(repair_case):
     artifact = repair_case["artifact"]
     failing_test = artifact.test_paths[0]

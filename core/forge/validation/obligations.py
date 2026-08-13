@@ -423,6 +423,28 @@ class ObligationValidationLayer(ValidationLayerBase):
             "per_device": ("device_id", "per_device"),
             "totals": ("total", "totals"),
             "counts": ("count", "counts"),
+            "recursive_json_merge": (
+                "recursive_json_merge",
+                "recursive_merge",
+                "deep_merge",
+            ),
+            "json_list_replacement": (
+                "json_list_replacement",
+                "replace_lists",
+                "replaces_json_lists",
+                "lists_are_replaced",
+                "list_replacement",
+                "lists_instead_of_concatenating",
+            ),
+            "json_object_root_validation": (
+                "json_object_root_validation",
+                "validate_object_root",
+                "non_object_root",
+                "rejects_non_object",
+                "root_must_be_an_object",
+                "json_root_must_be_an_object",
+                "root_element_must_be_an_object",
+            ),
         }
         candidates = aliases.get(term, (term,))
         if is_test and term == "input_jsonl":

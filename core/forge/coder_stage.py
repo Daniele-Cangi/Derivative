@@ -19,6 +19,7 @@ from core.forge.contracts import (
 from core.forge.domains.base import BaseDomainAdapter, DomainAdapterError
 from core.forge.domains.registry import DomainAdapterRegistry
 from core.forge.repair_backend import ArtifactRepairBackend
+from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 
 
 class CoderStageError(Exception):
@@ -34,9 +35,11 @@ class CoderStage:
         self,
         registry: DomainAdapterRegistry | None = None,
         repair_backend: ArtifactRepairBackend | None = None,
+        candidate_compiler: ArtifactRepairBackend | None = None,
     ):
         self.registry = registry or DomainAdapterRegistry()
         self.repair_backend = repair_backend
+        self.candidate_compiler = candidate_compiler
 
     def generate(self, plan: FeasiblePlan) -> CodeArtifact:
         self._validate_plan(plan)
@@ -114,7 +117,14 @@ class CoderStage:
 
         canonical = self.generate(plan)
         changed_paths = self._changed_paths(previous_artifact, canonical)
-        if previous_artifact.revision == 1 and changed_paths:
+        candidate_compilation = any(
+            operation in directive.operations
+            for operation in (
+                "compile_uncovered_capabilities",
+                "recompile_candidate_transaction",
+            )
+        )
+        if previous_artifact.revision == 1 and changed_paths and not candidate_compilation:
             return self._finalize_repair(
                 plan=plan,
                 previous_artifact=previous_artifact,
@@ -126,7 +136,8 @@ class CoderStage:
                 backend_evidence={"strategy": "deterministic_plan_regeneration"},
             )
 
-        if self.repair_backend is None:
+        backend = self.candidate_compiler if candidate_compilation else self.repair_backend
+        if backend is None:
             return RepairResult(
                 directive=directive,
                 artifact=previous_artifact,
@@ -137,7 +148,7 @@ class CoderStage:
             )
 
         try:
-            candidate = self.repair_backend.propose(
+            candidate = backend.propose(
                 plan,
                 previous_artifact,
                 validation,
@@ -150,7 +161,7 @@ class CoderStage:
                 changed=False,
                 previous_digest=previous_digest,
                 repaired_digest=previous_digest,
-                backend_name=type(self.repair_backend).__name__,
+                backend_name=type(backend).__name__,
                 backend_evidence={"error_type": type(exc).__name__},
                 stop_reason="Grounded repair backend failed before producing a candidate.",
             )
@@ -240,6 +251,13 @@ class CoderStage:
             "backend_evidence": backend_evidence,
         }
         repaired_artifact.repair_history = [*previous_artifact.repair_history, repair_record]
+        if backend_name == "candidate_compiler":
+            self._stamp_candidate_transaction(
+                plan,
+                repaired_artifact,
+                directive,
+                backend_evidence,
+            )
         metadata = repaired_artifact.artifact_manifest.setdefault("metadata", {})
         if isinstance(metadata, dict):
             metadata["artifact_revision"] = repaired_artifact.revision
@@ -275,6 +293,82 @@ class CoderStage:
             backend_name=backend_name,
             backend_evidence=backend_evidence,
         )
+
+    def _stamp_candidate_transaction(
+        self,
+        plan: FeasiblePlan,
+        artifact: CodeArtifact,
+        directive: RepairDirective,
+        backend_evidence: Dict[str, object],
+    ) -> None:
+        transaction_paths = sorted(
+            {
+                str(path).replace("\\", "/")
+                for path in backend_evidence.get("accepted_paths", [])
+            }
+        )
+        required_capabilities = sorted(
+            AdapterCapabilityContractChecker(self.registry).required_capabilities(plan)
+        )
+        files_by_path = {
+            generated.path.replace("\\", "/"): generated
+            for generated in artifact.files
+        }
+        transaction_token = f"candidate_transaction:{directive.repair_id}"
+        compiler_token = "candidate_compiler:openai"
+        for path in transaction_paths:
+            generated = files_by_path.get(path)
+            if generated is None:
+                continue
+            generated.generated_from_plan_sections = [
+                token
+                for token in generated.generated_from_plan_sections
+                if not token.startswith("candidate_transaction:")
+                and not token.startswith("candidate_capability:")
+                and not token.startswith("candidate_compiler:")
+            ]
+            tokens = [
+                compiler_token,
+                transaction_token,
+                *(f"candidate_capability:{capability}" for capability in required_capabilities),
+            ]
+            for token in tokens:
+                if token not in generated.generated_from_plan_sections:
+                    generated.generated_from_plan_sections.append(token)
+            artifact.traceability[generated.path] = list(generated.generated_from_plan_sections)
+
+        file_digests = {
+            path: hashlib.sha256(files_by_path[path].content.encode("utf-8")).hexdigest()
+            for path in transaction_paths
+            if path in files_by_path
+        }
+        metadata = artifact.artifact_manifest.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            metadata.update(
+                {
+                    "generator": "forge_candidate_compiler",
+                    "deterministic_templates": False,
+                    "domain_adapter": "candidate",
+                    "adapter_capabilities": required_capabilities,
+                    "candidate_compilation": {
+                        "backend": "openai",
+                        "repair_id": directive.repair_id,
+                        "transaction_paths": transaction_paths,
+                        "file_sha256": file_digests,
+                        "required_capabilities": required_capabilities,
+                        "preflight_passed": bool(backend_evidence.get("preflight_passed", False)),
+                    },
+                }
+            )
+        artifact.artifact_manifest["traceability"] = copy.deepcopy(artifact.traceability)
+        generated_entries = artifact.artifact_manifest.get("generated_files", [])
+        if isinstance(generated_entries, list):
+            for entry in generated_entries:
+                if not isinstance(entry, dict):
+                    continue
+                generated = files_by_path.get(str(entry.get("path", "")).replace("\\", "/"))
+                if generated is not None:
+                    entry["generated_from"] = list(generated.generated_from_plan_sections)
 
     def _validate_plan(self, plan: FeasiblePlan) -> None:
         if not plan.plan_id.strip():

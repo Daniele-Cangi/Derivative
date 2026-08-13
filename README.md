@@ -28,6 +28,8 @@ The older Derivative reasoning substrate still provides framing, constraint, cau
 - `core/forge/requirement_compiler.py`
 - `core/forge/planner_stage.py`
 - `core/forge/coder_stage.py`: thin plan-to-artifact facade.
+- `core/forge/candidate_compiler.py`: OpenAI-backed complete-candidate fallback for uncovered plan capabilities.
+- `core/forge/candidate_preflight.py`: executable and semantic preflight for complete candidate transactions.
 - `core/forge/domains/`: deterministic CLI, service, and pipeline code-generation adapters plus registry.
 - `core/forge/capabilities/`: composable capability renderers used by domain adapters.
 - `core/forge/validator_stage.py`: thin validation orchestration facade.
@@ -88,6 +90,8 @@ The selected adapter is recorded in `artifact_manifest.metadata.domain_adapter`.
 
 Each adapter also declares the concrete capabilities it implements. The obligation layer derives required capabilities from hard requirement atoms and compares them with the selected adapter independently of the artifact manifest. A target label such as `CLI` is therefore insufficient to certify an unrelated template; missing capabilities fail with `adapter_capability_mismatch`, while forged or stale manifest declarations fail with `adapter_capability_manifest_mismatch`.
 
+When a deterministic adapter lacks required capabilities, `hybrid` and `remote-only` modes can route the typed plan to the Candidate Compiler. It must replace every planned source and test file as one allowlisted transaction; omitted files, extra paths, failed executable/semantic preflight, stale digests, or provenance mismatches reject the whole candidate. Manifest capability declarations, SHA-256 digests, transaction lineage, and provenance are rebuilt locally rather than accepted from model output. `local-only` never invokes this fallback and remains fail-closed.
+
 ## Capability Composition
 
 For service builds, `PlannerStage` compiles a typed `ImplementationBlueprint` made of `CapabilitySpec` records. Each capability declares its module path, interfaces, dependencies, linked requirement IDs, quality fields, and deterministic configuration.
@@ -126,6 +130,8 @@ A build is verified only if all 3 layers pass.
 Coder retries are grounded in `ValidationArtifact` failure signatures and evidence. Forge compiles a typed repair directive, records target files and operations, and accepts a revised `CodeArtifact` only when its source, tests, manifest, or provenance actually changes. A repair that is unsupported, not applicable, or byte-equivalent terminates as `validation_failed`; it cannot consume a synthetic retry or reach packaging.
 
 In `hybrid` or `remote-only` mode, Forge may ask the existing cognitive substrate and reasoning kernel for complete replacements of validator-targeted files. These revisions are untrusted candidates: path allowlists prevent unplanned file or manifest changes, repair lineage is persisted, and all three validation layers must pass again before packaging. `local-only` remains deterministic and uses canonical plan regeneration without requiring a remote model.
+
+For an uncovered capability, Forge uses the stricter complete Candidate Compiler transaction instead of a partial repair. Preflight executes all generated tests and checks mapped semantic evidence before the candidate reaches `ValidatorStage`; the validator remains the final authority and can still reject it. Repository-held acceptance oracles are used only by the held-out benchmark and are never exposed to generation.
 
 ## CLI Usage
 
