@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
 from core.forge.validation.common import ValidationLayerBase
+from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 from core.forge.validation.capabilities import CapabilityContractChecker
 from core.forge.validation.quality import QualityContractChecker
 
@@ -23,6 +24,7 @@ class ObligationValidationLayer(ValidationLayerBase):
         self.timeout_seconds = timeout_seconds
         self.quality_checker = quality_checker
         self.capability_checker = CapabilityContractChecker()
+        self.adapter_capability_checker = AdapterCapabilityContractChecker()
 
     def validate(
         self,
@@ -124,6 +126,17 @@ class ObligationValidationLayer(ValidationLayerBase):
         for signature in capability_signatures:
             self._append_unique(signatures, signature)
         evidence["capability_contract_checks"] = capability_evidence
+
+        adapter_failures, adapter_signatures, adapter_evidence = (
+            self.adapter_capability_checker.check(
+                code_artifact=code_artifact,
+                plan=plan,
+            )
+        )
+        failures.extend(adapter_failures)
+        for signature in adapter_signatures:
+            self._append_unique(signatures, signature)
+        evidence["adapter_capability_checks"] = adapter_evidence
 
         declared_test_paths = set(code_artifact.test_paths)
         test_result = self._run_required_tests(

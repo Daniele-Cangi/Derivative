@@ -11,6 +11,7 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
 from core.forge.validation.adversarial import AdversarialValidationLayer
+from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 from core.forge.validation.capabilities import CapabilityContractChecker
 from core.forge.validation.obligations import ObligationValidationLayer
 from core.forge.validation.runtime import RuntimeValidationLayer
@@ -38,6 +39,12 @@ PIPELINE_REQUIREMENT = (
     "validates each row against a configurable schema, persists valid records to SQLite with full audit trail, "
     "rejects and quarantines invalid rows with structured error logging, and exposes a REST health endpoint "
     "showing pipeline statistics."
+)
+
+JSON_MERGE_REQUIREMENT = (
+    "Build a Python CLI whose main(argv) merges a base JSON object with an override JSON object "
+    "recursively, writes the merged JSON to an output path, replaces lists instead of concatenating "
+    "them, rejects a non-object root, and includes tests."
 )
 
 
@@ -178,6 +185,63 @@ def test_capability_contract_matches_composed_service(production_service_forge_p
         "cap_audit",
         "cap_observability",
     }
+
+
+def test_csv_adapter_capabilities_match_requirement_contract(forge_pipeline):
+    checker = AdapterCapabilityContractChecker()
+
+    failures, signatures, evidence = checker.check(
+        forge_pipeline["artifact"],
+        forge_pipeline["plan"],
+    )
+
+    assert failures == []
+    assert signatures == []
+    assert evidence["passed"] is True
+    assert evidence["selected_adapter"] == "cli"
+    assert "csv_input" in evidence["provided_capabilities"]
+    assert "expiration_flagging" in evidence["required_capabilities"]
+
+
+def test_json_merge_cli_cannot_be_certified_by_csv_adapter(tmp_path):
+    spec = RequirementCompiler().compile(JSON_MERGE_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+
+    result = ValidatorStage().validate(artifact, plan, spec)
+
+    assert result.passed is False
+    assert "adapter_capability_mismatch" in result.failure_signatures
+    checks = result.layer2_result.evidence["adapter_capability_checks"]
+    assert checks["selected_adapter"] == "cli"
+    assert {
+        "recursive_json_merge",
+        "json_list_replacement",
+        "json_object_root_validation",
+    }.issubset(set(checks["missing_capabilities"]))
+
+
+def test_adapter_capability_manifest_cannot_self_certify(forge_pipeline):
+    artifact = copy.deepcopy(forge_pipeline["artifact"])
+    artifact.artifact_manifest["metadata"]["adapter_capabilities"].append(
+        "recursive_json_merge"
+    )
+
+    failures, signatures, evidence = AdapterCapabilityContractChecker().check(
+        artifact,
+        forge_pipeline["plan"],
+    )
+
+    assert failures
+    assert "adapter_capability_manifest_mismatch" in signatures
+    assert evidence["unexpected_declared_capabilities"] == ["recursive_json_merge"]
 
 
 def test_missing_capability_module_fails_closed(production_service_forge_pipeline, tmp_path):

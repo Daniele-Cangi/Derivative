@@ -65,6 +65,7 @@ class CoderStage:
             traceability,
             manifest_path,
             adapter.name,
+            sorted(adapter.provided_capabilities(plan)),
         )
         generated[manifest_path] = GeneratedFile(
             path=manifest_path,
@@ -470,6 +471,7 @@ class CoderStage:
         traceability: Dict[str, List[str]],
         manifest_path: str,
         domain_adapter_name: str,
+        adapter_capabilities: List[str],
     ) -> Dict[str, object]:
         return {
             "plan_id": plan.plan_id,
@@ -499,6 +501,7 @@ class CoderStage:
                 "generator": "forge_coder_stage",
                 "deterministic_templates": True,
                 "domain_adapter": domain_adapter_name,
+                "adapter_capabilities": adapter_capabilities,
             },
         }
 

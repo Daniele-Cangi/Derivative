@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 from core.forge.contracts import FeasiblePlan, PlanInterface, PlanTest
 
@@ -18,6 +18,9 @@ class BaseDomainAdapter:
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
         raise NotImplementedError
+
+    def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        return set()
 
     def _entrypoint_name(self, plan: FeasiblePlan, default: str = "run") -> str:
         for interface in plan.interfaces:
@@ -166,3 +169,6 @@ class GenericDomainAdapter(BaseDomainAdapter):
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
         return self._template_generic_requirement_test(plan, plan_test)
+
+    def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        return {"python_module", "planned_entrypoint"}

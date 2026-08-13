@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Set
 
 from core.forge.capabilities.service import (
     render_audit,
@@ -51,6 +51,31 @@ class ServiceDomainAdapter(BaseDomainAdapter):
         ):
             return self._template_service_suite_executes_test(plan)
         return self._template_service_requirement_test(plan)
+
+    def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        capabilities = {
+            "rest_service",
+            "api_key_authentication",
+            "sqlite_persistence",
+            "per_user_rate_limiting",
+            "request_handling",
+        }
+        quality = plan.quality_contract
+        if quality.audit_trail:
+            capabilities.add("audit_trail")
+        if quality.health_endpoint:
+            capabilities.add("health_endpoint")
+        if quality.structured_logging:
+            capabilities.add("structured_logging")
+        if quality.integration_tests:
+            capabilities.add("integration_tests")
+        if quality.auth_level == "hashed":
+            capabilities.add("hashed_authentication")
+        if quality.rate_limit_persistent:
+            capabilities.add("persistent_rate_limiting")
+        if quality.rate_limit_scope == "distributed":
+            capabilities.add("distributed_rate_limiting")
+        return capabilities
 
     def _template_service_plan_test_module(self, plan: FeasiblePlan) -> str:
         quality = plan.quality_contract

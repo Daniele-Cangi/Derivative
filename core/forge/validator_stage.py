@@ -151,6 +151,8 @@ class ValidatorStage:
             "quality_contract_violation",
             "capability_contract_violation",
             "missing_capability",
+            "adapter_capability_mismatch",
+            "adapter_capability_manifest_mismatch",
             "non_semantic_test",
             "fake_acceptance_coverage",
         } & signature_set:
@@ -211,6 +213,7 @@ class ValidatorStage:
             "requirement_coverage_checks": layer2.evidence.get("requirement_coverage_checks", {}),
             "quality_contract_checks": layer2.evidence.get("quality_contract_checks", []),
             "capability_contract_checks": layer2.evidence.get("capability_contract_checks", {}),
+            "adapter_capability_checks": layer2.evidence.get("adapter_capability_checks", {}),
             "semantic_requirement_test_coverage": layer3.evidence.get("semantic_requirement_test_coverage", {}),
         }
 

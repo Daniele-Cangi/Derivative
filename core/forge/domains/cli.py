@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 from core.forge.contracts import ArtifactTargetType, FeasiblePlan, PlanInterface, PlanTest
 from core.forge.domains.base import BaseDomainAdapter
@@ -36,6 +36,18 @@ class CliDomainAdapter(BaseDomainAdapter):
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
         return self._template_for_test(plan, plan_test)
+
+    def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        return {
+            "cli_entrypoint",
+            "csv_input",
+            "summary_csv_output",
+            "date_parsing",
+            "expiration_flagging",
+            "overdue_flagging",
+            "malformed_csv_handling",
+            "invoice_totals_counts",
+        }
 
     def _template_cli(self, plan: FeasiblePlan) -> str:
         is_invoice = self._is_invoice_plan(plan)

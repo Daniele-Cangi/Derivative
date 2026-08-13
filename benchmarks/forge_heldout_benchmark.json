@@ -1,0 +1,100 @@
+[
+  {
+    "case_id": "H001",
+    "requirement": "Build a Python library exposing canonicalize_email(value: str) -> str and deduplicate_emails(values: list[str]) -> list[str]. Canonicalization must trim surrounding whitespace and lowercase the address. Deduplication must preserve first-seen order after canonicalization. Include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "library", "normalization"],
+    "oracle": {"path": "oracles/H001/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H002",
+    "requirement": "Build a Python library exposing allocate_cents(total_cents: int, weights: list[int]) -> list[int]. It must use largest-remainder allocation, return integers whose sum equals total_cents, preserve input order, reject negative totals or weights, and include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "library", "allocation"],
+    "oracle": {"path": "oracles/H002/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H003",
+    "requirement": "Build a Python CLI whose main(argv) reads a JSON Lines application log with level and message fields, skips malformed lines, and writes a JSON report containing total_valid, malformed_count, and counts_by_level. Include behavioral tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "cli", "jsonl"],
+    "oracle": {"path": "oracles/H003/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H004",
+    "requirement": "Build a Python CLI whose main(argv) recursively scans an input directory, groups duplicate files by SHA-256 content hash, and writes a CSV with hash, duplicate_count, and paths. Unique files must be omitted and output groups must be deterministic. Include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "cli", "filesystem", "hashing"],
+    "oracle": {"path": "oracles/H004/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H005",
+    "requirement": "Build a Python REST service module with API-key authentication and SQLite persistence exposing create_event(api_key: str, event_id: str, payload: dict, db_path: str) -> tuple[int, dict]. Repeating the same event_id must be idempotent and must not insert a duplicate row. Invalid keys return 401. Include integration tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "service", "idempotency", "sqlite"],
+    "oracle": {"path": "oracles/H005/oracle.py", "timeout_seconds": 45}
+  },
+  {
+    "case_id": "H006",
+    "requirement": "Build a Python JSON Lines data pipeline exposing run(input_path: str, quarantine_path: str, summary_json_path: str) -> int. Each valid sales event has customer_id and amount. Write malformed events to quarantine and write per-customer transaction_count and total_amount to summary JSON. Include end-to-end tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "pipeline", "jsonl", "aggregation"],
+    "oracle": {"path": "oracles/H006/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H007",
+    "requirement": "Build a Python library exposing dependency_order(graph: dict[str, list[str]]) -> list[str]. Return a deterministic topological order where dependencies precede dependents and raise ValueError for cycles. Include tests for disconnected nodes and cycles.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "library", "graph", "cycle"],
+    "oracle": {"path": "oracles/H007/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H008",
+    "requirement": "Build a Python CLI whose main(argv) merges a base JSON object with an override JSON object recursively, writes the merged JSON to an output path, replaces lists instead of concatenating them, and rejects a non-object root. Include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["heldout", "cli", "json", "merge"],
+    "oracle": {"path": "oracles/H008/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "H009",
+    "requirement": "Build a Python CLI that reads text files in every possible character encoding without configuration, always reconstructs the original text exactly, writes UTF-8 output, and includes tests.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["heldout", "universal_constraint", "encoding"]
+  },
+  {
+    "case_id": "H010",
+    "requirement": "Build a production REST service that guarantees zero data loss and immediate consistency during every possible network partition and storage failure, with no external coordination service, and includes integration tests.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["heldout", "universal_constraint", "distributed_system"]
+  },
+  {
+    "case_id": "H011",
+    "requirement": "Build a tool that processes business records, identifies risky entries, produces an appropriate report, and includes tests.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["heldout", "ambiguity", "underspecified"]
+  },
+  {
+    "case_id": "H012",
+    "requirement": "Build a Python plugin host that accepts arbitrary third-party Python plugins and guarantees that no plugin can ever access the filesystem, network, environment, process state, or interpreter internals, while running plugins in the same unrestricted interpreter process. Include tests.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["heldout", "universal_constraint", "sandboxing"]
+  },
+  {
+    "case_id": "H013",
+    "requirement": "Build a bounded in-memory queue with capacity exactly zero that must successfully accept and retain at least one item without rejecting, blocking, overwriting, or discarding it.",
+    "expected_terminal_status": "infeasible_proven",
+    "tags": ["heldout", "contradiction", "capacity"]
+  },
+  {
+    "case_id": "H014",
+    "requirement": "Build a generator whose output file must contain exactly zero bytes and must simultaneously contain a non-empty valid JSON object.",
+    "expected_terminal_status": "infeasible_proven",
+    "tags": ["heldout", "contradiction", "file_format"]
+  },
+  {
+    "case_id": "H015",
+    "requirement": "Design a network on exactly 11 nodes such that every pair of nodes is directly connected, the network diameter is strictly greater than 5, and the total number of edges does not exceed 20.",
+    "expected_terminal_status": "infeasible_proven",
+    "tags": ["heldout", "contradiction", "graph"]
+  }
+]

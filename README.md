@@ -86,6 +86,8 @@ Each requirement is compiled into typed atoms with:
 
 The selected adapter is recorded in `artifact_manifest.metadata.domain_adapter`. New domains must implement the same deterministic adapter contract instead of adding branches to `CoderStage`.
 
+Each adapter also declares the concrete capabilities it implements. The obligation layer derives required capabilities from hard requirement atoms and compares them with the selected adapter independently of the artifact manifest. A target label such as `CLI` is therefore insufficient to certify an unrelated template; missing capabilities fail with `adapter_capability_mismatch`, while forged or stale manifest declarations fail with `adapter_capability_manifest_mismatch`.
+
 ## Capability Composition
 
 For service builds, `PlannerStage` compiles a typed `ImplementationBlueprint` made of `CapabilitySpec` records. Each capability declares its module path, interfaces, dependencies, linked requirement IDs, quality fields, and deterministic configuration.
@@ -107,6 +109,7 @@ Validation fails closed if:
 - requirement coverage is missing (`missing_requirement_coverage`)
 - a universal/absolute constraint is unproven (`universal_constraint_unproven`)
 - a planned capability is absent or inconsistent (`missing_capability`, `capability_contract_violation`)
+- the selected domain adapter cannot implement the required behavior (`adapter_capability_mismatch`)
 - tests are superficial/non-semantic (`non_semantic_test`, `fake_acceptance_coverage`)
 
 ## Validation Layers
@@ -190,6 +193,13 @@ Run the Forge benchmark quality gate locally (same thresholds used in CI):
 python forge_benchmark.py --preset extended --enforce-thresholds --min-status-accuracy 0.95 --min-verified-at-1 0.95 --max-false-verified-rate 0.00 --min-infeasible-detection-rate 1.00
 ```
 
+Run the separate held-out benchmark with independent acceptance oracles:
+```bash
+python forge_heldout_benchmark.py
+```
+
+The held-out runner does not trust Forge's generated tests. For feasible cases it executes a repository-maintained oracle against the packaged artifact and reports `External Verified@1`, oracle pass rate, and external false-verified rate. This benchmark is intentionally not a CI gate until a stable external baseline is established.
+
 Key Forge tests include:
 - `tests/test_forge_planner_stage.py`
 - `tests/test_forge_coder_stage.py`
@@ -197,3 +207,4 @@ Key Forge tests include:
 - `tests/test_forge_packaging_stage.py`
 - `tests/test_forge_orchestration.py`
 - `tests/test_forge_requirement_preservation.py`
+- `tests/test_forge_heldout_benchmark.py`

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Set
 
 from core.forge.contracts import ArtifactTargetType, FeasiblePlan, PlanInterface, PlanTest
 from core.forge.domains.base import BaseDomainAdapter
@@ -47,6 +47,34 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         ):
             return self._template_pipeline_suite_executes_test(plan)
         return self._template_pipeline_requirement_test(plan, plan_test)
+
+    def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        if is_jsonl_pipeline(plan):
+            return {
+                "pipeline_entrypoint",
+                "jsonl_telemetry_input",
+                "telemetry_schema_validation",
+                "malformed_record_quarantine",
+                "per_device_aggregation",
+                "summary_csv_output",
+                "cli_entrypoint",
+            }
+        capabilities = {
+            "pipeline_entrypoint",
+            "csv_input",
+            "watched_directory",
+            "schema_validation",
+            "sqlite_persistence",
+            "malformed_record_quarantine",
+        }
+        quality = plan.quality_contract
+        if quality.audit_trail:
+            capabilities.add("audit_trail")
+        if quality.health_endpoint:
+            capabilities.add("health_endpoint")
+        if quality.structured_logging:
+            capabilities.add("structured_logging")
+        return capabilities
 
     def _template_pipeline_entrypoint(self, plan: FeasiblePlan) -> str:
         quality = plan.quality_contract

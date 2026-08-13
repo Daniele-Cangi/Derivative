@@ -159,6 +159,11 @@ def test_domain_registry_routes_typed_plans(
     assert CoderStage().generate(feasible_plan).artifact_manifest["metadata"]["domain_adapter"] == "cli"
     assert CoderStage().generate(service_feasible_plan).artifact_manifest["metadata"]["domain_adapter"] == "service"
     assert CoderStage().generate(pipeline_feasible_plan).artifact_manifest["metadata"]["domain_adapter"] == "pipeline"
+    cli_capabilities = CoderStage().generate(feasible_plan).artifact_manifest["metadata"][
+        "adapter_capabilities"
+    ]
+    assert "csv_input" in cli_capabilities
+    assert "recursive_json_merge" not in cli_capabilities
 
 
 def test_domain_registry_uses_typed_plan_instead_of_raw_requirement(pipeline_feasible_plan):
