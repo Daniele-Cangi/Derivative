@@ -1,10 +1,16 @@
 # Derivative
 
-Derivative is a CLI reasoning engine with an execution-grounded substrate.
+**Derivative turns software requirements into verified artifacts — or explicit failure evidence.**
 
-It now includes **Forge**, a production-oriented orchestrator that turns natural-language software requirements into:
-- verified packaged artifacts, or
-- infeasibility/validation-failed terminal outcomes with typed evidence.
+Derivative is an execution-grounded software synthesis engine. Its **Forge** pipeline compiles natural-language requirements into typed obligations and plans, produces candidate software, executes and validates that software, repairs against concrete failure evidence, and packages a result only when the declared validation gates pass.
+
+The terminal outcomes are deliberately simple:
+
+- `verified` — the artifact passed the required execution and validation gates and can be packaged;
+- `infeasible_proven` — the requested requirements conflict or cannot be satisfied inside the declared model;
+- `validation_failed` — a candidate was produced, but the evidence is not strong enough to call it verified.
+
+The older Derivative reasoning substrate still provides framing, constraint, causal, symbolic, and execution-grounded reasoning. Forge is the product-facing software synthesis path built on top of that substrate.
 
 ## Core Modules
 
