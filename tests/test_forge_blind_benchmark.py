@@ -13,7 +13,7 @@ from core.forge.blind_benchmark import (
     render_blind_report,
     run_blind_bundle,
 )
-from core.forge.contracts import ForgeResult, ForgeRoute
+from core.forge.contracts import ForgeResult, ForgeRoute, ForgeRunMetrics
 from core.forge.heldout_benchmark import OracleResult
 
 
@@ -136,6 +136,10 @@ def test_blind_runner_exposes_requirement_only_and_persists_seal(tmp_path):
             terminal_status=TERMINAL_VERIFIED,
             summary="verified",
             artifact_path="package",
+            run_metrics=ForgeRunMetrics(
+                validation_attempts=1,
+                verified_at_1=True,
+            ),
         )
 
     report = run_blind_bundle(
@@ -156,3 +160,7 @@ def test_blind_runner_exposes_requirement_only_and_persists_seal(tmp_path):
     assert payload["baseline_verified"] is True
     assert payload["manifest_sha256"] == bundle.manifest_sha256
     assert "Baseline verified: true" in rendered
+    assert "External Verified@1: 1.000" in rendered
+    assert "External success after repair: n/a" in rendered
+    assert "P95 case runtime:" in rendered
+    assert "Estimated model cost: $0.00000000" in rendered

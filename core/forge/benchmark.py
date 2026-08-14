@@ -37,6 +37,16 @@ class BenchmarkCaseResult:
     artifact_path: str
     failure_signatures: List[str] = field(default_factory=list)
     error: str | None = None
+    verified_at_1: bool = False
+    success_after_repair: bool = False
+    repair_count: int = 0
+    validation_attempts: int = 0
+    model_request_count: int = 0
+    model_input_tokens: int = 0
+    model_output_tokens: int = 0
+    model_total_tokens: int = 0
+    estimated_model_cost_usd: float | None = 0.0
+    model_cost_pricing_source: str = "no_model_calls"
 
 
 @dataclass
@@ -50,7 +60,18 @@ class BenchmarkSummary:
     false_verified_rate: float
     infeasible_detection_rate: float
     avg_case_runtime_seconds: float
+    median_case_runtime_seconds: float
+    p95_case_runtime_seconds: float
     total_runtime_seconds: float
+    success_after_repair_rate: float | None
+    total_repairs: int
+    avg_repairs_per_case: float
+    total_model_requests: int
+    total_model_input_tokens: int
+    total_model_output_tokens: int
+    total_model_tokens: int
+    total_estimated_model_cost_usd: float | None
+    model_cost_coverage_rate: float
     case_results: List[BenchmarkCaseResult] = field(default_factory=list)
 
 
@@ -165,11 +186,32 @@ def run_benchmark_cases(
                 else []
             )
             artifact_path = forge_result.artifact_path
+            run_metrics = forge_result.run_metrics
+            verified_at_1 = run_metrics.verified_at_1
+            success_after_repair = run_metrics.success_after_repair
+            repair_count = run_metrics.repair_count
+            validation_attempts = run_metrics.validation_attempts
+            model_request_count = run_metrics.model_request_count
+            model_input_tokens = run_metrics.model_input_tokens
+            model_output_tokens = run_metrics.model_output_tokens
+            model_total_tokens = run_metrics.model_total_tokens
+            estimated_model_cost_usd = run_metrics.estimated_model_cost_usd
+            model_cost_pricing_source = run_metrics.model_cost_pricing_source
             error = None
         except Exception as exc:  # pragma: no cover - safety net only
             observed = "exception"
             failure_signatures = []
             artifact_path = ""
+            verified_at_1 = False
+            success_after_repair = False
+            repair_count = 0
+            validation_attempts = 0
+            model_request_count = 0
+            model_input_tokens = 0
+            model_output_tokens = 0
+            model_total_tokens = 0
+            estimated_model_cost_usd = None
+            model_cost_pricing_source = "unavailable"
             error = f"{type(exc).__name__}: {exc}"
         case_runtime = time.perf_counter() - case_started
         passed = observed == case.expected_terminal_status
@@ -183,6 +225,16 @@ def run_benchmark_cases(
                 artifact_path=artifact_path,
                 failure_signatures=failure_signatures,
                 error=error,
+                verified_at_1=verified_at_1,
+                success_after_repair=success_after_repair,
+                repair_count=repair_count,
+                validation_attempts=validation_attempts,
+                model_request_count=model_request_count,
+                model_input_tokens=model_input_tokens,
+                model_output_tokens=model_output_tokens,
+                model_total_tokens=model_total_tokens,
+                estimated_model_cost_usd=estimated_model_cost_usd,
+                model_cost_pricing_source=model_cost_pricing_source,
             )
         )
 
@@ -192,7 +244,7 @@ def run_benchmark_cases(
     failed_cases = total_cases - passed_cases
 
     expected_verified = [result for result in results if result.expected_terminal_status == TERMINAL_VERIFIED]
-    correct_verified = [result for result in expected_verified if result.observed_terminal_status == TERMINAL_VERIFIED]
+    first_pass_verified = [result for result in expected_verified if result.verified_at_1]
     observed_verified = [result for result in results if result.observed_terminal_status == TERMINAL_VERIFIED]
     false_verified = [
         result
@@ -210,6 +262,17 @@ def run_benchmark_cases(
         if result.observed_terminal_status == TERMINAL_INFEASIBLE_PROVEN
     ]
     avg_case_runtime = statistics.mean(result.execution_time_seconds for result in results)
+    runtimes = sorted(result.execution_time_seconds for result in results)
+    repair_eligible = [result for result in expected_verified if not result.verified_at_1]
+    repaired_successes = [
+        result
+        for result in repair_eligible
+        if result.observed_terminal_status == TERMINAL_VERIFIED
+        and result.success_after_repair
+    ]
+    costed_results = [
+        result for result in results if result.estimated_model_cost_usd is not None
+    ]
 
     benchmark_id = f"forge-benchmark-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     return BenchmarkSummary(
@@ -218,7 +281,7 @@ def run_benchmark_cases(
         passed_cases=passed_cases,
         failed_cases=failed_cases,
         status_accuracy=passed_cases / total_cases,
-        verified_at_1=(len(correct_verified) / len(expected_verified)) if expected_verified else 0.0,
+        verified_at_1=(len(first_pass_verified) / len(expected_verified)) if expected_verified else 0.0,
         false_verified_rate=(len(false_verified) / len(observed_verified)) if observed_verified else 0.0,
         infeasible_detection_rate=(
             len(correct_infeasible) / len(expected_infeasible)
@@ -226,7 +289,26 @@ def run_benchmark_cases(
         if expected_infeasible
         else 0.0,
         avg_case_runtime_seconds=avg_case_runtime,
+        median_case_runtime_seconds=statistics.median(runtimes),
+        p95_case_runtime_seconds=_nearest_rank_percentile(runtimes, 0.95),
         total_runtime_seconds=total_runtime,
+        success_after_repair_rate=(
+            len(repaired_successes) / len(repair_eligible)
+            if repair_eligible
+            else None
+        ),
+        total_repairs=sum(result.repair_count for result in results),
+        avg_repairs_per_case=statistics.mean(result.repair_count for result in results),
+        total_model_requests=sum(result.model_request_count for result in results),
+        total_model_input_tokens=sum(result.model_input_tokens for result in results),
+        total_model_output_tokens=sum(result.model_output_tokens for result in results),
+        total_model_tokens=sum(result.model_total_tokens for result in results),
+        total_estimated_model_cost_usd=(
+            round(sum(result.estimated_model_cost_usd or 0.0 for result in results), 8)
+            if len(costed_results) == total_cases
+            else None
+        ),
+        model_cost_coverage_rate=len(costed_results) / total_cases,
         case_results=results,
     )
 
@@ -277,10 +359,32 @@ def render_benchmark_summary(summary: BenchmarkSummary, output_path: str) -> str
             f"Failed: {summary.failed_cases}",
             f"Status accuracy: {summary.status_accuracy:.3f}",
             f"Verified@1: {summary.verified_at_1:.3f}",
+            "Success after repair: " + _format_optional_rate(summary.success_after_repair_rate),
             f"False-verified rate: {summary.false_verified_rate:.3f}",
             f"Infeasible detection rate: {summary.infeasible_detection_rate:.3f}",
+            f"Repairs: {summary.total_repairs} total, {summary.avg_repairs_per_case:.2f} per case",
             f"Average case runtime: {summary.avg_case_runtime_seconds:.2f}s",
+            f"Median case runtime: {summary.median_case_runtime_seconds:.2f}s",
+            f"P95 case runtime: {summary.p95_case_runtime_seconds:.2f}s",
             f"Total runtime: {summary.total_runtime_seconds:.2f}s",
+            f"Model tokens: {summary.total_model_tokens}",
+            "Estimated model cost: " + _format_optional_cost(summary.total_estimated_model_cost_usd),
+            f"Model cost coverage: {summary.model_cost_coverage_rate:.3f}",
             f"Report: {output_path}",
         ]
     )
+
+
+def _nearest_rank_percentile(values: List[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    index = max(0, min(len(values) - 1, int((len(values) * percentile) + 0.999999) - 1))
+    return values[index]
+
+
+def _format_optional_rate(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def _format_optional_cost(value: float | None) -> str:
+    return "unavailable" if value is None else f"${value:.8f}"

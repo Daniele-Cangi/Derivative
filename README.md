@@ -267,7 +267,17 @@ docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py31
 
 The image contains only Python, pytest, and bcrypt needed by the currently certified Forge surface. It is a validation runtime, not a distribution container for generated software. `forge.py`, the benchmark runner, held-out runner, and blind runner select this Docker backend by default. If Docker or the image is unavailable, validation fails closed with `sandbox_unavailable`; Forge does not fall back to local execution. Passing `--execution-backend local` to the production orchestrator is also refused with `sandbox_policy_violation`.
 
-GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case quality gate through the Docker backend. Workflow run `31818254175` is the first green isolated baseline for this policy.
+GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case quality gate through the Docker backend. Workflow run `31818738282` confirms the documented isolated baseline for this policy.
+
+## Benchmark Telemetry
+
+Standard, held-out, and blind reports preserve attempt-level Forge telemetry for every case:
+
+- `Verified@1` counts an expected verified build only when its first validation attempt passes. A later successful repair is not retroactively counted as first-pass success.
+- `success_after_repair_rate` measures externally valid repaired successes among expected verified cases that did not pass on the first attempt. It is `null` when no case required recovery.
+- repair count, validation attempts, total/average repair count, average/median/P95 latency, model request count, and input/output/total tokens are persisted per case and aggregated.
+- estimated model cost is reported only when `OPENAI_INPUT_COST_PER_1M_TOKENS` and `OPENAI_OUTPUT_COST_PER_1M_TOKENS` are explicitly configured. Otherwise cost is `null` with pricing source `unconfigured`; Forge does not embed mutable provider prices or report an invented zero.
+- held-out and blind `External Verified@1` additionally require the independent acceptance oracle to pass against the packaged artifact.
 
 ## Tests
 

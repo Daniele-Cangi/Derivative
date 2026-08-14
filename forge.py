@@ -3,8 +3,9 @@ import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import typer
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from core.forge.contracts import (
     FeasiblePlan,
     ForgeResult,
     ForgeRoute,
+    ForgeRunMetrics,
     InfeasibilityCertificate,
     PackagedArtifact,
     ValidationArtifact,
@@ -32,6 +34,7 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
 from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.telemetry import track_model_usage
 from core.forge.validator_stage import ValidatorStage
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
@@ -47,6 +50,24 @@ app = typer.Typer(
 )
 
 
+def _capture_run_model_usage(function: Callable[..., ForgeResult]) -> Callable[..., ForgeResult]:
+    @wraps(function)
+    def wrapped(*args: object, **kwargs: object) -> ForgeResult:
+        with track_model_usage() as usage:
+            result = function(*args, **kwargs)
+        estimated_cost, pricing_source = usage.estimated_cost()
+        result.run_metrics.model_request_count = usage.request_count
+        result.run_metrics.model_input_tokens = usage.input_tokens
+        result.run_metrics.model_output_tokens = usage.output_tokens
+        result.run_metrics.model_total_tokens = usage.total_tokens
+        result.run_metrics.estimated_model_cost_usd = estimated_cost
+        result.run_metrics.model_cost_pricing_source = pricing_source
+        return result
+
+    return wrapped
+
+
+@_capture_run_model_usage
 def run_forge(
     requirement: str,
     execution_mode: str = "local-only",
@@ -144,6 +165,11 @@ def run_forge(
                 infeasibility_certificate=planning_output,
                 artifact_path=run_root,
                 execution_time_seconds=elapsed,
+                run_metrics=_build_run_metrics(
+                    planner_attempts=planner_attempt,
+                    attempt_trace=attempt_trace,
+                    terminal_status=TERMINAL_INFEASIBLE_PROVEN,
+                ),
             )
 
         if not isinstance(planning_output, FeasiblePlan):
@@ -273,6 +299,11 @@ def run_forge(
                     infeasibility_certificate=None,
                     artifact_path=packaged_artifact.package_root,
                     execution_time_seconds=elapsed,
+                    run_metrics=_build_run_metrics(
+                        planner_attempts=planner_attempt,
+                        attempt_trace=attempt_trace,
+                        terminal_status=TERMINAL_VERIFIED,
+                    ),
                 )
 
             if retry_route == ForgeRoute.TO_CODER and coder_attempt < normalized_coder_attempts:
@@ -325,6 +356,11 @@ def run_forge(
                 infeasibility_certificate=None,
                 artifact_path=run_root,
                 execution_time_seconds=elapsed,
+                run_metrics=_build_run_metrics(
+                    planner_attempts=planner_attempt,
+                    attempt_trace=attempt_trace,
+                    terminal_status=TERMINAL_VALIDATION_FAILED,
+                ),
             )
 
         if route_to_planner:
@@ -362,6 +398,11 @@ def run_forge(
         infeasibility_certificate=None,
         artifact_path=run_root,
         execution_time_seconds=elapsed,
+        run_metrics=_build_run_metrics(
+            planner_attempts=planner_attempt,
+            attempt_trace=attempt_trace,
+            terminal_status=TERMINAL_VALIDATION_FAILED,
+        ),
     )
 
 
@@ -543,6 +584,29 @@ def _mark_repair_terminal(
     validation.evidence["failure_signatures"] = list(validation.failure_signatures)
     validation.metrics["failure_count"] = len(validation.failures)
     validation.metrics["failure_signature_count"] = len(validation.failure_signatures)
+
+
+def _build_run_metrics(
+    *,
+    planner_attempts: int,
+    attempt_trace: list[dict[str, object]],
+    terminal_status: str,
+) -> ForgeRunMetrics:
+    repair_count = sum(1 for attempt in attempt_trace if "repair" in attempt)
+    first_validation_passed = bool(
+        attempt_trace and attempt_trace[0].get("validation_passed") is True
+    )
+    return ForgeRunMetrics(
+        planner_attempts=planner_attempts,
+        validation_attempts=len(attempt_trace),
+        repair_count=repair_count,
+        verified_at_1=(
+            terminal_status == TERMINAL_VERIFIED and first_validation_passed
+        ),
+        success_after_repair=(
+            terminal_status == TERMINAL_VERIFIED and repair_count > 0
+        ),
+    )
 
 
 if __name__ == "__main__":

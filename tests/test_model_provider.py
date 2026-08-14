@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.forge.telemetry import track_model_usage
 from core.model_provider import (
     DEFAULT_OPENAI_MODEL,
     generate_text,
@@ -19,6 +20,11 @@ class _Responses:
     def create(self, **kwargs):
         self.request = kwargs
         return self.response
+
+
+class _FailingResponses:
+    def create(self, **kwargs):
+        raise RuntimeError("provider unavailable")
 
 
 def test_generate_text_uses_openai_responses_api():
@@ -130,3 +136,72 @@ def test_openai_configuration_is_deterministic(monkeypatch):
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4.1")
     assert resolve_openai_api_key() == "sk-env"
     assert resolve_openai_model() == "gpt-4.1"
+
+
+def test_generate_text_records_response_usage_without_inventing_cost(monkeypatch):
+    monkeypatch.delenv("OPENAI_INPUT_COST_PER_1M_TOKENS", raising=False)
+    monkeypatch.delenv("OPENAI_OUTPUT_COST_PER_1M_TOKENS", raising=False)
+    response = SimpleNamespace(
+        output_text="result",
+        usage=SimpleNamespace(input_tokens=125, output_tokens=25, total_tokens=150),
+    )
+    client = SimpleNamespace(responses=_Responses(response))
+
+    with track_model_usage() as usage:
+        generate_text(
+            client,
+            instructions="Return text.",
+            input_text="input",
+            max_output_tokens=100,
+            model="gpt-test",
+        )
+
+    assert usage.request_count == 1
+    assert usage.input_tokens == 125
+    assert usage.output_tokens == 25
+    assert usage.total_tokens == 150
+    assert usage.models == {"gpt-test": 1}
+    assert usage.estimated_cost() == (None, "unconfigured")
+
+
+def test_model_usage_cost_requires_explicit_rates(monkeypatch):
+    monkeypatch.setenv("OPENAI_INPUT_COST_PER_1M_TOKENS", "2.0")
+    monkeypatch.setenv("OPENAI_OUTPUT_COST_PER_1M_TOKENS", "8.0")
+    response = SimpleNamespace(
+        output_text="result",
+        usage=SimpleNamespace(
+            input_tokens=1_000_000,
+            output_tokens=500_000,
+            total_tokens=1_500_000,
+        ),
+    )
+    client = SimpleNamespace(responses=_Responses(response))
+
+    with track_model_usage() as usage:
+        generate_text(
+            client,
+            instructions="Return text.",
+            input_text="input",
+            max_output_tokens=100,
+            model="gpt-test",
+        )
+
+    assert usage.estimated_cost() == (6.0, "environment")
+
+
+def test_model_usage_counts_failed_provider_requests():
+    client = SimpleNamespace(responses=_FailingResponses())
+
+    with track_model_usage() as usage:
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            generate_text(
+                client,
+                instructions="Return text.",
+                input_text="input",
+                max_output_tokens=100,
+                model="gpt-test",
+            )
+
+    assert usage.request_count == 1
+    assert usage.total_tokens == 0
+    assert usage.models == {"gpt-test": 1}

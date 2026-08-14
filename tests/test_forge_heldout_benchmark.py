@@ -8,7 +8,7 @@ from core.forge.benchmark import (
     TERMINAL_VALIDATION_FAILED,
     TERMINAL_VERIFIED,
 )
-from core.forge.contracts import ForgeResult, ForgeRoute
+from core.forge.contracts import ForgeResult, ForgeRoute, ForgeRunMetrics
 from core.forge.execution import ExecutionPolicy, SandboxProcessResult
 from core.forge.heldout_benchmark import (
     HeldoutBenchmarkCase,
@@ -48,7 +48,11 @@ class _OracleRecordingExecutor:
         )
 
 
-def _forge_result(status: str, artifact_path: str = "") -> ForgeResult:
+def _forge_result(
+    status: str,
+    artifact_path: str = "",
+    run_metrics: ForgeRunMetrics | None = None,
+) -> ForgeResult:
     routes = {
         TERMINAL_VERIFIED: ForgeRoute.TERMINAL_VERIFIED,
         TERMINAL_VALIDATION_FAILED: ForgeRoute.TERMINAL_VALIDATION_FAILED,
@@ -59,6 +63,11 @@ def _forge_result(status: str, artifact_path: str = "") -> ForgeResult:
         terminal_status=status,
         summary=status,
         artifact_path=artifact_path,
+        run_metrics=run_metrics
+        or ForgeRunMetrics(
+            validation_attempts=1 if status != TERMINAL_INFEASIBLE_PROVEN else 0,
+            verified_at_1=status == TERMINAL_VERIFIED,
+        ),
     )
 
 
@@ -248,6 +257,45 @@ def test_oracle_failure_turns_matching_verified_status_into_failed_case():
     assert summary.status_accuracy == 1.0
     assert summary.external_verified_at_1 == 0.0
     assert summary.external_false_verified_rate == 1.0
+
+
+def test_heldout_metrics_distinguish_repaired_external_success():
+    oracle = OracleSpec(path="oracle.py")
+    cases = [
+        HeldoutBenchmarkCase("A", "first", TERMINAL_VERIFIED, oracle=oracle),
+        HeldoutBenchmarkCase("B", "repaired", TERMINAL_VERIFIED, oracle=oracle),
+    ]
+    observed = {
+        "first": _forge_result(
+            TERMINAL_VERIFIED,
+            "pkg-first",
+            ForgeRunMetrics(validation_attempts=1, verified_at_1=True),
+        ),
+        "repaired": _forge_result(
+            TERMINAL_VERIFIED,
+            "pkg-repaired",
+            ForgeRunMetrics(
+                validation_attempts=2,
+                repair_count=1,
+                success_after_repair=True,
+            ),
+        ),
+    }
+
+    summary = run_heldout_cases(
+        cases,
+        run_case=lambda requirement: observed[requirement],
+        run_oracle=lambda spec, package: OracleResult(
+            executed=True,
+            passed=True,
+            exit_code=0,
+        ),
+    )
+
+    assert summary.external_verified_at_1 == 0.5
+    assert summary.success_after_repair_rate == 1.0
+    assert summary.total_repairs == 1
+    assert summary.case_results[1].success_after_repair is True
 
 
 def test_heldout_summary_persistence_and_thresholds(tmp_path):

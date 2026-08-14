@@ -3,6 +3,8 @@ from typing import Any
 
 from openai import OpenAI
 
+from core.forge.telemetry import record_model_request, record_model_response
+
 
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 _NON_LIVE_KEYS = {"", "dummy_key_for_testing", "your-api-key-here"}
@@ -49,9 +51,11 @@ def generate_text(
                 "strict": True,
             }
         }
+    record_model_request(model)
     response = client.responses.create(
         **request,
     )
+    record_model_response(response)
     output_text = getattr(response, "output_text", None)
     if isinstance(output_text, str) and output_text.strip():
         return output_text

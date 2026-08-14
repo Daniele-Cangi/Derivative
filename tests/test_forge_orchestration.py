@@ -294,6 +294,11 @@ def test_forge_orchestration_feasible_verified_path(tmp_path):
     assert coder.called == 1
     assert validator.called == 1
     assert packaging.called == 1
+    assert result.run_metrics.verified_at_1 is True
+    assert result.run_metrics.success_after_repair is False
+    assert result.run_metrics.validation_attempts == 1
+    assert result.run_metrics.repair_count == 0
+    assert result.run_metrics.estimated_model_cost_usd == 0.0
     metadata_path = next((tmp_path / "runs").glob("*/run_metadata.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["attempt_trace"][0]["retry_route"] == ForgeRoute.TERMINAL_VERIFIED.value
@@ -494,6 +499,10 @@ def test_semantic_content_mismatch_retries_coder_before_planner(tmp_path):
     assert coder.called == 2
     assert validator.called == 2
     assert packaging.called == 1
+    assert result.run_metrics.verified_at_1 is False
+    assert result.run_metrics.success_after_repair is True
+    assert result.run_metrics.validation_attempts == 2
+    assert result.run_metrics.repair_count == 1
 
 
 def test_forge_orchestration_retries_planner_on_architectural_failures(tmp_path):
@@ -537,3 +546,7 @@ def test_forge_orchestration_retries_planner_on_architectural_failures(tmp_path)
     assert coder.called == 2
     assert validator.called == 2
     assert packaging.called == 1
+    assert result.run_metrics.verified_at_1 is False
+    assert result.run_metrics.success_after_repair is False
+    assert result.run_metrics.planner_attempts == 2
+    assert result.run_metrics.validation_attempts == 2

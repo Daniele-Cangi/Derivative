@@ -18,10 +18,13 @@ from core.forge.benchmark import (
     render_benchmark_summary,
     run_benchmark_cases,
 )
-from core.forge.contracts import ForgeResult, ForgeRoute, ValidationArtifact
+from core.forge.contracts import ForgeResult, ForgeRoute, ForgeRunMetrics, ValidationArtifact
 
 
-def _forge_result(status: str) -> ForgeResult:
+def _forge_result(
+    status: str,
+    run_metrics: ForgeRunMetrics | None = None,
+) -> ForgeResult:
     validation = None
     if status == TERMINAL_VALIDATION_FAILED:
         validation = ValidationArtifact(
@@ -44,6 +47,11 @@ def _forge_result(status: str) -> ForgeResult:
         infeasibility_certificate=None,
         artifact_path=f"C:/tmp/{status}",
         execution_time_seconds=0.1,
+        run_metrics=run_metrics
+        or ForgeRunMetrics(
+            validation_attempts=1 if status != TERMINAL_INFEASIBLE_PROVEN else 0,
+            verified_at_1=status == TERMINAL_VERIFIED,
+        ),
     )
 
 
@@ -71,6 +79,72 @@ def test_run_benchmark_cases_computes_metrics():
     assert summary.false_verified_rate == pytest.approx(0.5, rel=1e-6)
     assert summary.infeasible_detection_rate == pytest.approx(1.0, rel=1e-6)
     assert len(summary.case_results) == 4
+
+
+def test_benchmark_separates_first_pass_from_repair_success_and_cost():
+    cases = [
+        BenchmarkCase("C1", "first-pass", TERMINAL_VERIFIED),
+        BenchmarkCase("C2", "repaired", TERMINAL_VERIFIED),
+        BenchmarkCase("C3", "missed", TERMINAL_VERIFIED),
+    ]
+    observed = {
+        "first-pass": _forge_result(
+            TERMINAL_VERIFIED,
+            ForgeRunMetrics(
+                validation_attempts=1,
+                verified_at_1=True,
+                model_request_count=1,
+                model_input_tokens=100,
+                model_output_tokens=20,
+                model_total_tokens=120,
+                estimated_model_cost_usd=0.001,
+                model_cost_pricing_source="environment",
+            ),
+        ),
+        "repaired": _forge_result(
+            TERMINAL_VERIFIED,
+            ForgeRunMetrics(
+                validation_attempts=2,
+                repair_count=1,
+                success_after_repair=True,
+                estimated_model_cost_usd=0.002,
+                model_cost_pricing_source="environment",
+            ),
+        ),
+        "missed": _forge_result(
+            TERMINAL_VALIDATION_FAILED,
+            ForgeRunMetrics(
+                validation_attempts=2,
+                repair_count=1,
+                estimated_model_cost_usd=None,
+                model_cost_pricing_source="unconfigured",
+            ),
+        ),
+    }
+
+    summary = run_benchmark_cases(cases, run_case=lambda req: observed[req])
+
+    assert summary.verified_at_1 == pytest.approx(1 / 3)
+    assert summary.success_after_repair_rate == pytest.approx(1 / 2)
+    assert summary.total_repairs == 2
+    assert summary.avg_repairs_per_case == pytest.approx(2 / 3)
+    assert summary.total_model_tokens == 120
+    assert summary.total_estimated_model_cost_usd is None
+    assert summary.model_cost_coverage_rate == pytest.approx(2 / 3)
+    assert summary.case_results[1].success_after_repair is True
+
+
+def test_benchmark_does_not_infer_first_pass_success_without_attempt_evidence():
+    result = _forge_result(TERMINAL_VERIFIED, ForgeRunMetrics())
+
+    summary = run_benchmark_cases(
+        [BenchmarkCase("C1", "missing-telemetry", TERMINAL_VERIFIED)],
+        run_case=lambda requirement: result,
+    )
+
+    assert summary.status_accuracy == 1.0
+    assert summary.verified_at_1 == 0.0
+    assert summary.case_results[0].verified_at_1 is False
 
 
 def test_default_cases_have_supported_terminal_statuses():

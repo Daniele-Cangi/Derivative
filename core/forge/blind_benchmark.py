@@ -292,10 +292,28 @@ def render_blind_report(report: BlindBenchmarkReport, output_path: str) -> str:
             f"Failed: {summary.failed_cases}",
             f"Status accuracy: {summary.status_accuracy:.3f}",
             f"External Verified@1: {summary.external_verified_at_1:.3f}",
+            "External success after repair: "
+            + (
+                "n/a"
+                if summary.success_after_repair_rate is None
+                else f"{summary.success_after_repair_rate:.3f}"
+            ),
             f"Oracle pass rate: {summary.oracle_pass_rate:.3f}",
             f"External false-verified rate: {summary.external_false_verified_rate:.3f}",
             f"Infeasible detection rate: {summary.infeasible_detection_rate:.3f}",
+            f"Repairs: {summary.total_repairs} total, {summary.avg_repairs_per_case:.2f} per case",
+            f"Average case runtime: {summary.avg_case_runtime_seconds:.2f}s",
+            f"Median case runtime: {summary.median_case_runtime_seconds:.2f}s",
+            f"P95 case runtime: {summary.p95_case_runtime_seconds:.2f}s",
             f"Total runtime: {summary.total_runtime_seconds:.2f}s",
+            f"Model tokens: {summary.total_model_tokens}",
+            "Estimated model cost: "
+            + (
+                "unavailable"
+                if summary.total_estimated_model_cost_usd is None
+                else f"${summary.total_estimated_model_cost_usd:.8f}"
+            ),
+            f"Model cost coverage: {summary.model_cost_coverage_rate:.3f}",
             f"Report: {output_path}",
         ]
     )

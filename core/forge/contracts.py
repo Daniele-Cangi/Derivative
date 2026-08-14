@@ -306,6 +306,21 @@ class PackagedArtifact:
 
 
 @dataclass
+class ForgeRunMetrics:
+    planner_attempts: int = 0
+    validation_attempts: int = 0
+    repair_count: int = 0
+    verified_at_1: bool = False
+    success_after_repair: bool = False
+    model_request_count: int = 0
+    model_input_tokens: int = 0
+    model_output_tokens: int = 0
+    model_total_tokens: int = 0
+    estimated_model_cost_usd: Optional[float] = 0.0
+    model_cost_pricing_source: str = "no_model_calls"
+
+
+@dataclass
 class ForgeResult:
     route: ForgeRoute
     terminal_status: str
@@ -315,3 +330,4 @@ class ForgeResult:
     infeasibility_certificate: Optional[InfeasibilityCertificate] = None
     artifact_path: str = ""
     execution_time_seconds: float = 0.0
+    run_metrics: ForgeRunMetrics = field(default_factory=ForgeRunMetrics)
