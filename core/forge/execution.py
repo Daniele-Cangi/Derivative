@@ -177,6 +177,9 @@ class DockerSandboxExecutor:
             "--workdir",
             container_cwd,
         ]
+        if hasattr(os, "getuid") and hasattr(os, "getgid"):
+            command.extend(["--user", f"{os.getuid()}:{os.getgid()}"])
+        command.extend(["--env", "HOME=/tmp", "--env", "TMPDIR=/tmp"])
         for key, value in sorted(request.environment.items()):
             command.extend(["--env", f"{key}={value}"])
         command.extend([self.policy.image, *request.command])

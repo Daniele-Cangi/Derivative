@@ -118,6 +118,10 @@ def test_docker_executor_applies_network_filesystem_and_resource_controls(
     assert "nodev" in _option_value(command, "--tmpfs")
     assert "noexec" in _option_value(command, "--tmpfs")
     assert _option_value(command, "--workdir") == "/workspace"
+    if hasattr(os, "getuid") and hasattr(os, "getgid"):
+        assert _option_value(command, "--user") == f"{os.getuid()}:{os.getgid()}"
+    assert "HOME=/tmp" in command
+    assert "TMPDIR=/tmp" in command
     mount = _option_value(command, "--mount")
     assert f"source={Path(tmp_path).resolve()}" in mount
     assert "target=/workspace" in mount
