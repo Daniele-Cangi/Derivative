@@ -7,6 +7,7 @@ from core.forge.contracts import (
     RepairPatchCandidate,
     ValidationArtifact,
 )
+from core.forge.execution import ProcessExecutor
 from core.kernel import ReasoningKernel
 from core.substrate import CognitiveSubstrate
 from core.forge.repair_support import (
@@ -40,6 +41,7 @@ class SubstrateRepairBackend:
         max_source_preflight_corrections: int = 2,
         max_test_preflight_corrections: int = 3,
         test_preflight_runner: Callable[[dict[str, str], list[str]], dict[str, Any]] | None = None,
+        executor: ProcessExecutor | None = None,
     ) -> None:
         self.substrate = substrate or CognitiveSubstrate(execution_mode=execution_mode)
         self.kernel = kernel or ReasoningKernel(execution_mode=execution_mode)
@@ -57,6 +59,7 @@ class SubstrateRepairBackend:
                 candidate_files,
                 test_paths,
                 timeout_seconds=self.preflight_timeout_seconds,
+                executor=executor,
             )
         )
 

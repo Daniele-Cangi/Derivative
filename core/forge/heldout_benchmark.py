@@ -1,7 +1,6 @@
 import json
-import os
+import shutil
 import statistics
-import subprocess
 import sys
 import tempfile
 import time
@@ -16,6 +15,11 @@ from core.forge.benchmark import (
     TERMINAL_VERIFIED,
 )
 from core.forge.contracts import ForgeResult
+from core.forge.execution import (
+    LocalProcessExecutor,
+    ProcessExecutor,
+    SandboxProcessRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,9 @@ class OracleResult:
     stderr: str = ""
     error: str | None = None
     execution_time_seconds: float = 0.0
+    backend: str = ""
+    timed_out: bool = False
+    isolation: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -157,8 +164,12 @@ def execute_pytest_oracle(
     oracle: OracleSpec,
     package_root: str,
     python_executable: str = sys.executable,
+    executor: ProcessExecutor | None = None,
 ) -> OracleResult:
     started = time.perf_counter()
+    process_executor = executor or LocalProcessExecutor(
+        python_executable=python_executable,
+    )
     package_path = Path(package_root).resolve()
     if not package_path.is_dir():
         return OracleResult(
@@ -168,45 +179,37 @@ def execute_pytest_oracle(
             execution_time_seconds=time.perf_counter() - started,
         )
 
-    env = os.environ.copy()
-    src_path = package_path / "src"
-    existing_pythonpath = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = os.pathsep.join(
-        part for part in (str(src_path), existing_pythonpath) if part
-    )
-    env["FORGE_PACKAGE_ROOT"] = str(package_path)
-    env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-
     try:
         with tempfile.TemporaryDirectory(prefix="forge-heldout-oracle-") as temp_root:
-            completed = subprocess.run(
-                [
-                    python_executable,
-                    "-B",
-                    "-m",
-                    "pytest",
-                    "-q",
-                    "-p",
-                    "no:cacheprovider",
-                    oracle.path,
-                    f"--basetemp={Path(temp_root) / 'pytest'}",
-                ],
-                cwd=str(package_path),
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=oracle.timeout_seconds,
-                check=False,
+            staging_root = Path(temp_root)
+            staged_package = staging_root / "package"
+            _copy_package_for_oracle(package_path, staged_package)
+            staged_oracle = staging_root / "oracle.py"
+            staged_oracle.write_bytes(Path(oracle.path).read_bytes())
+            completed = process_executor.run(
+                SandboxProcessRequest(
+                    command=[
+                        "python",
+                        "-B",
+                        "-m",
+                        "pytest",
+                        "-q",
+                        "-p",
+                        "no:cacheprovider",
+                        "../oracle.py",
+                        "--basetemp=../pytest",
+                    ],
+                    workspace=staging_root,
+                    working_directory="package",
+                    environment={
+                        "PYTHONPATH": "src",
+                        "FORGE_PACKAGE_ROOT": ".",
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                    },
+                    timeout_seconds=oracle.timeout_seconds,
+                )
             )
-    except subprocess.TimeoutExpired as exc:
-        return OracleResult(
-            executed=True,
-            passed=False,
-            stdout=_coerce_output(exc.stdout),
-            stderr=_coerce_output(exc.stderr),
-            error=f"Oracle timed out after {oracle.timeout_seconds}s.",
-            execution_time_seconds=time.perf_counter() - started,
-        )
     except OSError as exc:
         return OracleResult(
             executed=False,
@@ -216,21 +219,31 @@ def execute_pytest_oracle(
         )
 
     return OracleResult(
-        executed=True,
+        executed=completed.launch_error is None,
         passed=completed.returncode == 0,
         exit_code=completed.returncode,
         stdout=completed.stdout,
         stderr=completed.stderr,
+        error=(
+            f"Oracle timed out after {oracle.timeout_seconds}s."
+            if completed.timed_out
+            else completed.launch_error
+        ),
         execution_time_seconds=time.perf_counter() - started,
+        backend=completed.backend,
+        timed_out=completed.timed_out,
+        isolation=completed.isolation,
     )
 
 
-def _coerce_output(value: str | bytes | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
+def _copy_package_for_oracle(source: Path, destination: Path) -> None:
+    symlinks = [path for path in source.rglob("*") if path.is_symlink()]
+    if symlinks:
+        raise OSError(
+            "Oracle package staging refuses symbolic links: "
+            + ", ".join(str(path.relative_to(source)) for path in symlinks[:5])
+        )
+    shutil.copytree(source, destination)
 
 
 def run_heldout_cases(

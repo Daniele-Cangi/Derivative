@@ -1,13 +1,11 @@
 import ast
-import os
 import re
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from core.forge.contracts import CodeArtifact, FeasiblePlan
+from core.forge.execution import LocalProcessExecutor, ProcessExecutor, SandboxProcessRequest
 
 
 def preflight_has_source_failure(preflight: dict[str, Any]) -> bool:
@@ -195,7 +193,9 @@ def run_test_preflight(
     test_paths: list[str],
     *,
     timeout_seconds: int,
+    executor: ProcessExecutor | None = None,
 ) -> dict[str, Any]:
+    process_executor = executor or LocalProcessExecutor()
     result: dict[str, Any] = {
         "phase": "materialization",
         "ran": False,
@@ -208,6 +208,7 @@ def run_test_preflight(
         "source_failed_paths": [],
         "test_failed_paths": [],
         "failures": [],
+        "execution_policy": process_executor.policy.evidence(),
     }
     try:
         with tempfile.TemporaryDirectory(
@@ -259,9 +260,9 @@ def run_test_preflight(
 
             import_script = (
                 "import importlib, pathlib, sys\n"
-                "root = pathlib.Path(sys.argv[1]).resolve()\n"
+                "root = pathlib.Path.cwd()\n"
                 "sys.path[:0] = [str(root), str(root / 'src')]\n"
-                "path = pathlib.PurePosixPath(sys.argv[2])\n"
+                "path = pathlib.PurePosixPath(sys.argv[1])\n"
                 "module_name = '.'.join(path.with_suffix('').parts)\n"
                 "importlib.import_module(module_name)\n"
             )
@@ -271,17 +272,13 @@ def run_test_preflight(
                 for path in candidate_files
                 if path.startswith("src/") and path.endswith(".py")
             ):
-                imported = subprocess.run(
-                    [sys.executable, "-B", "-c", import_script, str(workspace), path],
-                    cwd=workspace,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout_seconds,
-                    env={
-                        **os.environ,
-                        "PYTHONDONTWRITEBYTECODE": "1",
-                    },
-                    check=False,
+                imported = process_executor.run(
+                    SandboxProcessRequest(
+                        command=["python", "-B", "-c", import_script, path],
+                        workspace=workspace,
+                        timeout_seconds=timeout_seconds,
+                        environment={"PYTHONDONTWRITEBYTECODE": "1"},
+                    )
                 )
                 if imported.returncode != 0:
                     import_failures.append(
@@ -309,7 +306,7 @@ def run_test_preflight(
                 return result
 
             command = [
-                sys.executable,
+                "python",
                 "-B",
                 "-m",
                 "pytest",
@@ -317,19 +314,18 @@ def run_test_preflight(
                 *test_paths,
                 "-p",
                 "no:cacheprovider",
-                f"--basetemp={workspace / '.pytest_tmp'}",
+                "--basetemp=.pytest_tmp",
             ]
-            environment = os.environ.copy()
-            environment["PYTHONDONTWRITEBYTECODE"] = "1"
-            environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-            completed = subprocess.run(
-                command,
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=environment,
-                check=False,
+            completed = process_executor.run(
+                SandboxProcessRequest(
+                    command=command,
+                    workspace=workspace,
+                    timeout_seconds=timeout_seconds,
+                    environment={
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                    },
+                )
             )
             result.update(
                 {
@@ -339,8 +335,13 @@ def run_test_preflight(
                     "returncode": completed.returncode,
                     "stdout": completed.stdout[-12000:],
                     "stderr": completed.stderr[-12000:],
+                    "backend": completed.backend,
+                    "timed_out": completed.timed_out,
+                    "launch_error": completed.launch_error,
                 }
             )
+            if completed.timed_out:
+                result["error_type"] = "TimeoutExpired"
             if completed.returncode != 0:
                 failed_paths = preflight_failed_paths(result)
                 result.update(
@@ -363,16 +364,6 @@ def run_test_preflight(
                         ],
                     }
                 )
-    except subprocess.TimeoutExpired as exc:
-        result.update(
-            {
-                "phase": result.get("phase", "tests"),
-                "ran": True,
-                "error_type": "TimeoutExpired",
-                "stdout": str(exc.stdout or "")[-12000:],
-                "stderr": str(exc.stderr or "")[-12000:],
-            }
-        )
     except Exception as exc:
         result.update(
             {

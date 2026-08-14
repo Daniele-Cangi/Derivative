@@ -1,9 +1,30 @@
+from core.forge.execution import (
+    ExecutionPolicy,
+    SandboxProcessResult,
+)
 from core.forge.repair_support import (
     preflight_failed_paths,
     preflight_has_source_failure,
     run_test_preflight,
     source_api_contracts,
 )
+
+
+class _RecordingExecutor:
+    def __init__(self):
+        self.policy = ExecutionPolicy(backend="local")
+        self.requests = []
+
+    def run(self, request):
+        self.requests.append(request)
+        return SandboxProcessResult(
+            returncode=0,
+            stdout="1 passed\n" if "pytest" in request.command else "",
+            stderr="",
+            backend="local",
+            execution_time_seconds=0.01,
+            isolation=self.policy.evidence(),
+        )
 
 
 def test_source_api_contracts_distinguish_click_commands_from_plain_functions():
@@ -104,3 +125,24 @@ def test_candidate_gate_maps_pytest_failure_to_exact_test_file():
     assert preflight_failed_paths(result, prefix="tests/") == [
         "tests/test_component.py"
     ]
+
+
+def test_candidate_gate_uses_one_injected_executor_for_imports_and_tests():
+    executor = _RecordingExecutor()
+
+    result = run_test_preflight(
+        {
+            "src/component.py": "def run() -> int:\n    return 0\n",
+            "tests/test_component.py": "from src.component import run\n\ndef test_run():\n    assert run() == 0\n",
+        },
+        ["tests/test_component.py"],
+        timeout_seconds=20,
+        executor=executor,
+    )
+
+    assert result["passed"] is True
+    assert result["execution_policy"]["backend"] == "local"
+    assert len(executor.requests) == 2
+    assert executor.requests[0].command[:3] == ["python", "-B", "-c"]
+    assert "pytest" in executor.requests[1].command
+    assert all(request.workspace == executor.requests[0].workspace for request in executor.requests)

@@ -9,6 +9,7 @@ from core.forge.benchmark import (
     TERMINAL_VERIFIED,
 )
 from core.forge.contracts import ForgeResult, ForgeRoute
+from core.forge.execution import ExecutionPolicy, SandboxProcessResult
 from core.forge.heldout_benchmark import (
     HeldoutBenchmarkCase,
     HeldoutThresholds,
@@ -22,6 +23,29 @@ from core.forge.heldout_benchmark import (
     render_heldout_summary,
     run_heldout_cases,
 )
+
+
+class _OracleRecordingExecutor:
+    def __init__(self):
+        self.policy = ExecutionPolicy(backend="docker")
+        self.request = None
+        self.staged_files = []
+
+    def run(self, request):
+        self.request = request
+        self.staged_files = sorted(
+            path.relative_to(request.workspace).as_posix()
+            for path in request.workspace.rglob("*")
+            if path.is_file()
+        )
+        return SandboxProcessResult(
+            returncode=0,
+            stdout="1 passed\n",
+            stderr="",
+            backend="docker",
+            execution_time_seconds=0.02,
+            isolation=self.policy.evidence(),
+        )
 
 
 def _forge_result(status: str, artifact_path: str = "") -> ForgeResult:
@@ -144,6 +168,36 @@ def test_pytest_oracle_failure_is_external_evidence(tmp_path):
     assert result.passed is False
     assert result.exit_code == 1
     assert "1 failed" in result.stdout
+
+
+def test_pytest_oracle_stages_only_package_and_oracle_for_executor(tmp_path):
+    package_root = tmp_path / "original-package"
+    source_root = package_root / "src"
+    source_root.mkdir(parents=True)
+    (source_root / "calculator.py").write_text(
+        "def add(left, right):\n    return left + right\n",
+        encoding="utf-8",
+    )
+    oracle_path = tmp_path / "private-oracle.py"
+    oracle_path.write_text("def test_external():\n    assert True\n", encoding="utf-8")
+    executor = _OracleRecordingExecutor()
+
+    result = execute_pytest_oracle(
+        OracleSpec(path=str(oracle_path), timeout_seconds=20),
+        str(package_root),
+        executor=executor,
+    )
+
+    assert result.passed is True
+    assert result.backend == "docker"
+    assert result.isolation["isolated"] is True
+    assert executor.request is not None
+    assert executor.request.working_directory == "package"
+    assert "../oracle.py" in executor.request.command
+    assert executor.request.environment["PYTHONPATH"] == "src"
+    assert executor.staged_files == ["oracle.py", "package/src/calculator.py"]
+    assert str(package_root) not in " ".join(executor.request.command)
+    assert str(oracle_path) not in " ".join(executor.request.command)
 
 
 def test_heldout_metrics_require_external_oracle_success():
