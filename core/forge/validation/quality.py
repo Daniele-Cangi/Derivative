@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact
+from core.forge.semantic_contracts import has_end_to_end_file_workflow_test
 
 
 class QualityContractChecker:
@@ -141,6 +142,7 @@ class QualityContractChecker:
                 or "end_to_end" in test_sources
                 or "end-to-end" in test_sources
                 or "e2e" in test_sources
+                or has_end_to_end_file_workflow_test(test_sources)
             )
             if not checks["integration_tests_present"]:
                 failures.append(

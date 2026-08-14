@@ -1,5 +1,6 @@
 import ast
 import json
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -167,11 +168,12 @@ class RuntimeValidationLayer(ValidationLayerBase):
             result["stderr"] = str(exc)
             return result
 
-        function_names = {
-            node.name
+        function_nodes = {
+            node.name: node
             for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
+        function_names = set(function_nodes)
         candidate = next(
             (name for name in declared_entrypoint_names if name in function_names),
             "",
@@ -191,14 +193,11 @@ class RuntimeValidationLayer(ValidationLayerBase):
         input_path = workspace / f"validator_input.{input_format}"
         output_path = workspace / f"validator_output.{output_format}"
         input_path.write_text(self._sample_input_content(build_spec), encoding="utf-8")
-        call_args = ""
+        invocation_args: list[object] = []
         if candidate == "main":
             if is_jsonl_pipeline:
                 quarantine_jsonl = workspace / "validator_quarantine.jsonl"
-                call_args = (
-                    f"[{str(input_path)!r}, {str(quarantine_jsonl)!r}, "
-                    f"{str(output_path)!r}]"
-                )
+                invocation_args = [[str(input_path), str(quarantine_jsonl), str(output_path)]]
             elif is_json_merge_cli:
                 base_json = workspace / "validator_base.json"
                 override_json = workspace / "validator_override.json"
@@ -211,17 +210,22 @@ class RuntimeValidationLayer(ValidationLayerBase):
                     '{"service":{"ports":[443]},"enabled":false}',
                     encoding="utf-8",
                 )
-                call_args = (
-                    f"[{str(base_json)!r}, {str(override_json)!r}, "
-                    f"{str(output_json)!r}]"
-                )
+                invocation_args = [[str(base_json), str(override_json), str(output_json)]]
             elif entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
-                call_args = f"[{str(input_path)!r}, {str(output_path)!r}]"
+                invocation_args = [[str(input_path), str(output_path)]]
+        elif candidate == "run":
+            invocation_args = self._run_invocation_arguments(
+                function_nodes[candidate],
+                workspace,
+                input_path,
+                output_path,
+            )
         result["smoke_contract"] = {
             "input_format": input_format,
             "output_format": output_format,
             "input_path": str(input_path),
             "output_path": str(output_path),
+            "argument_count": len(invocation_args),
         }
         script = (
             "import importlib\n"
@@ -232,7 +236,8 @@ class RuntimeValidationLayer(ValidationLayerBase):
             "sys.path.insert(0, str(workspace / 'src'))\n"
             f"module = importlib.import_module({module_name!r})\n"
             f"fn = getattr(module, {candidate!r})\n"
-            f"result = fn({call_args})\n"
+            f"invoke_args = {invocation_args!r}\n"
+            "result = fn(*invoke_args)\n"
             "print(json.dumps({'result': result if isinstance(result, (int, str, bool, float)) else str(result)}))\n"
         )
         completed = self._run_subprocess(script, cwd=workspace)
@@ -296,7 +301,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
         atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
         if "summary csv" in atom_text or "writes a csv" in atom_text:
             return "csv"
-        if "writes" in atom_text and "json" in atom_text:
+        if re.search(r"\bwrites?\b.{0,120}\bjson\b", atom_text):
             return "json"
         if "summary_json" in atom_text or "summary json" in atom_text:
             return "json"
@@ -306,6 +311,53 @@ class RuntimeValidationLayer(ValidationLayerBase):
     def _is_json_array_input(build_spec: BuildSpec) -> bool:
         atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
         return "reads a json array" in atom_text or "reads json array" in atom_text
+
+    @staticmethod
+    def _run_invocation_arguments(
+        function_node: ast.FunctionDef | ast.AsyncFunctionDef,
+        workspace: Path,
+        input_path: Path,
+        output_path: Path,
+    ) -> list[object]:
+        positional = [
+            argument.arg
+            for argument in (*function_node.args.posonlyargs, *function_node.args.args)
+        ]
+        required_count = len(positional) - len(function_node.args.defaults)
+        mapped: list[object] = []
+        for index, name in enumerate(positional):
+            normalized = name.lower()
+            value: object | None = None
+            if normalized in {"input_path", "source_path", "input_file"}:
+                value = str(input_path)
+            elif normalized in {
+                "output_path",
+                "summary_path",
+                "summary_json_path",
+                "summary_csv_path",
+                "output_file",
+            }:
+                value = str(output_path)
+            elif normalized == "quarantine_path":
+                value = str(workspace / "validator_quarantine.jsonl")
+            elif normalized in {"watch_dir", "input_dir", "input_directory"}:
+                directory = workspace / "validator_input"
+                directory.mkdir(exist_ok=True)
+                value = str(directory)
+            elif normalized == "quarantine_dir":
+                directory = workspace / "validator_quarantine"
+                directory.mkdir(exist_ok=True)
+                value = str(directory)
+            elif normalized == "db_path":
+                value = str(workspace / "validator.sqlite3")
+            elif normalized == "poll_once":
+                value = True
+            if value is None:
+                if index < required_count:
+                    return []
+                break
+            mapped.append(value)
+        return mapped
 
     def _run_subprocess(self, script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

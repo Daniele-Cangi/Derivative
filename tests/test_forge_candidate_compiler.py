@@ -11,6 +11,10 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
 from core.forge.repair_support import test_generation_contracts as build_test_generation_contracts
 from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.semantic_contracts import (
+    has_json_lines_processing,
+    interface_parameter_is_exercised,
+)
 from core.forge.validator_stage import ValidatorStage
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 
@@ -79,6 +83,19 @@ class _ExtraPathKernel(_JsonMergeKernel):
         )
         payload["files"]["src/unplanned.py"] = "VALUE = 1\n"
         return payload
+
+
+class _MonotonicCorrectionKernel(_JsonMergeKernel):
+    def __init__(self):
+        self.target_history = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        self.target_history.append(sorted(target_files))
+        return super().propose_code_revision(
+            repair_context,
+            target_files,
+            lens_framings,
+        )
 
 
 def _source():
@@ -289,6 +306,108 @@ def test_candidate_compiler_fails_closed_without_live_kernel(json_merge_case):
     assert candidate.available is False
     assert candidate.files == {}
     assert "unavailable" in candidate.stop_reason.lower()
+
+
+def test_candidate_correction_preserves_passing_files(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _MonotonicCorrectionKernel()
+    preflight_calls = []
+
+    def preflight(files, tests):
+        preflight_calls.append(dict(files))
+        if len(preflight_calls) == 1:
+            return {
+                "ran": True,
+                "passed": False,
+                "phase": "semantic_contract",
+                "failed_paths": ["tests/test_replaces_json_lists.py"],
+                "source_failed_paths": [],
+                "test_failed_paths": ["tests/test_replaces_json_lists.py"],
+                "failures": [],
+                "correction_requirements": ["Strengthen the list replacement assertion."],
+            }
+        return {
+            "ran": True,
+            "passed": True,
+            "phase": "tests",
+            "failed_paths": [],
+            "source_failed_paths": [],
+            "test_failed_paths": [],
+            "failures": [],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=1,
+        test_preflight_runner=preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert candidate.files
+    assert set(kernel.target_history[0]) == set(candidate.files)
+    assert kernel.target_history[1] == ["tests/test_replaces_json_lists.py"]
+    assert candidate.files["src/cli.py"] == preflight_calls[0]["src/cli.py"]
+    second_attempt = candidate.evidence["candidate_attempts"][1]
+    assert "src/cli.py" in second_attempt["preserved_paths"]
+
+
+def test_executable_test_failure_expands_correction_to_imported_source(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _MonotonicCorrectionKernel()
+    calls = []
+
+    def preflight(files, tests):
+        calls.append(dict(files))
+        if len(calls) == 1:
+            return {
+                "ran": True,
+                "passed": False,
+                "phase": "tests",
+                "failed_paths": ["tests/test_replaces_json_lists.py"],
+                "source_failed_paths": [],
+                "test_failed_paths": ["tests/test_replaces_json_lists.py"],
+                "failures": [],
+                "stdout": "assert merged['items'] == [3]",
+                "stderr": "",
+            }
+        return {
+            "ran": True,
+            "passed": True,
+            "phase": "tests",
+            "failed_paths": [],
+            "source_failed_paths": [],
+            "test_failed_paths": [],
+            "failures": [],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=1,
+        test_preflight_runner=preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert candidate.files
+    assert kernel.target_history[1] == [
+        "src/cli.py",
+        "tests/test_replaces_json_lists.py",
+    ]
+    first_preflight = candidate.evidence["candidate_attempts"][0]["preflight"]
+    assert first_preflight["impact_expanded_paths"] == ["src/cli.py"]
 
 
 def test_semantic_preflight_rejects_return_code_only_rejection_test(json_merge_case):
@@ -534,3 +653,61 @@ def test_canonicalized_deduplication():
     )
 
     assert result["passed"] is True
+
+
+def test_interface_parameter_evidence_requires_public_invocation_and_assertion():
+    source = '''def run(input_path: str, output_path: str) -> int:
+    return 0
+'''
+    behavioral_test = '''def test_pipeline(tmp_path):
+    source = tmp_path / "events.jsonl"
+    output = tmp_path / "summary.json"
+    assert pipeline.run(str(source), str(output)) == 0
+    assert output.exists()
+'''
+
+    assert interface_parameter_is_exercised(
+        "input_path",
+        behavioral_test,
+        source,
+        {"run"},
+    )
+    assert interface_parameter_is_exercised(
+        "output_path",
+        behavioral_test,
+        source,
+        {"run"},
+    )
+    assert not interface_parameter_is_exercised(
+        "sensor_id",
+        behavioral_test,
+        source,
+        {"run"},
+    )
+    assert not interface_parameter_is_exercised(
+        "input_path",
+        "def test_no_assertion():\n    pipeline.run('in', 'out')\n",
+        source,
+        {"run"},
+    )
+
+
+def test_json_lines_evidence_requires_per_record_json_decoding():
+    jsonl_source = '''import json
+
+
+def read_events(path):
+    events = []
+    for raw_line in path.read_text().splitlines():
+        events.append(json.loads(raw_line))
+    return events
+'''
+    document_source = '''import json
+
+
+def read_document(path):
+    return json.loads(path.read_text())
+'''
+
+    assert has_json_lines_processing(jsonl_source)
+    assert not has_json_lines_processing(document_source)

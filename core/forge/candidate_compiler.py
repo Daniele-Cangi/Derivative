@@ -1,3 +1,4 @@
+import ast
 from typing import Any, Callable
 
 from core.forge.contracts import (
@@ -10,6 +11,7 @@ from core.forge.contracts import (
 from core.forge.candidate_preflight import run_semantic_preflight
 from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.repair_support import (
+    preflight_failed_paths,
     run_test_preflight,
     test_generation_contracts as build_test_generation_contracts,
 )
@@ -110,6 +112,8 @@ class SubstrateCandidateCompiler:
                     "Implement only the declared plan and requirement atoms.",
                     "Tests must execute the generated public interfaces and assert concrete behavior.",
                     "Every mapped test must exercise every evidence term in its test_generation_contract.",
+                    "Requirement atoms and declared public interfaces override incompatible semantics in stale target files.",
+                    "Derive numeric test expectations by tracing every fixture record through the normalized requirement.",
                     "Invalid-input rejection tests must assert ValueError, TypeError, or SystemExit unless the requirement explicitly defines a return-code contract.",
                     "Do not author manifests, provenance, capability declarations, or validation claims.",
                     "Use requirement evidence terms as implementation or test identifiers where practical.",
@@ -127,19 +131,30 @@ class SubstrateCandidateCompiler:
         rejected_paths: list[str] = []
         candidate_files: dict[str, str] = {}
         backend_available = False
+        active_paths = list(target_paths)
 
         for attempt in range(self.max_preflight_corrections + 1):
             attempt_context = dict(context)
             attempt_context["candidate_compilation_attempt"] = attempt + 1
+            attempt_context["current_target_paths"] = list(active_paths)
+            attempt_context["candidate_transaction_correction"] = bool(attempts)
+            attempt_context["preserve_passing_paths"] = sorted(
+                set(target_paths) - set(active_paths)
+            )
             if attempts:
                 previous_preflight = attempts[-1]["preflight"]
                 attempt_context["preflight_test_execution"] = previous_preflight
                 attempt_context["candidate_correction_requirements"] = list(
                     previous_preflight.get("correction_requirements", [])
                 )
+                if previous_preflight.get("phase") == "tests":
+                    attempt_context["candidate_correction_requirements"].append(
+                        "Trace each failing test fixture against the requirement, then correct the implementation "
+                        "or the expected assertion according to that trace; never preserve a contradicted count."
+                    )
             payload = self.kernel.propose_code_revision(
                 repair_context=attempt_context,
-                target_files=current_targets,
+                target_files={path: current_targets[path] for path in active_paths},
                 lens_framings=framings,
             )
             status = str(payload.get("status", "candidate"))
@@ -150,7 +165,8 @@ class SubstrateCandidateCompiler:
                     {
                         "attempt": attempt + 1,
                         "status": status,
-                        "omitted_paths": target_paths,
+                        "target_paths": list(active_paths),
+                        "omitted_paths": list(active_paths),
                         "rejected_paths": sorted(set(rejected_paths)),
                         "preflight": {
                             "ran": False,
@@ -163,17 +179,24 @@ class SubstrateCandidateCompiler:
                 break
             proposed = SubstrateRepairBackend._coerce_files(payload.get("files"))
             normalized: dict[str, str] = {}
+            ignored_correction_paths: list[str] = []
             for raw_path, content in proposed.items():
                 path = self._normalize_path(raw_path)
                 if path not in target_paths:
                     rejected_paths.append(path)
                     continue
+                if path not in active_paths:
+                    ignored_correction_paths.append(path)
+                    continue
                 normalized[path] = content
-            omitted = sorted(set(target_paths) - set(normalized))
+            omitted = sorted(set(active_paths) - set(normalized))
             attempt_record: dict[str, Any] = {
                 "attempt": attempt + 1,
                 "status": status,
+                "target_paths": list(active_paths),
+                "preserved_paths": sorted(set(target_paths) - set(active_paths)),
                 "omitted_paths": omitted,
+                "ignored_correction_paths": sorted(set(ignored_correction_paths)),
                 "rejected_paths": sorted(set(rejected_paths)),
             }
             if omitted:
@@ -187,20 +210,55 @@ class SubstrateCandidateCompiler:
                 candidate_files = {}
                 continue
 
-            preflight = self.test_preflight_runner(normalized, test_paths)
+            merged_candidate = dict(candidate_files)
+            merged_candidate.update(normalized)
+            if set(merged_candidate) != set(target_paths):
+                missing_transaction_paths = sorted(set(target_paths) - set(merged_candidate))
+                attempt_record["preflight"] = {
+                    "ran": False,
+                    "passed": False,
+                    "phase": "candidate_completeness",
+                    "failed_paths": missing_transaction_paths,
+                }
+                attempts.append(attempt_record)
+                candidate_files = merged_candidate
+                active_paths = missing_transaction_paths
+                current_targets = {
+                    path: files_by_path[path]
+                    for path in active_paths
+                }
+                continue
+
+            preflight = self.test_preflight_runner(merged_candidate, test_paths)
             if preflight.get("passed", False):
                 preflight = run_semantic_preflight(
-                    normalized,
+                    merged_candidate,
                     plan,
                     context["test_generation_contracts"],
                     preflight,
                 )
             attempt_record["preflight"] = preflight
             attempts.append(attempt_record)
-            candidate_files = normalized
+            candidate_files = merged_candidate
             if preflight.get("passed", False):
                 break
-            current_targets = normalized
+            failed = preflight_failed_paths(preflight)
+            impact_expanded_paths: list[str] = []
+            if preflight.get("phase") == "tests":
+                impact_expanded_paths = self._imported_source_paths(
+                    candidate_files,
+                    [path for path in failed if path.startswith("tests/")],
+                    target_paths,
+                )
+                preflight["impact_expanded_paths"] = impact_expanded_paths
+                failed = list(dict.fromkeys([*failed, *impact_expanded_paths]))
+            active_paths = [path for path in failed if path in target_paths]
+            if not active_paths:
+                active_paths = list(target_paths)
+            current_targets = {
+                path: candidate_files[path]
+                for path in active_paths
+            }
         else:
             candidate_files = {}
 
@@ -254,3 +312,38 @@ class SubstrateCandidateCompiler:
     @staticmethod
     def _normalize_path(path: str) -> str:
         return SubstrateRepairBackend._normalize_path(path)
+
+    @classmethod
+    def _imported_source_paths(
+        cls,
+        candidate_files: dict[str, str],
+        test_paths: list[str],
+        allowed_paths: list[str],
+    ) -> list[str]:
+        imported_modules: set[str] = set()
+        for test_path in test_paths:
+            try:
+                tree = ast.parse(candidate_files.get(test_path, ""))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    imported_modules.update(alias.name for alias in node.names)
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    imported_modules.add(node.module)
+
+        impacted: list[str] = []
+        for path in allowed_paths:
+            if not path.startswith("src/") or not path.endswith(".py"):
+                continue
+            module = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+            if module.endswith(".__init__"):
+                module = module.removesuffix(".__init__")
+            if any(
+                imported == module
+                or imported.startswith(f"{module}.")
+                or module.startswith(f"{imported}.")
+                for imported in imported_modules
+            ):
+                impacted.append(path)
+        return sorted(set(impacted))

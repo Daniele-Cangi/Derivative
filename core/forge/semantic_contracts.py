@@ -52,6 +52,33 @@ def behaviorally_evidences(
     return len(list_literals) >= 2 and bool(equality_assertions)
 
 
+def has_json_lines_processing(content: str) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.For, ast.AsyncFor)):
+            target_names = _assigned_names(node.target)
+            if target_names and _body_loads_json_from_names(node.body, target_names):
+                return True
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
+            for generator in node.generators:
+                target_names = _assigned_names(generator.target)
+                if target_names and _expression_loads_json_from_names(node.elt, target_names):
+                    return True
+        if isinstance(node, ast.DictComp):
+            for generator in node.generators:
+                target_names = _assigned_names(generator.target)
+                if target_names and (
+                    _expression_loads_json_from_names(node.key, target_names)
+                    or _expression_loads_json_from_names(node.value, target_names)
+                ):
+                    return True
+    return False
+
+
 def has_expected_exception_assertion(
     content: str,
     target_names: set[str] | None = None,
@@ -124,6 +151,76 @@ def has_canonicalized_deduplication_assertion(content: str) -> bool:
     return False
 
 
+def interface_parameter_is_exercised(
+    term: str,
+    test_content: str,
+    source_content: str,
+    public_interface_names: set[str],
+) -> bool:
+    if not term.isidentifier() or not public_interface_names:
+        return False
+    try:
+        source_tree = ast.parse(source_content)
+        test_tree = ast.parse(test_content)
+    except SyntaxError:
+        return False
+
+    public_parameters = {
+        argument.arg
+        for node in ast.walk(source_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in public_interface_names
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+    }
+    if term not in public_parameters:
+        return False
+
+    for node in ast.walk(test_tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        invokes_public_interface = any(
+            isinstance(child, ast.Call)
+            and _call_name(child) in public_interface_names
+            for child in ast.walk(node)
+        )
+        has_assertion = any(isinstance(child, ast.Assert) for child in ast.walk(node))
+        if invokes_public_interface and has_assertion:
+            return True
+    return False
+
+
+def has_end_to_end_file_workflow_test(
+    content: str,
+    public_interface_names: set[str] | None = None,
+) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+    interface_names = public_interface_names or {"main", "run"}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        calls = [child for child in ast.walk(node) if isinstance(child, ast.Call)]
+        invokes_interface = any(_call_name(call) in interface_names for call in calls)
+        writes_fixture = any(
+            isinstance(call.func, ast.Attribute)
+            and call.func.attr in {"write_text", "write_bytes", "writerow", "writerows"}
+            for call in calls
+        )
+        reads_result = any(
+            isinstance(call.func, ast.Attribute)
+            and call.func.attr in {"read_text", "read_bytes", "exists"}
+            for call in calls
+        )
+        assertion_count = sum(
+            1 for child in ast.walk(node) if isinstance(child, ast.Assert)
+        )
+        if invokes_interface and writes_fixture and reads_result and assertion_count >= 2:
+            return True
+    return False
+
+
 def _contains_target_call(statements: list[ast.stmt], target_names: set[str]) -> bool:
     return any(
         isinstance(node, ast.Call) and _call_name(node) in target_names
@@ -138,6 +235,48 @@ def _call_name(node: ast.Call) -> str:
     if isinstance(node.func, ast.Attribute):
         return node.func.attr
     return ""
+
+
+def _assigned_names(node: ast.AST) -> set[str]:
+    return {
+        child.id
+        for child in ast.walk(node)
+        if isinstance(child, ast.Name)
+    }
+
+
+def _body_loads_json_from_names(statements: list[ast.stmt], names: set[str]) -> bool:
+    return any(
+        _is_json_loads_call(node) and _call_references_names(node, names)
+        for statement in statements
+        for node in ast.walk(statement)
+        if isinstance(node, ast.Call)
+    )
+
+
+def _expression_loads_json_from_names(expression: ast.AST, names: set[str]) -> bool:
+    return any(
+        _is_json_loads_call(node) and _call_references_names(node, names)
+        for node in ast.walk(expression)
+        if isinstance(node, ast.Call)
+    )
+
+
+def _is_json_loads_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Attribute)
+        and node.func.attr == "loads"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "json"
+    )
+
+
+def _call_references_names(node: ast.Call, names: set[str]) -> bool:
+    return any(
+        isinstance(child, ast.Name) and child.id in names
+        for argument in node.args
+        for child in ast.walk(argument)
+    )
 
 
 def _string_list(node: ast.AST, literals: dict[str, list[str]]) -> list[str] | None:

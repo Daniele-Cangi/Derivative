@@ -9,6 +9,7 @@ from core.forge.coder_stage import CoderStage
 from core.forge.contracts import CodeArtifact, FeasiblePlan, ValidationArtifact
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.semantic_contracts import has_end_to_end_file_workflow_test
 from core.forge.validator_stage import ValidatorStage
 from core.forge.validation.adversarial import AdversarialValidationLayer
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
@@ -52,6 +53,14 @@ JSON_ARRAY_SORT_REQUIREMENT = (
     "id and numeric score fields, stably orders records by descending score and then ascending id, "
     "writes the ordered array as JSON to an output path, rejects duplicate ids or malformed records "
     "with ValueError, and includes behavioral tests."
+)
+
+SENSOR_PIPELINE_REQUIREMENT = (
+    "Build a Python JSON Lines data pipeline exposing run(input_path: str, output_path: str) -> int. "
+    "Each valid event contains a non-empty sensor_id and a numeric value. Skip malformed events, "
+    "write JSON containing valid_count, malformed_count, and a sensors object with count, min, max, "
+    "and mean for each sensor, return 0 on success, produce deterministic keys, and include "
+    "end-to-end tests."
 )
 
 
@@ -565,6 +574,62 @@ def main(argv=None):
     assert entrypoint["executed"] is True
     assert entrypoint["smoke_contract"]["input_format"] == "json"
     assert entrypoint["smoke_contract"]["output_format"] == "json"
+
+
+def test_runtime_smoke_invokes_run_from_implemented_signature(tmp_path):
+    build_spec = RequirementCompiler().compile(SENSOR_PIPELINE_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(build_spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+    pipeline_file = _find_file(artifact, "src/pipeline.py")
+    assert pipeline_file is not None
+    pipeline_file.content = '''import json
+from pathlib import Path
+
+
+def run(input_path: str, output_path: str) -> int:
+    valid = [json.loads(line) for line in Path(input_path).read_text(encoding="utf-8").splitlines()]
+    Path(output_path).write_text(json.dumps({"valid_count": len(valid)}), encoding="utf-8")
+    return 0
+'''
+    materialized = _materialize_artifact(artifact, tmp_path / "workspace")
+    layer = RuntimeValidationLayer("python", timeout_seconds=30)
+
+    result = layer.validate(
+        artifact,
+        plan,
+        build_spec,
+        materialized,
+        tmp_path / "workspace",
+    )
+
+    assert result.passed is True
+    entrypoint = result.evidence["entrypoint_results"]["src/pipeline.py"]
+    assert entrypoint["executed"] is True
+    assert entrypoint["smoke_contract"]["argument_count"] == 2
+    assert entrypoint["smoke_contract"]["output_format"] == "json"
+
+
+def test_end_to_end_quality_evidence_is_behavioral_not_name_based():
+    content = '''def test_complete_flow(tmp_path):
+    source = tmp_path / "events.jsonl"
+    output = tmp_path / "summary.json"
+    source.write_text('{"sensor_id":"a","value":1}\\n', encoding="utf-8")
+    assert pipeline.run(str(source), str(output)) == 0
+    result = output.read_text(encoding="utf-8")
+    assert "sensor_id" in result
+'''
+
+    assert has_end_to_end_file_workflow_test(content, {"run"})
+    assert not has_end_to_end_file_workflow_test(
+        "def test_named_only():\n    assert True\n",
+        {"run"},
+    )
 
 
 def test_runtime_module_names_are_package_aware():

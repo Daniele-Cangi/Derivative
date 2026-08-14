@@ -6,6 +6,8 @@ from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_canonicalized_deduplication_assertion,
     has_expected_exception_assertion,
+    has_json_lines_processing,
+    interface_parameter_is_exercised,
 )
 from core.forge.validation.obligations import ObligationValidationLayer
 
@@ -73,6 +75,12 @@ def _test_contract_failures(
         for requirement in contract.get("requirements", []):
             requirement_id = str(requirement.get("id", ""))
             atom = atoms_by_id.get(requirement_id)
+            coverage = plan.requirement_coverage.get(requirement_id, {})
+            source_content = "\n\n".join(
+                candidate_files[source_path]
+                for source_path in coverage.get("files", [])
+                if source_path.startswith("src/") and source_path in candidate_files
+            )
             missing_terms = [
                 term
                 for term in requirement.get("evidence_terms", [])
@@ -84,6 +92,12 @@ def _test_contract_failures(
                 and not behaviorally_evidences(
                     str(term),
                     content,
+                    public_interface_names,
+                )
+                and not interface_parameter_is_exercised(
+                    str(term),
+                    content,
+                    source_content,
                     public_interface_names,
                 )
             ]
@@ -145,6 +159,7 @@ def _source_contract_failures(
         if not source_paths:
             continue
         source_corpus = "\n".join(candidate_files[path].lower() for path in source_paths)
+        source_content = "\n\n".join(candidate_files[path] for path in source_paths)
         test_corpus = "\n\n".join(
             candidate_files[path]
             for path in (
@@ -157,6 +172,10 @@ def _source_contract_failures(
             term
             for term in atom.evidence_terms
             if not ObligationValidationLayer._semantic_term_present(term, source_corpus)
+            and not (
+                term in {"jsonl", "input_jsonl"}
+                and has_json_lines_processing(source_content)
+            )
             and not behaviorally_evidences(term, test_corpus, public_interface_names)
         ]
         if missing_terms:

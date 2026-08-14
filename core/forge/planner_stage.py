@@ -226,10 +226,16 @@ class PlannerStage:
                     "Python JSON Lines sales pipeline with record validation, malformed-event quarantine, "
                     "per-customer aggregation, and summary JSON output."
                 )
-            if self._is_jsonl_pipeline(build_spec):
+            if self._is_telemetry_jsonl_pipeline(build_spec):
                 return (
                     "Python CLI data pipeline with JSON Lines telemetry ingestion, record validation, "
                     "JSONL quarantine output, per-device aggregation, and summary CSV generation."
+                )
+            if self._is_jsonl_pipeline(build_spec):
+                return (
+                    "Python JSON Lines data pipeline with the declared public interface, "
+                    "requirement-defined record validation, deterministic output persistence, "
+                    "and end-to-end behavioral tests."
                 )
             return (
                 "Python data pipeline with watched-directory ingestion, configurable row-schema validation, "
@@ -304,7 +310,7 @@ class PlannerStage:
                         source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_pipeline.py"),
                     ),
                 ]
-            if self._is_jsonl_pipeline(build_spec):
+            if self._is_telemetry_jsonl_pipeline(build_spec):
                 return [
                     PlanFile(
                         path="src/pipeline.py",
@@ -335,6 +341,8 @@ class PlannerStage:
                         source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_pipeline.py"),
                     ),
                 ]
+            if self._is_jsonl_pipeline(build_spec):
+                return self._derive_generic_jsonl_file_tree(build_spec)
             return [
                 PlanFile(
                     path="src/pipeline.py",
@@ -460,8 +468,63 @@ class PlannerStage:
             ),
         ]
 
+    def _derive_generic_jsonl_file_tree(self, build_spec: BuildSpec) -> List[PlanFile]:
+        files = [
+            PlanFile(
+                path="src/pipeline.py",
+                purpose=(
+                    "JSON Lines workflow orchestration through the public interface and "
+                    "requirement-defined deterministic output writing."
+                ),
+                source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/pipeline.py"),
+            ),
+            PlanFile(
+                path="src/watcher.py",
+                purpose="JSON Lines input iteration with parse-error preservation.",
+                source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/watcher.py"),
+            ),
+            PlanFile(
+                path="src/validator.py",
+                purpose="Requirement-defined event field and type validation.",
+                source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/validator.py"),
+            ),
+            PlanFile(
+                path="tests/test_pipeline.py",
+                purpose="End-to-end verification of parsing, validation, output, and return status.",
+                source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_pipeline.py"),
+            ),
+        ]
+        if "quarantine" in self._requirement_corpus(build_spec):
+            files.insert(
+                3,
+                PlanFile(
+                    path="src/quarantine.py",
+                    purpose="Persistence of malformed events required by the input contract.",
+                    source_requirement_refs=self._requirement_ids_for_file(
+                        build_spec,
+                        "src/quarantine.py",
+                    ),
+                ),
+            )
+        return files
+
     def _derive_interfaces(self, build_spec: BuildSpec) -> List[PlanInterface]:
         if self._is_pipeline_build(build_spec):
+            declared_interfaces = self._library_interfaces(build_spec)
+            if declared_interfaces:
+                return [
+                    PlanInterface(
+                        name=interface.name,
+                        interface_type=(
+                            "entrypoint"
+                            if interface.name == "run"
+                            else interface.interface_type
+                        ),
+                        signature=interface.signature,
+                        description=interface.description,
+                    )
+                    for interface in declared_interfaces
+                ]
             if self._is_sales_jsonl_pipeline(build_spec):
                 return [
                     PlanInterface(
@@ -1082,6 +1145,15 @@ class PlannerStage:
         return any(
             bool({"input_jsonl", "jsonl"} & set(atom.evidence_terms))
             for atom in build_spec.requirement_atoms
+        )
+
+    def _is_telemetry_jsonl_pipeline(self, build_spec: BuildSpec) -> bool:
+        if not self._is_jsonl_pipeline(build_spec):
+            return False
+        combined = self._requirement_corpus(build_spec)
+        return all(
+            token in combined
+            for token in ("device_id", "timestamp", "temperature_c")
         )
 
     def _is_sales_jsonl_pipeline(self, build_spec: BuildSpec) -> bool:

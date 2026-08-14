@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
-from core.forge.semantic_contracts import behaviorally_evidences
+from core.forge.semantic_contracts import (
+    behaviorally_evidences,
+    has_json_lines_processing,
+    interface_parameter_is_exercised,
+)
 from core.forge.validation.common import ValidationLayerBase
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 from core.forge.validation.capabilities import CapabilityContractChecker
@@ -341,6 +345,9 @@ class ObligationValidationLayer(ValidationLayerBase):
                 if f"tests/{name}.py" in files_by_path
             ]
             source_corpus = "\n".join(files_by_path[path].content.lower() for path in source_paths)
+            source_content = "\n\n".join(
+                files_by_path[path].content for path in source_paths
+            )
             test_corpus = "\n".join(files_by_path[path].content.lower() for path in test_paths)
             behavioral_test_corpus = "\n\n".join(
                 files_by_path[path].content for path in test_paths
@@ -356,6 +363,10 @@ class ObligationValidationLayer(ValidationLayerBase):
                     term
                     for term in atom.evidence_terms
                     if not self._semantic_term_present(term, source_corpus)
+                    and not (
+                        term in {"jsonl", "input_jsonl"}
+                        and has_json_lines_processing(source_content)
+                    )
                     and not behaviorally_evidences(
                         term,
                         behavioral_test_corpus,
@@ -372,6 +383,14 @@ class ObligationValidationLayer(ValidationLayerBase):
                 and not behaviorally_evidences(
                     term,
                     behavioral_test_corpus,
+                    public_interface_names,
+                )
+                and not interface_parameter_is_exercised(
+                    term,
+                    behavioral_test_corpus,
+                    "\n\n".join(
+                        files_by_path[path].content for path in source_paths
+                    ),
                     public_interface_names,
                 )
             ]

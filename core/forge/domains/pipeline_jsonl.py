@@ -4,11 +4,15 @@ from core.forge.contracts import FeasiblePlan, PlanInterface, PlanTest
 def is_jsonl_pipeline(plan: FeasiblePlan) -> bool:
     corpus = " ".join(
         [
+            plan.build_spec.normalized_requirement,
             plan.architecture_summary,
             *(plan_file.purpose for plan_file in plan.file_tree_plan),
         ]
     ).lower()
-    return "json lines" in corpus or "jsonl" in corpus
+    return (
+        ("json lines" in corpus or "jsonl" in corpus)
+        and all(token in corpus for token in ("device_id", "timestamp", "temperature_c"))
+    )
 
 
 def render_jsonl_file(

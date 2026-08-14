@@ -82,6 +82,15 @@ SALES_JSONL_PIPELINE_REQUIREMENT = (
     "write per-customer transaction_count and total_amount to summary JSON. Include end-to-end tests."
 )
 
+GENERIC_JSONL_PIPELINE_REQUIREMENT = (
+    "Build a Python JSON Lines data pipeline exposing "
+    "run(input_path: str, output_path: str) -> int. "
+    "Each valid event contains a non-empty sensor_id and a numeric value. Skip malformed events, "
+    "write JSON containing valid_count, malformed_count, and a sensors object with count, min, max, "
+    "and mean for each sensor, return 0 on success, produce deterministic keys, and include "
+    "end-to-end tests."
+)
+
 
 def _build_planner(tmp_path: Path) -> PlannerStage:
     return PlannerStage(
@@ -201,7 +210,7 @@ def test_sales_jsonl_pipeline_plan_preserves_output_and_function_signature(tmp_p
     assert [(item.name, item.interface_type, item.signature) for item in output.interfaces] == [
         (
             "run",
-            "function",
+            "entrypoint",
             "run(input_path: str, quarantine_path: str, summary_json_path: str) -> int",
         )
     ]
@@ -210,6 +219,28 @@ def test_sales_jsonl_pipeline_plan_preserves_output_and_function_signature(tmp_p
     purposes = " ".join(item.purpose for item in output.file_tree_plan).lower()
     assert "customer_id" in purposes
     assert "telemetry" not in purposes
+
+
+def test_generic_jsonl_pipeline_plan_preserves_declared_contract_without_telemetry_shape(tmp_path):
+    output = _build_planner(tmp_path).plan(
+        RequirementCompiler().compile(GENERIC_JSONL_PIPELINE_REQUIREMENT)
+    )
+
+    assert isinstance(output, FeasiblePlan)
+    assert [(item.name, item.interface_type, item.signature) for item in output.interfaces] == [
+        (
+            "run",
+            "entrypoint",
+            "run(input_path: str, output_path: str) -> int",
+        )
+    ]
+    assert "declared public interface" in output.architecture_summary.lower()
+    purposes = " ".join(item.purpose for item in output.file_tree_plan).lower()
+    assert "json lines" in purposes
+    assert "telemetry" not in purposes
+    assert "summary csv" not in purposes
+    assert "device_id" not in purposes
+    assert "src/quarantine.py" not in {item.path for item in output.file_tree_plan}
 
 
 def test_requirement_compiler_and_planner_return_infeasibility_certificate(tmp_path):
