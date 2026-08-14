@@ -1,0 +1,68 @@
+[
+  {
+    "case_id": "B001",
+    "requirement": "Build a Python library exposing compare_versions(left: str, right: str) -> int for Semantic Versioning 2.0.0. Return -1, 0, or 1 by precedence; compare major, minor, and patch numerically; order prerelease identifiers according to the SemVer rules; ignore build metadata; reject invalid versions with ValueError; and include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["blind-v2", "external-spec", "library", "semver"],
+    "oracle": {"path": "oracles/B001/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "B002",
+    "requirement": "Build a Python library exposing resolve_pointer(document: object, pointer: str) -> object implementing JSON Pointer evaluation from RFC 6901. The empty pointer returns the document root; decode ~1 as slash and ~0 as tilde in that order; support object members and zero-based array indices; reject malformed escapes, missing members, out-of-range indices, and array indices with leading zeros by raising ValueError; and include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["blind-v2", "external-spec", "library", "json-pointer"],
+    "oracle": {"path": "oracles/B002/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "B003",
+    "requirement": "Build a Python library exposing parse_rfc3339(value: str) -> datetime implementing the RFC 3339 Internet timestamp profile. Accept UTC Z and numeric timezone offsets, return a timezone-aware datetime normalized to UTC, accept fractional seconds, reject timestamps without a timezone, reject hour 24, raise ValueError for invalid input, and include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["blind-v2", "external-spec", "library", "rfc3339"],
+    "oracle": {"path": "oracles/B003/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "B004",
+    "requirement": "Build a Python CLI whose main(argv) reads a JSON array of objects containing unique string id and numeric score fields, stably orders records by descending score and then ascending id, writes the ordered array as JSON to an output path, rejects duplicate ids or malformed records with ValueError, and includes behavioral tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["blind-v2", "cli", "json", "sorting"],
+    "oracle": {"path": "oracles/B004/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "B005",
+    "requirement": "Build a Python library exposing merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]. Sort intervals by start, merge overlapping and touching intervals, return a deterministic list without mutating the input, reject an interval whose start exceeds its end with ValueError, and include tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["blind-v2", "library", "intervals"],
+    "oracle": {"path": "oracles/B005/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "B006",
+    "requirement": "Build a Python JSON Lines data pipeline exposing run(input_path: str, output_path: str) -> int. Each valid event contains a non-empty sensor_id and a numeric value. Skip malformed events, write JSON containing valid_count, malformed_count, and a sensors object with count, min, max, and mean for each sensor, return 0 on success, produce deterministic keys, and include end-to-end tests.",
+    "expected_terminal_status": "verified",
+    "tags": ["blind-v2", "pipeline", "jsonl", "aggregation"],
+    "oracle": {"path": "oracles/B006/oracle.py", "timeout_seconds": 30}
+  },
+  {
+    "case_id": "B007",
+    "requirement": "Build a Python library that accepts every possible human-written date expression in every natural language, always infers the writer's intended calendar date without locale, timezone, context, configuration, or ambiguity, and guarantees an exact result. Include exhaustive tests proving the guarantee.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["blind-v2", "universal-constraint", "dates"]
+  },
+  {
+    "case_id": "B008",
+    "requirement": "Build a production tool that reads organizational data, identifies the important anomalies accurately, prioritizes the risky items appropriately, produces the right report for management, and includes comprehensive tests.",
+    "expected_terminal_status": "validation_failed",
+    "tags": ["blind-v2", "ambiguity", "underspecified"]
+  },
+  {
+    "case_id": "B009",
+    "requirement": "Build a lossless encoder that maps every possible two-byte input to exactly one output byte and a decoder that reconstructs the original two-byte input for every encoded value, without external state, metadata, probabilistic behavior, or rejection.",
+    "expected_terminal_status": "infeasible_proven",
+    "tags": ["blind-v2", "contradiction", "pigeonhole-principle"]
+  },
+  {
+    "case_id": "B010",
+    "requirement": "Build an append-only audit log that must permanently retain every appended record and simultaneously provide an erase_all operation after which the log contains exactly zero records and every erased record remains retrievable from that same log, with no backup, external storage, hidden metadata, or reconstruction source.",
+    "expected_terminal_status": "infeasible_proven",
+    "tags": ["blind-v2", "contradiction", "retention"]
+  }
+]

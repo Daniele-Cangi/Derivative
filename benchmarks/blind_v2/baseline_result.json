@@ -1,0 +1,33 @@
+{
+  "bundle_id": "forge-blind-v2-20260814",
+  "report_id": "forge-blind-v2-20260814-20260814T092319Z",
+  "execution_mode": "hybrid",
+  "max_planner_attempts": 1,
+  "max_coder_attempts": 3,
+  "baseline_sha256": "a60d4b74575aac6a26c7ac1f3cf07051539bd3aeecdc96491123062ca9a42d79",
+  "manifest_sha256": "70616ebe69272c06dd6f8984e88028069076e1e45c5949fb1061629668fe707b",
+  "full_report_sha256": "d98c92fa72141df78011c37661a1ecbe9bc02d56c59bc98c920f986603e6c9ba",
+  "metrics": {
+    "total_cases": 10,
+    "passed_cases": 6,
+    "failed_cases": 4,
+    "status_accuracy": 0.6,
+    "external_verified_at_1": 0.6666666666666666,
+    "oracle_pass_rate": 1.0,
+    "external_false_verified_rate": 0.0,
+    "infeasible_detection_rate": 0.0,
+    "total_runtime_seconds": 888.36
+  },
+  "case_results": [
+    {"case_id": "B001", "expected": "verified", "observed": "verified", "passed": true, "oracle_passed": true, "failure_signatures": []},
+    {"case_id": "B002", "expected": "verified", "observed": "verified", "passed": true, "oracle_passed": true, "failure_signatures": []},
+    {"case_id": "B003", "expected": "verified", "observed": "verified", "passed": true, "oracle_passed": true, "failure_signatures": []},
+    {"case_id": "B004", "expected": "verified", "observed": "validation_failed", "passed": false, "oracle_passed": null, "failure_signatures": ["import_failure"]},
+    {"case_id": "B005", "expected": "verified", "observed": "verified", "passed": true, "oracle_passed": true, "failure_signatures": []},
+    {"case_id": "B006", "expected": "verified", "observed": "validation_failed", "passed": false, "oracle_passed": null, "failure_signatures": ["import_failure", "semantic_omission", "semantic_content_mismatch", "missing_semantic_requirement_coverage", "quality_contract_violation", "adapter_capability_mismatch", "test_execution_failure", "repair_no_change"]},
+    {"case_id": "B007", "expected": "validation_failed", "observed": "validation_failed", "passed": true, "oracle_passed": null, "failure_signatures": ["universal_constraint_unproven", "adapter_capability_mismatch", "test_execution_failure", "non_semantic_test", "fake_acceptance_coverage", "missing_semantic_requirement_coverage", "superficial_stub"]},
+    {"case_id": "B008", "expected": "validation_failed", "observed": "validation_failed", "passed": true, "oracle_passed": null, "failure_signatures": ["quality_contract_violation", "repair_no_change"]},
+    {"case_id": "B009", "expected": "infeasible_proven", "observed": "validation_failed", "passed": false, "oracle_passed": null, "failure_signatures": ["universal_constraint_unproven", "non_semantic_test", "fake_acceptance_coverage", "missing_semantic_requirement_coverage", "superficial_stub"]},
+    {"case_id": "B010", "expected": "infeasible_proven", "observed": "validation_failed", "passed": false, "oracle_passed": null, "failure_signatures": ["quality_contract_violation", "repair_no_change"]}
+  ]
+}

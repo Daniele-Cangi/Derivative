@@ -206,6 +206,13 @@ python forge_heldout_benchmark.py
 
 The held-out runner does not trust Forge's generated tests. For feasible cases it executes a repository-maintained oracle against the packaged artifact and reports `External Verified@1`, oracle pass rate, and external false-verified rate. This benchmark is intentionally not a CI gate until a stable external baseline is established.
 
+Run the sealed blind-v2 benchmark against the exact Forge baseline recorded in its manifest:
+```bash
+python forge_blind_benchmark.py --mode hybrid
+```
+
+`benchmarks/blind_v2/manifest.json` locks the dataset, every external oracle, and the protected Forge source baseline with SHA-256 digests. Loading fails before execution if any locked input or Forge implementation file changed. The bundled calibration set includes contracts derived from Semantic Versioning 2.0.0, RFC 6901, and RFC 3339 plus independently specified behavioral cases. Forge receives only each natural-language requirement; the acceptance oracle runs afterward against the packaged artifact. The first run is preserved in `benchmarks/blind_v2/baseline_result.json`. For later genuinely private evaluations, pass an independently maintained bundle with `--manifest` and do not commit it into the repository.
+
 Key Forge tests include:
 - `tests/test_forge_planner_stage.py`
 - `tests/test_forge_coder_stage.py`
@@ -214,3 +221,4 @@ Key Forge tests include:
 - `tests/test_forge_orchestration.py`
 - `tests/test_forge_requirement_preservation.py`
 - `tests/test_forge_heldout_benchmark.py`
+- `tests/test_forge_blind_benchmark.py`

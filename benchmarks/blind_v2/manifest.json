@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "bundle_id": "forge-blind-v2-20260814",
+  "frozen_at": "2026-08-14T09:06:03Z",
+  "dataset": {
+    "path": "cases.json",
+    "sha256": "61739ecc9fefbcfc775bf4d4fede9a81c7ee78256590c740d166d4e9bd2ed0dd"
+  },
+  "forge_baseline": {
+    "sha256": "a60d4b74575aac6a26c7ac1f3cf07051539bd3aeecdc96491123062ca9a42d79",
+    "file_count": 48
+  },
+  "oracle_sha256": {
+    "B001": "4d95ccd06300e0237d21b9c19b060d90081d20a7f937c7e1eb0a4958ba6feecf",
+    "B002": "080082d7fdc13ba8c44883f21871d80deec6424a9d83ce2b6c0893d790939168",
+    "B003": "f5e4e12566655b13769d2ac2c46f60cd7982dd920ab51c52f25800cb506ca81d",
+    "B004": "39e8576ad6bd924a57e58416c97b019046d580679146cf600ad1cda4976c30b0",
+    "B005": "3b62898207ca61fed970214648924bbcb15eb32742add9547fd805e6c93431c2",
+    "B006": "db236e4093a1d78e2c70bdcb27f5b09a48aed4bae3652824c90c6e0878c1ee13"
+  },
+  "source_urls": [
+    "https://semver.org/spec/v2.0.0.html",
+    "https://www.rfc-editor.org/rfc/rfc6901.html",
+    "https://www.rfc-editor.org/rfc/rfc3339.html"
+  ]
+}
