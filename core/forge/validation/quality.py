@@ -136,7 +136,11 @@ class QualityContractChecker:
                 if path in materialized and materialized[path].exists()
             ).lower()
             checks["integration_tests_present"] = (
-                "test_integration" in test_sources or "integration" in test_sources
+                "test_integration" in test_sources
+                or "integration" in test_sources
+                or "end_to_end" in test_sources
+                or "end-to-end" in test_sources
+                or "e2e" in test_sources
             )
             if not checks["integration_tests_present"]:
                 failures.append(

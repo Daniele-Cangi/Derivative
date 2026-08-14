@@ -116,7 +116,7 @@ class RepairPolicy:
         import_results = self._mapping(layer1.get("import_results"))
         for module_name, result in self._mapping(import_results.get("modules")).items():
             if isinstance(result, dict) and not result.get("ok", False):
-                paths.append(f"src/{module_name}.py")
+                paths.append(self._source_path_for_module(str(module_name), artifact))
                 refs.append(f"layer1.import_results:{module_name}")
 
         entrypoint_results = self._mapping(layer1.get("entrypoint_results"))
@@ -228,6 +228,16 @@ class RepairPolicy:
             refs.append("layer2.adapter_capability_checks")
 
         return self._dedupe(paths), self._dedupe(refs)
+
+    @staticmethod
+    def _source_path_for_module(module_name: str, artifact: CodeArtifact) -> str:
+        module_path = module_name.replace(".", "/")
+        file_path = f"src/{module_path}.py"
+        package_path = f"src/{module_path}/__init__.py"
+        artifact_paths = {generated.path.replace("\\", "/") for generated in artifact.files}
+        if package_path in artifact_paths:
+            return package_path
+        return file_path
 
     @staticmethod
     def _mapping(value: Any) -> Dict[str, Any]:

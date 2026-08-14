@@ -21,6 +21,13 @@ JSON_MERGE_REQUIREMENT = (
     "them, and rejects a non-object root. Include tests."
 )
 
+EMAIL_LIBRARY_REQUIREMENT = (
+    "Build a Python library exposing canonicalize_email(value: str) -> str and "
+    "deduplicate_emails(values: list[str]) -> list[str]. Canonicalization must trim surrounding "
+    "whitespace and lowercase the address. Deduplication must preserve first-seen order after "
+    "canonicalization. Include tests."
+)
+
 
 @pytest.fixture(scope="module")
 def json_merge_case(tmp_path_factory):
@@ -34,6 +41,8 @@ def json_merge_case(tmp_path_factory):
     ).plan(spec)
     assert isinstance(plan, FeasiblePlan)
     artifact = CoderStage().generate(plan)
+    artifact.artifact_manifest["metadata"]["domain_adapter"] = "generic"
+    artifact.artifact_manifest["metadata"]["adapter_capabilities"] = []
     validation = ValidatorStage().validate(artifact, plan, spec)
     assert "adapter_capability_mismatch" in validation.failure_signatures
     return spec, plan, artifact, validation
@@ -290,6 +299,9 @@ def test_semantic_preflight_rejects_return_code_only_rejection_test(json_merge_c
         if generated.path != "forge_artifact_manifest.json"
     }
     files["src/cli.py"] = _source()
+    files["tests/test_recursive_json_merge.py"] = _test_source(
+        "tests/test_recursive_json_merge.py"
+    )
     files["tests/test_rejects_non_object_json_root.py"] = '''import cli
 
 
@@ -322,3 +334,203 @@ def test_rejects_non_object_root(tmp_path):
         "pytest.raises((ValueError, TypeError, SystemExit))" in requirement
         for requirement in result["correction_requirements"]
     )
+
+
+def test_semantic_preflight_accepts_behavioral_list_replacement_and_try_except(json_merge_case):
+    _, plan, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/cli.py"] = _source()
+    files["tests/test_recursive_json_merge.py"] = _test_source(
+        "tests/test_recursive_json_merge.py"
+    )
+    files["tests/test_replaces_json_lists.py"] = '''import json
+import cli
+
+
+def test_override_list_replaces_base_list(tmp_path):
+    base = tmp_path / "base.json"
+    override = tmp_path / "override.json"
+    output = tmp_path / "output.json"
+    base.write_text('{"items":[1,2]}', encoding="utf-8")
+    override.write_text('{"items":[3]}', encoding="utf-8")
+    assert cli.main([str(base), str(override), str(output)]) == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["items"] == [3]
+'''
+    files["tests/test_rejects_non_object_json_root.py"] = '''import cli
+
+
+def test_rejects_non_object_root(tmp_path):
+    base = tmp_path / "base.json"
+    override = tmp_path / "override.json"
+    output = tmp_path / "output.json"
+    base.write_text('[]', encoding="utf-8")
+    override.write_text('{}', encoding="utf-8")
+    try:
+        cli.main([str(base), str(override), str(output)])
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError")
+'''
+    contracts = build_test_generation_contracts(
+        sorted(path for path in files if path.startswith("tests/")),
+        plan,
+        artifact,
+    )
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    assert result["passed"] is True
+
+
+def test_semantic_preflight_rejects_helper_only_non_object_rejection(json_merge_case):
+    _, plan, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/cli.py"] = _source()
+    files["tests/test_rejects_non_object_json_root.py"] = '''import pytest
+import cli
+
+
+def test_rejects_non_object_root(tmp_path):
+    base = tmp_path / "base.json"
+    base.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError):
+        cli.load_json_file(str(base))
+    result = cli.main([str(base), str(tmp_path / "override.json"), str(tmp_path / "out.json")])
+    assert result != 0
+'''
+    contracts = build_test_generation_contracts(
+        sorted(path for path in files if path.startswith("tests/")),
+        plan,
+        artifact,
+    )
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    assert result["passed"] is False
+    rejection_failure = next(
+        item for item in result["failures"] if item.get("requirement_id") == "R003"
+    )
+    assert rejection_failure["expected_exception_missing"] is True
+
+
+def test_semantic_preflight_rejects_noncanonical_deduplication_result(tmp_path):
+    spec = RequirementCompiler().compile(EMAIL_LIBRARY_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/library/core.py"] = '''def canonicalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def deduplicate_emails(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(canonicalize_email(value) for value in values))
+'''
+    files["src/library/__init__.py"] = (
+        "from .core import canonicalize_email, deduplicate_emails\n"
+    )
+    mapped_path = "tests/test_implement_functional_goal_build_a_python.py"
+    files[mapped_path] = '''from library import deduplicate_emails
+
+
+def test_deduplicate_preserves_original_first_value():
+    values = [" Alice@Example.com ", "alice@example.COM", "BOB@example.com"]
+    result = deduplicate_emails(values)
+    assert result == [" Alice@Example.com ", "BOB@example.com"]
+'''
+    contracts = build_test_generation_contracts(
+        sorted(path for path in files if path.startswith("tests/")),
+        plan,
+        artifact,
+    )
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    assert result["passed"] is False
+    failure = next(
+        item for item in result["failures"] if item.get("requirement_id") == "R001"
+    )
+    assert failure["canonicalized_deduplication_missing"] is True
+
+
+def test_semantic_preflight_accepts_canonicalized_deduplication_result(tmp_path):
+    spec = RequirementCompiler().compile(EMAIL_LIBRARY_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/library/core.py"] = '''def canonicalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def deduplicate_emails(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(canonicalize_email(value) for value in values))
+'''
+    files["src/library/__init__.py"] = (
+        "from .core import canonicalize_email, deduplicate_emails\n"
+    )
+    mapped_path = "tests/test_implement_functional_goal_build_a_python.py"
+    files[mapped_path] = '''from library import canonicalize_email, deduplicate_emails
+
+
+def test_canonicalized_deduplication():
+    values = [" Alice@Example.com ", "alice@example.COM", "BOB@example.com"]
+    result = deduplicate_emails(values)
+    assert canonicalize_email(" Alice@Example.com ") == "alice@example.com"
+    assert result == ["alice@example.com", "bob@example.com"]
+'''
+    contracts = build_test_generation_contracts(
+        sorted(path for path in files if path.startswith("tests/")),
+        plan,
+        artifact,
+    )
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    assert result["passed"] is True

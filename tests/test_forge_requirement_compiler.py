@@ -28,6 +28,11 @@ TELEMETRY_REQUIREMENT = (
     "behavioral tests for parsing, quarantine handling, aggregation, and the complete CLI flow."
 )
 
+AMBIGUOUS_RISK_REQUIREMENT = (
+    "Build a tool that processes business records, identifies risky entries, "
+    "produces an appropriate report, and includes tests."
+)
+
 
 def test_extract_quality_contract_for_base_service_requirement():
     spec = RequirementCompiler().compile(BASE_SERVICE_REQUIREMENT)
@@ -92,3 +97,10 @@ def test_telemetry_requirement_is_split_into_evidence_bearing_atoms():
     )
     assert {"minimum", "maximum", "average", "per_device"} <= set(atoms["R004"].evidence_terms)
     assert atoms["R005"].evidence_terms == ["summary_csv"]
+
+
+def test_material_business_policy_ambiguities_are_preserved():
+    spec = RequirementCompiler().compile(AMBIGUOUS_RISK_REQUIREMENT)
+
+    assert "Risk classification criteria are materially unspecified." in spec.ambiguity_flags
+    assert "Report schema and output format are materially unspecified." in spec.ambiguity_flags

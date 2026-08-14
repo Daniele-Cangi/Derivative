@@ -109,7 +109,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
     def _import_modules(self, workspace: Path, module_paths: List[str]) -> Tuple[bool, Dict[str, object]]:
         if not module_paths:
             return True, {"modules": {}, "returncode": 0}
-        modules = [Path(path).stem for path in module_paths]
+        modules = [self._module_name_for_src_path(path) for path in module_paths]
         script = (
             "import importlib\n"
             "import json\n"
@@ -182,10 +182,11 @@ class RuntimeValidationLayer(ValidationLayerBase):
             return result
         result["function_present"] = True
 
-        module_name = target.stem
+        module_name = self._module_name_for_src_path(entrypoint)
+        is_jsonl_input = self._is_jsonl_input(build_spec)
         is_jsonl_pipeline = self._is_jsonl_pipeline(build_spec)
         is_json_merge_cli = self._is_json_merge_cli(build_spec)
-        input_csv = workspace / ("validator_input.jsonl" if is_jsonl_pipeline else "validator_input.csv")
+        input_csv = workspace / ("validator_input.jsonl" if is_jsonl_input else "validator_input.csv")
         output_csv = workspace / "validator_output.csv"
         input_csv.write_text(self._sample_input_content(build_spec), encoding="utf-8")
         call_args = ""
@@ -234,7 +235,10 @@ class RuntimeValidationLayer(ValidationLayerBase):
         return result
 
     def _sample_input_content(self, build_spec: BuildSpec) -> str:
-        if self._is_jsonl_pipeline(build_spec):
+        if self._is_jsonl_input(build_spec):
+            atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
+            if "application log" in atom_text or "counts_by_level" in atom_text:
+                return '{"level":"INFO","message":"validator"}\n'
             return '{"device_id":"device-1","timestamp":"2026-01-15T12:00:00Z","temperature_c":21.5}\n'
         atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
         if "invoice" in atom_text or "due_date" in atom_text:
@@ -248,6 +252,14 @@ class RuntimeValidationLayer(ValidationLayerBase):
         return self._sample_input_content(build_spec)
 
     def _is_jsonl_pipeline(self, build_spec: BuildSpec) -> bool:
+        evidence_terms = {
+            term
+            for atom in build_spec.requirement_atoms
+            for term in atom.evidence_terms
+        }
+        return bool({"input_jsonl", "jsonl"} & evidence_terms) and "quarantine" in evidence_terms
+
+    def _is_jsonl_input(self, build_spec: BuildSpec) -> bool:
         return any(
             bool({"input_jsonl", "jsonl"} & set(atom.evidence_terms))
             for atom in build_spec.requirement_atoms
@@ -270,3 +282,13 @@ class RuntimeValidationLayer(ValidationLayerBase):
             timeout=self.timeout_seconds,
             check=False,
         )
+
+    @staticmethod
+    def _module_name_for_src_path(path: str) -> str:
+        normalized = Path(path.replace("\\", "/")).with_suffix("")
+        parts = list(normalized.parts)
+        if parts and parts[0] == "src":
+            parts = parts[1:]
+        if parts and parts[-1] == "__init__":
+            parts = parts[:-1]
+        return ".".join(parts)

@@ -2,6 +2,11 @@ import re
 from typing import Any
 
 from core.forge.contracts import FeasiblePlan
+from core.forge.semantic_contracts import (
+    behaviorally_evidences,
+    has_canonicalized_deduplication_assertion,
+    has_expected_exception_assertion,
+)
 from core.forge.validation.obligations import ObligationValidationLayer
 
 
@@ -56,6 +61,11 @@ def _test_contract_failures(
         for planned_test in plan.required_tests
         if planned_test.required
     }
+    public_interface_names = {
+        interface.name
+        for interface in plan.interfaces
+        if interface.name.isidentifier()
+    }
     for path, contract in contracts.items():
         if path not in mapped_test_paths:
             continue
@@ -71,10 +81,27 @@ def _test_contract_failures(
                     content.lower(),
                     is_test=True,
                 )
+                and not behaviorally_evidences(
+                    str(term),
+                    content,
+                    public_interface_names,
+                )
             ]
             expects_exception = requires_exception_rejection(atom)
-            has_expected_exception = "pytest.raises" in content or "raises(" in content
-            if missing_terms or (expects_exception and not has_expected_exception):
+            has_expected_exception = has_expected_exception_assertion(
+                content,
+                public_interface_names,
+            )
+            expects_canonicalized_deduplication = requires_canonicalized_deduplication(atom)
+            has_canonicalized_deduplication = has_canonicalized_deduplication_assertion(content)
+            if (
+                missing_terms
+                or (expects_exception and not has_expected_exception)
+                or (
+                    expects_canonicalized_deduplication
+                    and not has_canonicalized_deduplication
+                )
+            ):
                 if path not in failed_paths:
                     failed_paths.append(path)
                 failures.append(
@@ -84,6 +111,10 @@ def _test_contract_failures(
                         "requirement_id": requirement_id,
                         "missing_evidence_terms": missing_terms,
                         "expected_exception_missing": expects_exception and not has_expected_exception,
+                        "canonicalized_deduplication_missing": (
+                            expects_canonicalized_deduplication
+                            and not has_canonicalized_deduplication
+                        ),
                     }
                 )
     return failures, failed_paths, atoms_by_id
@@ -95,6 +126,11 @@ def _source_contract_failures(
     failed_paths: list[str],
 ) -> list[dict[str, Any]]:
     failures: list[dict[str, Any]] = []
+    public_interface_names = {
+        interface.name
+        for interface in plan.interfaces
+        if interface.name.isidentifier()
+    }
     for atom in plan.build_spec.requirement_atoms:
         if atom.category == "ambiguity" or not atom.evidence_terms:
             continue
@@ -109,10 +145,19 @@ def _source_contract_failures(
         if not source_paths:
             continue
         source_corpus = "\n".join(candidate_files[path].lower() for path in source_paths)
+        test_corpus = "\n\n".join(
+            candidate_files[path]
+            for path in (
+                f"tests/{test_name}.py"
+                for test_name in coverage.get("tests", [])
+            )
+            if path in candidate_files
+        )
         missing_terms = [
             term
             for term in atom.evidence_terms
             if not ObligationValidationLayer._semantic_term_present(term, source_corpus)
+            and not behaviorally_evidences(term, test_corpus, public_interface_names)
         ]
         if missing_terms:
             for path in source_paths:
@@ -158,6 +203,12 @@ def correction_requirements(
                 "pytest.raises((ValueError, TypeError, SystemExit)); the source implementation must raise "
                 f"one of those exceptions for requirement {requirement_id}: {atom_text}"
             )
+        if failure.get("canonicalized_deduplication_missing"):
+            requirements.append(
+                f"{path}: call deduplicate_emails with values that differ by surrounding whitespace "
+                "and letter case, then assert that the returned first-seen values are trimmed and "
+                f"lowercased canonical addresses for requirement {requirement_id}: {atom_text}"
+            )
     for failure in source_failures:
         paths = ", ".join(str(path) for path in failure.get("paths", []))
         requirement_id = str(failure.get("requirement_id", ""))
@@ -185,3 +236,14 @@ def requires_exception_rejection(atom: Any) -> bool:
         for token in ("quarantine", "skip", "report", "log")
     )
     return rejects and boundary_type and not operational_handling
+
+
+def requires_canonicalized_deduplication(atom: Any) -> bool:
+    if atom is None:
+        return False
+    normalized = " ".join(atom.text.lower().replace("-", " ").split())
+    return (
+        "deduplic" in normalized
+        and "canonical" in normalized
+        and "first seen order" in normalized
+    )

@@ -11,6 +11,11 @@ from core.forge.capabilities.service import (
 )
 from core.forge.contracts import ArtifactTargetType, FeasiblePlan, PlanInterface, PlanTest
 from core.forge.domains.base import BaseDomainAdapter
+from core.forge.domains.service_events import (
+    is_idempotent_event_service,
+    render_event_service_file,
+    render_event_service_test,
+)
 
 
 class ServiceDomainAdapter(BaseDomainAdapter):
@@ -34,6 +39,10 @@ class ServiceDomainAdapter(BaseDomainAdapter):
         return "src/service.py" in paths
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
+        if is_idempotent_event_service(plan):
+            rendered = render_event_service_file(plan, path, interfaces)
+            if rendered is not None:
+                return rendered
         normalized = path.replace("\\", "/").lower()
         renderer = self._renderers.get(normalized)
         if renderer is not None:
@@ -43,6 +52,8 @@ class ServiceDomainAdapter(BaseDomainAdapter):
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
+        if is_idempotent_event_service(plan):
+            return render_event_service_test(plan, plan_test)
         name = plan_test.test_name.lower()
         objective = plan_test.objective.lower()
         if "suite_executes" in name or any(
@@ -53,6 +64,16 @@ class ServiceDomainAdapter(BaseDomainAdapter):
         return self._template_service_requirement_test(plan)
 
     def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        if is_idempotent_event_service(plan):
+            capabilities = {
+                "rest_service",
+                "api_key_authentication",
+                "sqlite_persistence",
+                "idempotent_event_creation",
+            }
+            if plan.quality_contract.integration_tests:
+                capabilities.add("integration_tests")
+            return capabilities
         capabilities = {
             "rest_service",
             "api_key_authentication",

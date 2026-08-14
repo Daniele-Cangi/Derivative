@@ -142,6 +142,7 @@ class ValidatorStage:
         if {"missing_required_file", "manifest_mismatch", "provenance_mismatch"} & signature_set:
             return FailureCategory.ARCHITECTURAL
         if {
+            "underspecified_requirement",
             "missing_obligation",
             "missing_acceptance_coverage",
             "semantic_omission",
@@ -210,6 +211,7 @@ class ValidatorStage:
             "missing_manifest_obligations": layer2.evidence.get("missing_manifest_obligations", []),
             "missing_provenance_obligations": layer2.evidence.get("missing_provenance_obligations", []),
             "missing_acceptance_coverage": layer2.evidence.get("missing_acceptance_coverage", []),
+            "material_ambiguities": layer2.evidence.get("material_ambiguities", []),
             "requirement_coverage_checks": layer2.evidence.get("requirement_coverage_checks", {}),
             "quality_contract_checks": layer2.evidence.get("quality_contract_checks", []),
             "capability_contract_checks": layer2.evidence.get("capability_contract_checks", {}),

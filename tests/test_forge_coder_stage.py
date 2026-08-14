@@ -57,6 +57,45 @@ TELEMETRY_CLI_REQUIREMENT = (
     "and the complete CLI flow."
 )
 
+IDEMPOTENT_EVENT_SERVICE_REQUIREMENT = (
+    "Build a Python REST service module with API-key authentication and SQLite persistence exposing "
+    "create_event(api_key: str, event_id: str, payload: dict, db_path: str) -> tuple[int, dict]. "
+    "Repeating the same event_id must be idempotent and must not insert a duplicate row. "
+    "Invalid keys return 401. Include integration tests."
+)
+
+SALES_JSONL_PIPELINE_REQUIREMENT = (
+    "Build a Python JSON Lines data pipeline exposing "
+    "run(input_path: str, quarantine_path: str, summary_json_path: str) -> int. "
+    "Each valid sales event has customer_id and amount. Write malformed events to quarantine and "
+    "write per-customer transaction_count and total_amount to summary JSON. Include end-to-end tests."
+)
+
+JSONL_LOG_CLI_REQUIREMENT = (
+    "Build a Python CLI whose main(argv) reads a JSON Lines application log with level and message "
+    "fields, skips malformed lines, and writes a JSON report containing total_valid, "
+    "malformed_count, and counts_by_level. Include behavioral tests."
+)
+
+JSON_MERGE_CLI_REQUIREMENT = (
+    "Build a Python CLI whose main(argv) merges a base JSON object with an override JSON object "
+    "recursively, writes the merged JSON to an output path, replaces lists instead of concatenating "
+    "them, and rejects a non-object root. Include tests."
+)
+
+EMAIL_LIBRARY_REQUIREMENT = (
+    "Build a Python library exposing canonicalize_email(value: str) -> str and "
+    "deduplicate_emails(values: list[str]) -> list[str]. Canonicalization must trim surrounding "
+    "whitespace and lowercase the address. Deduplication must preserve first-seen order after "
+    "canonicalization. Include tests."
+)
+
+ALLOCATION_LIBRARY_REQUIREMENT = (
+    "Build a Python library exposing allocate_cents(total_cents: int, weights: list[int]) -> "
+    "list[int]. It must use largest-remainder allocation, return integers whose sum equals "
+    "total_cents, preserve input order, reject negative totals or weights, and include tests."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -633,3 +672,127 @@ def test_jsonl_telemetry_plan_generates_domain_specific_behavior(tmp_path):
     assert "average" in corpus
     assert "summary_csv" in corpus
     assert "cli_flow" in corpus
+
+
+@pytest.mark.parametrize(
+    ("requirement", "expected_source", "expected_terms", "forbidden_terms"),
+    [
+        (
+            IDEMPOTENT_EVENT_SERVICE_REQUIREMENT,
+            "src/service.py",
+            ("def create_event(", "insert_event_once", "return 401"),
+            ("enforce_rate_limit", "handle_request"),
+        ),
+        (
+            SALES_JSONL_PIPELINE_REQUIREMENT,
+            "src/pipeline.py",
+            ("def run(input_path: str, quarantine_path: str, summary_json_path: str)", "transaction_count", "total_amount"),
+            ("temperature_c", "summary_csv"),
+        ),
+    ],
+)
+def test_contract_specific_domains_generate_executable_semantics(
+    tmp_path,
+    requirement,
+    expected_source,
+    expected_terms,
+    forbidden_terms,
+):
+    spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan)
+    source = _find_generated_file(artifact, expected_source)
+    assert source is not None
+    all_source = "\n".join(
+        item.content for item in artifact.files if item.path.startswith("src/")
+    )
+    assert all(term in all_source for term in expected_terms)
+    assert all(term not in all_source for term in forbidden_terms)
+    assert all("assert True" not in item.content for item in artifact.files if item.path.startswith("tests/"))
+
+
+@pytest.mark.parametrize(
+    ("requirement", "capabilities", "source_terms"),
+    [
+        (
+            JSONL_LOG_CLI_REQUIREMENT,
+            {"cli_entrypoint", "jsonl_log_input", "summary_json_output", "log_level_counts"},
+            {"json.loads", "malformed_count", "counts_by_level"},
+        ),
+        (
+            JSON_MERGE_CLI_REQUIREMENT,
+            {
+                "cli_entrypoint",
+                "recursive_json_merge",
+                "json_list_replacement",
+                "json_object_root_validation",
+            },
+            {"recursive_json_merge", "replace_lists", "JSON root must be an object"},
+        ),
+    ],
+)
+def test_json_cli_profiles_are_deterministic_and_capability_exact(
+    tmp_path,
+    requirement,
+    capabilities,
+    source_terms,
+):
+    spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan)
+    source = _find_generated_file(artifact, "src/cli.py")
+    assert source is not None
+    assert set(artifact.artifact_manifest["metadata"]["adapter_capabilities"]) == capabilities
+    assert all(term in source.content for term in source_terms)
+
+
+def test_email_library_profile_is_narrow_deterministic_and_canonical(tmp_path):
+    spec = RequirementCompiler().compile(EMAIL_LIBRARY_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    assert DomainAdapterRegistry().select(plan).name == "library"
+
+    artifact = CoderStage().generate(plan)
+    core_module = _find_generated_file(artifact, "src/library/core.py")
+    assert core_module is not None
+    assert "result.append(canonical)" in core_module.content
+    assert artifact.artifact_manifest["metadata"]["adapter_capabilities"] == [
+        "library_public_api"
+    ]
+
+
+def test_largest_remainder_library_profile_uses_exact_tie_breaking(tmp_path):
+    spec = RequirementCompiler().compile(ALLOCATION_LIBRARY_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    assert DomainAdapterRegistry().select(plan).name == "library"
+
+    artifact = CoderStage().generate(plan)
+    core_module = _find_generated_file(artifact, "src/library/core.py")
+    assert core_module is not None
+    assert "divmod(total_cents * weight, total_weight)" in core_module.content
+    assert "key=lambda item: (-item[0], item[1])" in core_module.content

@@ -2,6 +2,16 @@ from typing import List, Set
 
 from core.forge.contracts import ArtifactTargetType, FeasiblePlan, PlanInterface, PlanTest
 from core.forge.domains.base import BaseDomainAdapter
+from core.forge.domains.cli_json_logs import (
+    is_json_log_cli,
+    render_json_log_file,
+    render_json_log_test,
+)
+from core.forge.domains.cli_json_merge import (
+    is_recursive_json_merge_cli,
+    render_json_merge_file,
+    render_json_merge_test,
+)
 
 
 class CliDomainAdapter(BaseDomainAdapter):
@@ -21,6 +31,14 @@ class CliDomainAdapter(BaseDomainAdapter):
         return "src/cli.py" in paths or cli_modules.issubset(paths)
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
+        if is_json_log_cli(plan):
+            rendered = render_json_log_file(plan, path, interfaces)
+            if rendered is not None:
+                return rendered
+        if is_recursive_json_merge_cli(plan):
+            rendered = render_json_merge_file(plan, path, interfaces)
+            if rendered is not None:
+                return rendered
         normalized = path.replace("\\", "/").lower()
         if normalized.endswith("src/cli.py") or normalized.endswith("src/main.py"):
             return self._template_cli(plan)
@@ -35,9 +53,27 @@ class CliDomainAdapter(BaseDomainAdapter):
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
+        if is_json_log_cli(plan):
+            return render_json_log_test(plan, plan_test)
+        if is_recursive_json_merge_cli(plan):
+            return render_json_merge_test(plan, plan_test)
         return self._template_for_test(plan, plan_test)
 
     def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        if is_json_log_cli(plan):
+            return {
+                "cli_entrypoint",
+                "jsonl_log_input",
+                "summary_json_output",
+                "log_level_counts",
+            }
+        if is_recursive_json_merge_cli(plan):
+            return {
+                "cli_entrypoint",
+                "recursive_json_merge",
+                "json_list_replacement",
+                "json_object_root_validation",
+            }
         return {
             "cli_entrypoint",
             "csv_input",

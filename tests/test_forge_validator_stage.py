@@ -203,7 +203,7 @@ def test_csv_adapter_capabilities_match_requirement_contract(forge_pipeline):
     assert "expiration_flagging" in evidence["required_capabilities"]
 
 
-def test_json_merge_cli_cannot_be_certified_by_csv_adapter(tmp_path):
+def test_json_merge_cli_is_certified_by_json_merge_profile(tmp_path):
     spec = RequirementCompiler().compile(JSON_MERGE_REQUIREMENT)
     planner = PlannerStage(
         execution_mode="local-only",
@@ -217,15 +217,22 @@ def test_json_merge_cli_cannot_be_certified_by_csv_adapter(tmp_path):
 
     result = ValidatorStage().validate(artifact, plan, spec)
 
-    assert result.passed is False
-    assert "adapter_capability_mismatch" in result.failure_signatures
+    assert result.passed is True
+    assert result.failure_signatures == []
     checks = result.layer2_result.evidence["adapter_capability_checks"]
     assert checks["selected_adapter"] == "cli"
     assert {
         "recursive_json_merge",
         "json_list_replacement",
         "json_object_root_validation",
-    }.issubset(set(checks["missing_capabilities"]))
+    }.issubset(set(checks["provided_capabilities"]))
+    assert checks["missing_capabilities"] == []
+    cli_source = next(
+        generated.content
+        for generated in artifact.files
+        if generated.path == "src/cli.py"
+    )
+    assert "contracts_csv" not in cli_source
 
 
 def test_adapter_capability_manifest_cannot_self_certify(forge_pipeline):
@@ -508,6 +515,27 @@ def test_validator_uses_invoice_smoke_input_for_invoice_specs():
     assert "INV-1,2026-01-15,100.00,Acme" in sample
 
 
+def test_runtime_module_names_are_package_aware():
+    validator = ValidatorStage()
+
+    assert validator.runtime_layer._module_name_for_src_path("src/library/__init__.py") == "library"
+    assert validator.runtime_layer._module_name_for_src_path("src/library/core.py") == "library.core"
+
+
+def test_materially_underspecified_requirement_fails_closed(forge_pipeline):
+    build_spec = copy.deepcopy(forge_pipeline["build_spec"])
+    plan = copy.deepcopy(forge_pipeline["plan"])
+    artifact = copy.deepcopy(forge_pipeline["artifact"])
+    build_spec.ambiguity_flags.append("Risk classification criteria are materially unspecified.")
+    plan.build_spec = build_spec
+
+    result = forge_pipeline["validator"].validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "underspecified_requirement" in result.failure_signatures
+    assert result.layer2_result.evidence["material_ambiguities"]
+
+
 def test_quality_contract_violation_detected_for_hashed_service(tmp_path):
     compiler = RequirementCompiler()
     spec = compiler.compile(PRODUCTION_SERVICE_REQUIREMENT)
@@ -613,6 +641,79 @@ def test_jsonl_telemetry_artifact_passes_all_validation_layers(tmp_path):
     assert entrypoint["executed"] is True
     quality_checks = result.layer2_result.evidence["quality_contract_checks"]
     assert quality_checks["passed"] is True
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        (
+            "Build a Python REST service module with API-key authentication and SQLite persistence exposing "
+            "create_event(api_key: str, event_id: str, payload: dict, db_path: str) -> tuple[int, dict]. "
+            "Repeating the same event_id must be idempotent and must not insert a duplicate row. "
+            "Invalid keys return 401. Include integration tests."
+        ),
+        (
+            "Build a Python JSON Lines data pipeline exposing "
+            "run(input_path: str, quarantine_path: str, summary_json_path: str) -> int. "
+            "Each valid sales event has customer_id and amount. Write malformed events to quarantine and "
+            "write per-customer transaction_count and total_amount to summary JSON. Include end-to-end tests."
+        ),
+    ],
+)
+def test_contract_specific_artifacts_pass_all_validation_layers(tmp_path, requirement):
+    build_spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(build_spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+
+    result = ValidatorStage().validate(artifact, plan, build_spec)
+
+    assert result.passed is True
+    assert result.failure_signatures == []
+    assert result.layer1_result.passed is True
+    assert result.layer2_result.passed is True
+    assert result.layer3_result.passed is True
+    capability_checks = result.layer2_result.evidence["adapter_capability_checks"]
+    assert capability_checks["missing_capabilities"] == []
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        (
+            "Build a Python CLI whose main(argv) reads a JSON Lines application log with level and "
+            "message fields, skips malformed lines, and writes a JSON report containing total_valid, "
+            "malformed_count, and counts_by_level. Include behavioral tests."
+        ),
+        (
+            "Build a Python CLI whose main(argv) merges a base JSON object with an override JSON object "
+            "recursively, writes the merged JSON to an output path, replaces lists instead of "
+            "concatenating them, and rejects a non-object root. Include tests."
+        ),
+    ],
+)
+def test_json_cli_profiles_pass_runtime_obligations_and_adversarial_layers(tmp_path, requirement):
+    build_spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(build_spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+
+    result = ValidatorStage().validate(artifact, plan, build_spec)
+
+    assert result.passed is True
+    assert result.failure_signatures == []
+    assert result.layer1_result.evidence["entrypoint_results"]["src/cli.py"]["executed"] is True
+    assert result.layer2_result.evidence["adapter_capability_checks"]["missing_capabilities"] == []
 
 
 @pytest.mark.parametrize(

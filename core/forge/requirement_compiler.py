@@ -385,6 +385,18 @@ class RequirementCompiler:
             flags.append("Input date/CSV format is unspecified.")
         if re.search(r"\b(robust|efficient|scalable|fast)\b", lowered) and not non_functional_constraints:
             flags.append("Quality adjectives are present without measurable constraints.")
+        if re.search(r"\b(?:identify|identifies|flag|flags)\b.{0,40}\brisky\b", lowered):
+            has_risk_rule = bool(
+                re.search(
+                    r"\b(?:risk[_\s-]?score|threshold|score|rule|criteria|criterion)\b.{0,30}"
+                    r"(?:>=|<=|>|<|equal|at least|at most|\d)",
+                    lowered,
+                )
+            )
+            if not has_risk_rule:
+                flags.append("Risk classification criteria are materially unspecified.")
+        if re.search(r"\b(?:appropriate|suitable)\s+report\b", lowered):
+            flags.append("Report schema and output format are materially unspecified.")
         universal_atoms = [atom for atom in requirement_atoms if atom.strength == "universal"]
         if universal_atoms:
             flags.append(
@@ -691,6 +703,9 @@ class RequirementCompiler:
             ("average", r"\baverage\b"),
             ("aggregation", r"\baggregat(?:e|es|ed|ing|ion)\b"),
             ("per_device", r"\bper[-\s]+device\b"),
+            ("per_customer", r"\bper[-\s]+customer\b"),
+            ("summary_json", r"\bsummary\s+json\b"),
+            ("idempotent_event", r"\bidempotent\b.*\bevent_id\b|\bevent_id\b.*\bidempotent\b"),
             ("totals", r"\btotals?\b"),
             ("counts", r"\bcounts?\b"),
             ("invalid_dates", r"\binvalid\s+dates?\b"),

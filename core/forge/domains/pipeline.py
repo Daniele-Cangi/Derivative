@@ -7,6 +7,11 @@ from core.forge.domains.pipeline_jsonl import (
     render_jsonl_file,
     render_jsonl_test,
 )
+from core.forge.domains.pipeline_sales import (
+    is_sales_jsonl_pipeline,
+    render_sales_file,
+    render_sales_test,
+)
 
 
 class PipelineDomainAdapter(BaseDomainAdapter):
@@ -19,6 +24,10 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         return "src/pipeline.py" in paths or "src/quarantine.py" in paths
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
+        if is_sales_jsonl_pipeline(plan):
+            rendered = render_sales_file(plan, path, interfaces)
+            if rendered is not None:
+                return rendered
         if is_jsonl_pipeline(plan):
             rendered = render_jsonl_file(plan, path, interfaces)
             if rendered is not None:
@@ -37,6 +46,8 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
+        if is_sales_jsonl_pipeline(plan):
+            return render_sales_test(plan, plan_test)
         if is_jsonl_pipeline(plan):
             return render_jsonl_test(plan, plan_test)
         name = plan_test.test_name.lower()
@@ -49,6 +60,14 @@ class PipelineDomainAdapter(BaseDomainAdapter):
         return self._template_pipeline_requirement_test(plan, plan_test)
 
     def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        if is_sales_jsonl_pipeline(plan):
+            return {
+                "pipeline_entrypoint",
+                "jsonl_sales_input",
+                "malformed_record_quarantine",
+                "per_customer_sales_aggregation",
+                "summary_json_output",
+            }
         if is_jsonl_pipeline(plan):
             return {
                 "pipeline_entrypoint",

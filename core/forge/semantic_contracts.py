@@ -1,0 +1,187 @@
+import ast
+
+
+def behaviorally_evidences(
+    term: str,
+    content: str,
+    public_interface_names: set[str] | None = None,
+) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+    if term == "json_object_root_validation":
+        normalized = content.lower().replace("-", "_").replace(" ", "_")
+        constants = {
+            node.value.strip()
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        has_non_object_fixture = bool(
+            constants & {"[]", "null", "true", "false", '"value"', "1"}
+        ) or any(
+            marker in normalized
+            for marker in (
+                "non_object_root",
+                "rejects_non_object",
+                "root_must_be_an_object",
+                "json_root_must_be_an_object",
+            )
+        )
+        return (
+            has_non_object_fixture
+            and has_expected_exception_assertion(
+                content,
+                public_interface_names or {"main", "run", "merge"},
+            )
+        )
+    if term != "json_list_replacement":
+        return False
+    list_literals = [node for node in ast.walk(tree) if isinstance(node, (ast.List, ast.Tuple))]
+    equality_assertions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assert)
+        and isinstance(node.test, ast.Compare)
+        and any(isinstance(operator, (ast.Eq, ast.NotEq)) for operator in node.test.ops)
+        and any(
+            isinstance(value, (ast.List, ast.Tuple))
+            for value in [node.test.left, *node.test.comparators]
+        )
+    ]
+    return len(list_literals) >= 2 and bool(equality_assertions)
+
+
+def has_expected_exception_assertion(
+    content: str,
+    target_names: set[str] | None = None,
+) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                expression = item.context_expr
+                if not isinstance(expression, ast.Call):
+                    continue
+                function = expression.func
+                if isinstance(function, ast.Attribute) and function.attr in {"raises", "assertRaises"}:
+                    if target_names is None or _contains_target_call(node.body, target_names):
+                        return True
+        if isinstance(node, ast.Try):
+            handled = {
+                name
+                for handler in node.handlers
+                for name in _exception_names(handler.type)
+            }
+            if handled & {"ValueError", "TypeError", "SystemExit"} and (
+                target_names is None or _contains_target_call(node.body, target_names)
+            ):
+                return True
+    return False
+
+
+def has_canonicalized_deduplication_assertion(content: str) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+
+    literals: dict[str, list[str]] = {}
+    calls: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        literal = _string_list(node.value, literals)
+        if literal is not None:
+            literals[target.id] = literal
+            continue
+        call_input = _deduplication_call_input(node.value, literals)
+        if call_input is not None:
+            calls[target.id] = call_input
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert) or not isinstance(node.test, ast.Compare):
+            continue
+        if not any(isinstance(operator, ast.Eq) for operator in node.test.ops):
+            continue
+        expressions = [node.test.left, *node.test.comparators]
+        for index, expression in enumerate(expressions):
+            call_input = _deduplication_call_input(expression, literals)
+            if call_input is None and isinstance(expression, ast.Name):
+                call_input = calls.get(expression.id)
+            if call_input is None:
+                continue
+            for expected_expression in expressions[:index] + expressions[index + 1 :]:
+                expected = _string_list(expected_expression, literals)
+                if expected is not None and _is_canonical_deduplication(call_input, expected):
+                    return True
+    return False
+
+
+def _contains_target_call(statements: list[ast.stmt], target_names: set[str]) -> bool:
+    return any(
+        isinstance(node, ast.Call) and _call_name(node) in target_names
+        for statement in statements
+        for node in ast.walk(statement)
+    )
+
+
+def _call_name(node: ast.Call) -> str:
+    if isinstance(node.func, ast.Name):
+        return node.func.id
+    if isinstance(node.func, ast.Attribute):
+        return node.func.attr
+    return ""
+
+
+def _string_list(node: ast.AST, literals: dict[str, list[str]]) -> list[str] | None:
+    if isinstance(node, ast.Name):
+        return literals.get(node.id)
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return None
+    values: list[str] = []
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            return None
+        values.append(item.value)
+    return values
+
+
+def _deduplication_call_input(
+    node: ast.AST,
+    literals: dict[str, list[str]],
+) -> list[str] | None:
+    if not isinstance(node, ast.Call) or _call_name(node) != "deduplicate_emails" or not node.args:
+        return None
+    return _string_list(node.args[0], literals)
+
+
+def _is_canonical_deduplication(values: list[str], expected: list[str]) -> bool:
+    if not values or not any(value != value.strip().lower() for value in values):
+        return False
+    canonical: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = value.strip().lower()
+        if normalized not in seen:
+            seen.add(normalized)
+            canonical.append(normalized)
+    return expected == canonical
+
+
+def _exception_names(node: ast.expr | None) -> list[str]:
+    if node is None:
+        return []
+    if isinstance(node, ast.Name):
+        return [node.id]
+    if isinstance(node, ast.Tuple):
+        return [name for item in node.elts for name in _exception_names(item)]
+    if isinstance(node, ast.Attribute):
+        return [node.attr]
+    return []

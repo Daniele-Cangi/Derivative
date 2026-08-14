@@ -221,6 +221,11 @@ class PlannerStage:
 
     def _build_architecture_summary(self, build_spec: BuildSpec) -> str:
         if self._is_pipeline_build(build_spec):
+            if self._is_sales_jsonl_pipeline(build_spec):
+                return (
+                    "Python JSON Lines sales pipeline with record validation, malformed-event quarantine, "
+                    "per-customer aggregation, and summary JSON output."
+                )
             if self._is_jsonl_pipeline(build_spec):
                 return (
                     "Python CLI data pipeline with JSON Lines telemetry ingestion, record validation, "
@@ -232,6 +237,16 @@ class PlannerStage:
             )
         goals = " ".join(build_spec.functional_goals).lower()
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
+            if self._is_json_log_cli(build_spec):
+                return (
+                    "Python CLI with JSON Lines application-log parsing, malformed-line accounting, "
+                    "per-level aggregation, and JSON report output."
+                )
+            if self._is_recursive_json_merge_cli(build_spec):
+                return (
+                    "Python CLI with recursive JSON object merge, list replacement, root validation, "
+                    "and JSON file output."
+                )
             if self._is_csv_date_cli(build_spec):
                 return (
                     "Python CLI with modular pipeline: CSV input loader, expiration-date extractor, "
@@ -242,6 +257,11 @@ class PlannerStage:
                 "validation, output persistence, and behavioral tests."
             )
         if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
+            if self._is_idempotent_event_service(build_spec):
+                return (
+                    "Python service module with API-key authentication, SQLite-backed idempotent event "
+                    "creation, and integration tests for duplicate and unauthorized requests."
+                )
             return (
                 "Python service composed from separate API, domain, authentication, rate-limit, SQLite storage, "
                 "audit, and observability capability modules."
@@ -256,6 +276,34 @@ class PlannerStage:
         implementation_blueprint: ImplementationBlueprint | None = None,
     ) -> List[PlanFile]:
         if self._is_pipeline_build(build_spec):
+            if self._is_sales_jsonl_pipeline(build_spec):
+                return [
+                    PlanFile(
+                        path="src/pipeline.py",
+                        purpose="Sales-event orchestration, per-customer aggregation, and summary JSON writing.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/pipeline.py"),
+                    ),
+                    PlanFile(
+                        path="src/watcher.py",
+                        purpose="JSON Lines input iteration with line-number and parse-error preservation.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/watcher.py"),
+                    ),
+                    PlanFile(
+                        path="src/validator.py",
+                        purpose="Sales-event customer_id and amount validation.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/validator.py"),
+                    ),
+                    PlanFile(
+                        path="src/quarantine.py",
+                        purpose="Malformed sales-event persistence to the requested quarantine JSONL file.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/quarantine.py"),
+                    ),
+                    PlanFile(
+                        path="tests/test_pipeline.py",
+                        purpose="End-to-end sales parsing, quarantine, aggregation, and summary JSON tests.",
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_pipeline.py"),
+                    ),
+                ]
             if self._is_jsonl_pipeline(build_spec):
                 return [
                     PlanFile(
@@ -386,12 +434,12 @@ class PlannerStage:
                 PlanFile(
                     path="src/library/__init__.py",
                     purpose="Library public exports.",
-                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/library/__init__.py"),
+                    source_requirement_refs=self._library_requirement_ids(build_spec),
                 ),
                 PlanFile(
                     path="src/library/core.py",
                     purpose="Core library logic.",
-                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/library/core.py"),
+                    source_requirement_refs=self._library_requirement_ids(build_spec),
                 ),
                 PlanFile(
                     path="tests/test_library.py",
@@ -414,6 +462,21 @@ class PlannerStage:
 
     def _derive_interfaces(self, build_spec: BuildSpec) -> List[PlanInterface]:
         if self._is_pipeline_build(build_spec):
+            if self._is_sales_jsonl_pipeline(build_spec):
+                return [
+                    PlanInterface(
+                        name="run",
+                        interface_type="function",
+                        signature=(
+                            "run(input_path: str, quarantine_path: str, "
+                            "summary_json_path: str) -> int"
+                        ),
+                        description=(
+                            "Processes sales JSON Lines, quarantines malformed events, writes the "
+                            "per-customer summary, and returns a status code."
+                        ),
+                    )
+                ]
             if self._requires_pipeline_cli(build_spec):
                 return [
                     PlanInterface(
@@ -482,6 +545,26 @@ class PlannerStage:
                 ),
             ]
         if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
+            if self._is_idempotent_event_service(build_spec):
+                return [
+                    PlanInterface(
+                        name="register_user",
+                        interface_type="function",
+                        signature="register_user(user_id: str, api_key: str, db_path: str) -> None",
+                        description="Registers an API key in the configured SQLite database.",
+                    ),
+                    PlanInterface(
+                        name="create_event",
+                        interface_type="function",
+                        signature=(
+                            "create_event(api_key: str, event_id: str, payload: dict, "
+                            "db_path: str) -> tuple[int, dict]"
+                        ),
+                        description=(
+                            "Authenticates the key and creates an event exactly once for each event_id."
+                        ),
+                    ),
+                ]
             return [
                 PlanInterface(
                     name="run",
@@ -508,6 +591,10 @@ class PlannerStage:
                     description="Runs authentication, rate limiting, audit, and response behavior.",
                 ),
             ]
+        if build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
+            interfaces = self._library_interfaces(build_spec)
+            if interfaces:
+                return interfaces
         return [
             PlanInterface(
                 name="run",
@@ -518,7 +605,7 @@ class PlannerStage:
         ]
 
     def _derive_required_tests(self, build_spec: BuildSpec) -> List[PlanTest]:
-        tests: List[PlanTest] = []
+        tests_by_name: Dict[str, PlanTest] = {}
         obligation_fields = (
             list(build_spec.obligation_contract.required_fields)
             if build_spec.obligation_contract is not None
@@ -526,8 +613,9 @@ class PlannerStage:
         )
         for index, criterion in enumerate(build_spec.acceptance_contract.criteria, start=1):
             name, test_type = self._semantic_test_spec(criterion.description, index)
-            tests.append(
-                PlanTest(
+            existing = tests_by_name.get(name)
+            if existing is None:
+                tests_by_name[name] = PlanTest(
                     test_name=name,
                     objective=criterion.description,
                     test_type=test_type,
@@ -536,7 +624,14 @@ class PlannerStage:
                     obligation_fields=obligation_fields,
                     requirement_ids=list(criterion.requirement_ids),
                 )
-            )
+                continue
+            if criterion.criterion_id not in existing.acceptance_criterion_ids:
+                existing.acceptance_criterion_ids.append(criterion.criterion_id)
+            for requirement_id in criterion.requirement_ids:
+                if requirement_id not in existing.requirement_ids:
+                    existing.requirement_ids.append(requirement_id)
+            existing.objective = f"{existing.objective} {criterion.description}".strip()
+        tests = list(tests_by_name.values())
         if not tests:
             tests.append(
                 PlanTest(
@@ -550,6 +645,42 @@ class PlannerStage:
                 )
             )
         return tests
+
+    def _library_requirement_ids(self, build_spec: BuildSpec) -> List[str]:
+        return [
+            atom.requirement_id
+            for atom in build_spec.requirement_atoms
+            if atom.category != "ambiguity" and self._requires_library_source(atom.text)
+        ]
+
+    @staticmethod
+    def _requires_library_source(text: str) -> bool:
+        lowered = text.lower()
+        return not bool(
+            re.search(
+                r"\bincludes?\s+(?:behavioral\s+|integration\s+|unit\s+)?tests?\b|\btests?\s+for\b",
+                lowered,
+            )
+        )
+
+    def _library_interfaces(self, build_spec: BuildSpec) -> List[PlanInterface]:
+        declarations = build_spec.normalized_requirement
+        signatures = re.findall(
+            r"\b([a-zA-Z_]\w*)\s*\(([^()]*)\)\s*->\s*([a-zA-Z_]\w*(?:\[[^\]]+\])?)",
+            declarations,
+        )
+        interfaces: List[PlanInterface] = []
+        for name, arguments, return_type in signatures:
+            signature = f"{name}({arguments.strip()}) -> {return_type.strip()}"
+            interfaces.append(
+                PlanInterface(
+                    name=name,
+                    interface_type="function",
+                    signature=signature,
+                    description=f"Public library API declared by the requirement: {signature}.",
+                )
+            )
+        return interfaces
 
     def _packaging_target(self, artifact_type: ArtifactTargetType) -> str:
         if artifact_type == ArtifactTargetType.CLI:
@@ -573,6 +704,45 @@ class PlannerStage:
             return ImplementationBlueprint(
                 target_artifact_type=build_spec.target_artifact_type,
                 entrypoint_path=entrypoint,
+            )
+
+        if self._is_idempotent_event_service(build_spec):
+            requirement_ids = [
+                atom.requirement_id
+                for atom in build_spec.requirement_atoms
+                if atom.category != "ambiguity"
+            ]
+            return ImplementationBlueprint(
+                target_artifact_type=ArtifactTargetType.SERVICE,
+                entrypoint_path="src/service.py",
+                capabilities=[
+                    CapabilitySpec(
+                        capability_id="cap_service_api",
+                        capability_type="service_api",
+                        module_path="src/service.py",
+                        purpose="Public register_user and idempotent create_event service API.",
+                        interfaces=["register_user", "create_event"],
+                        dependencies=["cap_auth", "cap_storage"],
+                        requirement_ids=requirement_ids,
+                    ),
+                    CapabilitySpec(
+                        capability_id="cap_storage",
+                        capability_type="sqlite_storage",
+                        module_path="src/storage.py",
+                        purpose="SQLite users and unique event storage with atomic insert-or-read behavior.",
+                        interfaces=["init_db", "insert_event_once"],
+                        requirement_ids=requirement_ids,
+                    ),
+                    CapabilitySpec(
+                        capability_id="cap_auth",
+                        capability_type="authentication",
+                        module_path="src/auth.py",
+                        purpose="API-key registration and lookup backed by SQLite.",
+                        interfaces=["register_user", "authenticate"],
+                        dependencies=["cap_storage"],
+                        requirement_ids=requirement_ids,
+                    ),
+                ],
             )
 
         quality = build_spec.quality_contract
@@ -739,6 +909,14 @@ class PlannerStage:
                 relaxations.append(
                     "Increase the edge budget to satisfy complete-connectivity edge requirements."
                 )
+            elif "capacity exactly zero" in lowered:
+                relaxations.append(
+                    "Increase queue capacity to at least one, or remove the requirement to retain an item."
+                )
+            elif "zero-byte file" in lowered:
+                relaxations.append(
+                    "Allow non-zero output length, or remove the requirement that the file contain a JSON object."
+                )
         if not relaxations:
             relaxations.append("Relax at least one conflicting numeric bound and rerun planning.")
         return relaxations
@@ -874,6 +1052,24 @@ class PlannerStage:
         )
         return "csv" in combined and any(token in combined for token in date_domain_tokens)
 
+    def _is_json_log_cli(self, build_spec: BuildSpec) -> bool:
+        if build_spec.target_artifact_type != ArtifactTargetType.CLI:
+            return False
+        combined = self._requirement_corpus(build_spec)
+        return all(
+            token in combined
+            for token in ("json lines", "level", "message", "total_valid", "counts_by_level")
+        )
+
+    def _is_recursive_json_merge_cli(self, build_spec: BuildSpec) -> bool:
+        if build_spec.target_artifact_type != ArtifactTargetType.CLI:
+            return False
+        combined = self._requirement_corpus(build_spec)
+        return all(
+            token in combined
+            for token in ("json", "merge", "recurs", "replaces lists", "non-object root")
+        )
+
     def _requires_pipeline_cli(self, build_spec: BuildSpec) -> bool:
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
             return True
@@ -886,6 +1082,31 @@ class PlannerStage:
         return any(
             bool({"input_jsonl", "jsonl"} & set(atom.evidence_terms))
             for atom in build_spec.requirement_atoms
+        )
+
+    def _is_sales_jsonl_pipeline(self, build_spec: BuildSpec) -> bool:
+        if not self._is_jsonl_pipeline(build_spec):
+            return False
+        combined = self._requirement_corpus(build_spec)
+        return all(
+            token in combined
+            for token in ("customer_id", "amount", "transaction_count", "total_amount")
+        ) and "summary json" in combined
+
+    def _is_idempotent_event_service(self, build_spec: BuildSpec) -> bool:
+        if build_spec.target_artifact_type != ArtifactTargetType.SERVICE:
+            return False
+        combined = self._requirement_corpus(build_spec)
+        return all(token in combined for token in ("create_event", "event_id", "idempotent", "sqlite"))
+
+    @staticmethod
+    def _requirement_corpus(build_spec: BuildSpec) -> str:
+        return " ".join(
+            [
+                build_spec.normalized_requirement.lower(),
+                *(goal.lower() for goal in build_spec.functional_goals),
+                *(atom.text.lower() for atom in build_spec.requirement_atoms),
+            ]
         )
 
     def _build_requirement_coverage(

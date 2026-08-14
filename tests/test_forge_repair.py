@@ -9,8 +9,10 @@ from core.forge.contracts import (
     AcceptanceContract,
     ArtifactTargetType,
     BuildSpec,
+    CodeArtifact,
     FeasiblePlan,
     ForgeRoute,
+    GeneratedFile,
     ObligationContract,
     PlanFile,
     PlanInterface,
@@ -57,6 +59,44 @@ def repair_case(tmp_path_factory):
 
 def _file(artifact, path):
     return next(generated for generated in artifact.files if generated.path == path)
+
+
+def test_import_failure_targets_package_source_paths(repair_case):
+    artifact = CodeArtifact(
+        artifact_id="code-library",
+        plan_id=repair_case["plan"].plan_id,
+        files=[
+            GeneratedFile("src/library/__init__.py", "", "python_module"),
+            GeneratedFile("src/library/core.py", "", "python_module"),
+        ],
+    )
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Import failed."],
+        failure_signatures=["import_failure"],
+        evidence={
+            "layer1": {
+                "import_results": {
+                    "modules": {
+                        "library": {"ok": False},
+                        "library.core": {"ok": False},
+                    }
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert set(directive.target_paths) == {
+        "src/library/__init__.py",
+        "src/library/core.py",
+    }
 
 
 def test_validator_evidence_drives_a_real_repair(repair_case):

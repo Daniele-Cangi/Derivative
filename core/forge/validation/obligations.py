@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.semantic_contracts import behaviorally_evidences
 from core.forge.validation.common import ValidationLayerBase
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 from core.forge.validation.capabilities import CapabilityContractChecker
@@ -38,6 +39,19 @@ class ObligationValidationLayer(ValidationLayerBase):
         failures: List[str] = []
         signatures: List[str] = []
         evidence: Dict[str, object] = {}
+
+        material_ambiguities = [
+            flag
+            for flag in build_spec.ambiguity_flags
+            if "materially unspecified" in flag.lower()
+        ]
+        if material_ambiguities:
+            failures.append(
+                "Requirement contains material ambiguities that cannot be validated without inventing policy: "
+                f"{material_ambiguities}."
+            )
+            self._append_unique(signatures, "underspecified_requirement")
+        evidence["material_ambiguities"] = material_ambiguities
 
         actual_paths = set(materialized.keys())
         required_paths = {plan_file.path for plan_file in plan.file_tree_plan}
@@ -328,12 +342,25 @@ class ObligationValidationLayer(ValidationLayerBase):
             ]
             source_corpus = "\n".join(files_by_path[path].content.lower() for path in source_paths)
             test_corpus = "\n".join(files_by_path[path].content.lower() for path in test_paths)
+            behavioral_test_corpus = "\n\n".join(
+                files_by_path[path].content for path in test_paths
+            )
+            public_interface_names = {
+                interface.name
+                for interface in plan.interfaces
+                if interface.name.isidentifier()
+            }
             source_evidence_required = self._requires_source_semantic_evidence(atom)
             missing_source_terms = (
                 [
                     term
                     for term in atom.evidence_terms
                     if not self._semantic_term_present(term, source_corpus)
+                    and not behaviorally_evidences(
+                        term,
+                        behavioral_test_corpus,
+                        public_interface_names,
+                    )
                 ]
                 if source_evidence_required
                 else []
@@ -342,6 +369,11 @@ class ObligationValidationLayer(ValidationLayerBase):
                 term
                 for term in atom.evidence_terms
                 if not self._semantic_term_present(term, test_corpus, is_test=True)
+                and not behaviorally_evidences(
+                    term,
+                    behavioral_test_corpus,
+                    public_interface_names,
+                )
             ]
             item = {
                 "text": atom.text,
@@ -421,6 +453,14 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "device_temps",
             ),
             "per_device": ("device_id", "per_device"),
+            "per_customer": ("customer_id", "per_customer"),
+            "summary_json": ("json.dumps", "json.dump(", "summary_json", ".json"),
+            "idempotent_event": (
+                "insert_or_ignore",
+                "on_conflict",
+                "idempotent",
+                "event_id_text_primary_key",
+            ),
             "totals": ("total", "totals"),
             "counts": ("count", "counts"),
             "recursive_json_merge": (

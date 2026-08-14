@@ -52,6 +52,36 @@ PRODUCTION_SERVICE_REQUIREMENT = (
     "structured JSON logging, and integration tests."
 )
 
+ZERO_CAPACITY_REQUIREMENT = (
+    "Build a bounded in-memory queue with capacity exactly zero that must successfully "
+    "accept and retain at least one item without rejecting, blocking, overwriting, or discarding it."
+)
+
+ZERO_BYTE_JSON_REQUIREMENT = (
+    "Build a generator whose output file must contain exactly zero bytes and must "
+    "simultaneously contain a non-empty valid JSON object."
+)
+
+LIBRARY_REQUIREMENT = (
+    "Build a Python library exposing allocate_cents(total_cents: int, weights: list[int]) -> list[int]. "
+    "It must use largest-remainder allocation, return integers whose sum equals total_cents, "
+    "preserve input order, reject negative totals or weights, and include tests."
+)
+
+IDEMPOTENT_EVENT_SERVICE_REQUIREMENT = (
+    "Build a Python REST service module with API-key authentication and SQLite persistence exposing "
+    "create_event(api_key: str, event_id: str, payload: dict, db_path: str) -> tuple[int, dict]. "
+    "Repeating the same event_id must be idempotent and must not insert a duplicate row. "
+    "Invalid keys return 401. Include integration tests."
+)
+
+SALES_JSONL_PIPELINE_REQUIREMENT = (
+    "Build a Python JSON Lines data pipeline exposing "
+    "run(input_path: str, quarantine_path: str, summary_json_path: str) -> int. "
+    "Each valid sales event has customer_id and amount. Write malformed events to quarantine and "
+    "write per-customer transaction_count and total_amount to summary JSON. Include end-to-end tests."
+)
+
 
 def _build_planner(tmp_path: Path) -> PlannerStage:
     return PlannerStage(
@@ -136,6 +166,52 @@ def test_service_plan_contains_typed_capability_blueprint(tmp_path):
     }.issubset(planned_paths)
 
 
+def test_idempotent_event_service_plan_preserves_declared_api_and_omits_unrequested_rate_limit(tmp_path):
+    output = _build_planner(tmp_path).plan(
+        RequirementCompiler().compile(IDEMPOTENT_EVENT_SERVICE_REQUIREMENT)
+    )
+
+    assert isinstance(output, FeasiblePlan)
+    assert {item.path for item in output.file_tree_plan} == {
+        "src/service.py",
+        "src/storage.py",
+        "src/auth.py",
+        "tests/test_service.py",
+    }
+    assert [(item.name, item.signature) for item in output.interfaces] == [
+        ("register_user", "register_user(user_id: str, api_key: str, db_path: str) -> None"),
+        (
+            "create_event",
+            "create_event(api_key: str, event_id: str, payload: dict, db_path: str) -> tuple[int, dict]",
+        ),
+    ]
+    capability_types = {
+        item.capability_type for item in output.implementation_blueprint.capabilities
+    }
+    assert capability_types == {"service_api", "sqlite_storage", "authentication"}
+    assert "rate-limit" not in output.architecture_summary.lower()
+
+
+def test_sales_jsonl_pipeline_plan_preserves_output_and_function_signature(tmp_path):
+    output = _build_planner(tmp_path).plan(
+        RequirementCompiler().compile(SALES_JSONL_PIPELINE_REQUIREMENT)
+    )
+
+    assert isinstance(output, FeasiblePlan)
+    assert [(item.name, item.interface_type, item.signature) for item in output.interfaces] == [
+        (
+            "run",
+            "function",
+            "run(input_path: str, quarantine_path: str, summary_json_path: str) -> int",
+        )
+    ]
+    assert "sales pipeline" in output.architecture_summary.lower()
+    assert "summary json" in output.architecture_summary.lower()
+    purposes = " ".join(item.purpose for item in output.file_tree_plan).lower()
+    assert "customer_id" in purposes
+    assert "telemetry" not in purposes
+
+
 def test_requirement_compiler_and_planner_return_infeasibility_certificate(tmp_path):
     compiler = RequirementCompiler()
     build_spec = compiler.compile(CONTRADICTORY_REQUIREMENT)
@@ -151,6 +227,29 @@ def test_requirement_compiler_and_planner_return_infeasibility_certificate(tmp_p
     assert output.execution_evidence.get("is_satisfiable") is False
     assert output.terminal_status == "infeasible_proven"
     assert output.execution_evidence.get("terminal_status") == "infeasible_proven"
+
+
+def test_cardinality_and_content_contradictions_are_terminal_infeasibility(tmp_path):
+    planner = _build_planner(tmp_path)
+
+    for requirement in (ZERO_CAPACITY_REQUIREMENT, ZERO_BYTE_JSON_REQUIREMENT):
+        output = planner.plan(RequirementCompiler().compile(requirement))
+        assert isinstance(output, InfeasibilityCertificate)
+        assert output.terminal_status == "infeasible_proven"
+        assert output.execution_evidence["is_satisfiable"] is False
+        assert output.contradictions
+
+
+def test_library_plan_exposes_declared_api_without_fake_run_entrypoint(tmp_path):
+    output = _build_planner(tmp_path).plan(RequirementCompiler().compile(LIBRARY_REQUIREMENT))
+
+    assert isinstance(output, FeasiblePlan)
+    assert [(item.name, item.interface_type) for item in output.interfaces] == [
+        ("allocate_cents", "function")
+    ]
+    assert output.implementation_blueprint.entrypoint_path == ""
+    assert all(item.name != "run" for item in output.interfaces)
+    assert "src/library/core.py" in output.requirement_coverage["R001"]["files"]
 
 
 def test_infeasibility_is_not_reported_as_generic_failure_or_not_converged(tmp_path):

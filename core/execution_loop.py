@@ -2563,6 +2563,7 @@ class ExecutionLoop:
     def _detect_infeasibility(self, problem: str) -> List[str]:
         contradictions = self._detect_constraint_contradictions(problem)
         contradictions.extend(self._detect_implicit_graph_contradictions(problem))
+        contradictions.extend(self._detect_cardinality_content_contradictions(problem))
         deduped: List[str] = []
         seen: set[str] = set()
         for contradiction in contradictions:
@@ -2572,6 +2573,43 @@ class ExecutionLoop:
             seen.add(normalized)
             deduped.append(contradiction)
         return deduped
+
+    def _detect_cardinality_content_contradictions(self, problem: str) -> List[str]:
+        lowered = " ".join(problem.lower().split())
+        contradictions: List[str] = []
+
+        zero_capacity = bool(
+            re.search(r"\bcapacity\s+(?:is\s+|must\s+be\s+)?exactly\s+zero\b", lowered)
+            or re.search(r"\bcapacity\s*=\s*0\b", lowered)
+        )
+        retain_positive_item = bool(
+            re.search(r"\b(?:accept|retain|store|hold)(?:\s+and\s+(?:accept|retain|store|hold))*"
+                      r".{0,50}\bat\s+least\s+one\s+item\b", lowered)
+            or (
+                "accept and retain at least one item" in lowered
+                or "retain at least one item" in lowered
+            )
+        )
+        if zero_capacity and retain_positive_item:
+            contradictions.append(
+                "INFEASIBLE: capacity exactly zero permits retaining zero items, but the requirement "
+                "simultaneously requires retaining at least one item."
+            )
+
+        zero_byte_output = bool(
+            re.search(r"\b(?:output\s+)?file.{0,40}\bexactly\s+zero\s+bytes\b", lowered)
+            or re.search(r"\b(?:output\s+)?file.{0,40}\b0\s+bytes\b", lowered)
+        )
+        nonempty_json = bool(
+            re.search(r"\bnon[-\s]+empty\s+(?:valid\s+)?json\s+object\b", lowered)
+            or re.search(r"\bjson\s+object.{0,25}\bnon[-\s]+empty\b", lowered)
+        )
+        if zero_byte_output and nonempty_json:
+            contradictions.append(
+                "INFEASIBLE: a zero-byte file contains no JSON text and therefore cannot simultaneously "
+                "contain a non-empty valid JSON object."
+            )
+        return contradictions
 
     def _detect_implicit_graph_contradictions(self, problem: str) -> List[str]:
         lowered = problem.lower()

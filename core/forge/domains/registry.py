@@ -3,6 +3,7 @@ from typing import Iterable, List
 from core.forge.contracts import FeasiblePlan
 from core.forge.domains.base import BaseDomainAdapter, GenericDomainAdapter
 from core.forge.domains.cli import CliDomainAdapter
+from core.forge.domains.library import LibraryDomainAdapter
 from core.forge.domains.pipeline import PipelineDomainAdapter
 from core.forge.domains.service import ServiceDomainAdapter
 
@@ -15,6 +16,7 @@ class DomainAdapterRegistry:
             PipelineDomainAdapter(),
             ServiceDomainAdapter(),
             CliDomainAdapter(),
+            LibraryDomainAdapter(),
             GenericDomainAdapter(),
         ]
         if not configured:
