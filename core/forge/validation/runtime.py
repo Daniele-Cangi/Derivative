@@ -1,18 +1,27 @@
 import ast
 import json
 import re
-import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.execution import (
+    LocalProcessExecutor,
+    ProcessExecutor,
+    SandboxProcessRequest,
+    SandboxProcessResult,
+)
 from core.forge.validation.common import ValidationLayerBase
 
 
 class RuntimeValidationLayer(ValidationLayerBase):
-    def __init__(self, python_executable: str, timeout_seconds: int):
-        self.python_executable = python_executable
+    def __init__(self, executor: ProcessExecutor | str, timeout_seconds: int):
+        self.executor = (
+            LocalProcessExecutor(python_executable=executor)
+            if isinstance(executor, str)
+            else executor
+        )
         self.timeout_seconds = timeout_seconds
 
     def validate(
@@ -57,7 +66,10 @@ class RuntimeValidationLayer(ValidationLayerBase):
         evidence["import_results"] = import_payload
         if not import_ok:
             failures.append("Module import checks failed for one or more src modules.")
-            self._append_unique(signatures, "import_failure")
+            self._append_unique(
+                signatures,
+                "sandbox_unavailable" if import_payload.get("launch_error") else "import_failure",
+            )
 
         entrypoint_evidence: Dict[str, object] = {}
         declared_entrypoint_interfaces = [
@@ -87,7 +99,10 @@ class RuntimeValidationLayer(ValidationLayerBase):
                 self._append_unique(signatures, "missing_entrypoint")
             elif not result.get("executed", False):
                 failures.append(f"Entrypoint execution failed for {entrypoint}.")
-                self._append_unique(signatures, "import_failure")
+                self._append_unique(
+                    signatures,
+                    "sandbox_unavailable" if result.get("launch_error") else "import_failure",
+                )
         evidence["entrypoint_results"] = entrypoint_evidence
         evidence["failure_signatures"] = signatures
 
@@ -116,7 +131,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
             "import json\n"
             "import sys\n"
             "from pathlib import Path\n"
-            f"workspace = Path({str(workspace)!r})\n"
+            "workspace = Path.cwd()\n"
             "sys.path.insert(0, str(workspace / 'src'))\n"
             f"modules = {modules!r}\n"
             "results = {}\n"
@@ -139,6 +154,9 @@ class RuntimeValidationLayer(ValidationLayerBase):
             except json.JSONDecodeError:
                 payload["raw_stdout"] = stdout
         payload["stderr"] = completed.stderr.strip()
+        payload["backend"] = completed.backend
+        payload["timed_out"] = completed.timed_out
+        payload["launch_error"] = completed.launch_error
         return bool(payload.get("ok", False)) and completed.returncode == 0, payload
 
     def _execute_entrypoint(
@@ -197,7 +215,11 @@ class RuntimeValidationLayer(ValidationLayerBase):
         if candidate == "main":
             if is_jsonl_pipeline:
                 quarantine_jsonl = workspace / "validator_quarantine.jsonl"
-                invocation_args = [[str(input_path), str(quarantine_jsonl), str(output_path)]]
+                invocation_args = [[
+                    self._workspace_path(input_path, workspace),
+                    self._workspace_path(quarantine_jsonl, workspace),
+                    self._workspace_path(output_path, workspace),
+                ]]
             elif is_json_merge_cli:
                 base_json = workspace / "validator_base.json"
                 override_json = workspace / "validator_override.json"
@@ -210,9 +232,16 @@ class RuntimeValidationLayer(ValidationLayerBase):
                     '{"service":{"ports":[443]},"enabled":false}',
                     encoding="utf-8",
                 )
-                invocation_args = [[str(base_json), str(override_json), str(output_json)]]
+                invocation_args = [[
+                    self._workspace_path(base_json, workspace),
+                    self._workspace_path(override_json, workspace),
+                    self._workspace_path(output_json, workspace),
+                ]]
             elif entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
-                invocation_args = [[str(input_path), str(output_path)]]
+                invocation_args = [[
+                    self._workspace_path(input_path, workspace),
+                    self._workspace_path(output_path, workspace),
+                ]]
         elif candidate == "run":
             invocation_args = self._run_invocation_arguments(
                 function_nodes[candidate],
@@ -232,7 +261,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
             "import json\n"
             "import sys\n"
             "from pathlib import Path\n"
-            f"workspace = Path({str(workspace)!r})\n"
+            "workspace = Path.cwd()\n"
             "sys.path.insert(0, str(workspace / 'src'))\n"
             f"module = importlib.import_module({module_name!r})\n"
             f"fn = getattr(module, {candidate!r})\n"
@@ -245,6 +274,9 @@ class RuntimeValidationLayer(ValidationLayerBase):
         result["stdout"] = completed.stdout.strip()
         result["stderr"] = completed.stderr.strip()
         result["executed"] = completed.returncode == 0
+        result["backend"] = completed.backend
+        result["timed_out"] = completed.timed_out
+        result["launch_error"] = completed.launch_error
         return result
 
     def _sample_input_content(self, build_spec: BuildSpec) -> str:
@@ -329,7 +361,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
             normalized = name.lower()
             value: object | None = None
             if normalized in {"input_path", "source_path", "input_file"}:
-                value = str(input_path)
+                value = RuntimeValidationLayer._workspace_path(input_path, workspace)
             elif normalized in {
                 "output_path",
                 "summary_path",
@@ -337,19 +369,19 @@ class RuntimeValidationLayer(ValidationLayerBase):
                 "summary_csv_path",
                 "output_file",
             }:
-                value = str(output_path)
+                value = RuntimeValidationLayer._workspace_path(output_path, workspace)
             elif normalized == "quarantine_path":
-                value = str(workspace / "validator_quarantine.jsonl")
+                value = "validator_quarantine.jsonl"
             elif normalized in {"watch_dir", "input_dir", "input_directory"}:
                 directory = workspace / "validator_input"
                 directory.mkdir(exist_ok=True)
-                value = str(directory)
+                value = RuntimeValidationLayer._workspace_path(directory, workspace)
             elif normalized == "quarantine_dir":
                 directory = workspace / "validator_quarantine"
                 directory.mkdir(exist_ok=True)
-                value = str(directory)
+                value = RuntimeValidationLayer._workspace_path(directory, workspace)
             elif normalized == "db_path":
-                value = str(workspace / "validator.sqlite3")
+                value = "validator.sqlite3"
             elif normalized == "poll_once":
                 value = True
             if value is None:
@@ -359,15 +391,19 @@ class RuntimeValidationLayer(ValidationLayerBase):
             mapped.append(value)
         return mapped
 
-    def _run_subprocess(self, script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [self.python_executable, "-c", script],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=self.timeout_seconds,
-            check=False,
+    def _run_subprocess(self, script: str, cwd: Path) -> SandboxProcessResult:
+        return self.executor.run(
+            SandboxProcessRequest(
+                command=["python", "-c", script],
+                workspace=cwd,
+                environment={"PYTHONDONTWRITEBYTECODE": "1"},
+                timeout_seconds=self.timeout_seconds,
+            )
         )
+
+    @staticmethod
+    def _workspace_path(path: Path, workspace: Path) -> str:
+        return path.relative_to(workspace).as_posix()
 
     @staticmethod
     def _module_name_for_src_path(path: str) -> str:

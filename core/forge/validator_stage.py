@@ -12,6 +12,7 @@ from core.forge.contracts import (
     ValidationArtifact,
     ValidationLayerResult,
 )
+from core.forge.execution import LocalProcessExecutor, ProcessExecutor
 from core.forge.validation.adversarial import AdversarialValidationLayer
 from core.forge.validation.obligations import ObligationValidationLayer
 from core.forge.validation.quality import QualityContractChecker
@@ -19,13 +20,23 @@ from core.forge.validation.runtime import RuntimeValidationLayer
 
 
 class ValidatorStage:
-    def __init__(self, python_executable: str | None = None, timeout_seconds: int = 120):
+    def __init__(
+        self,
+        python_executable: str | None = None,
+        timeout_seconds: int = 120,
+        executor: ProcessExecutor | None = None,
+        require_isolation: bool = False,
+    ):
         self.python_executable = python_executable or sys.executable
         self.timeout_seconds = timeout_seconds
+        self.executor = executor or LocalProcessExecutor(
+            python_executable=self.python_executable,
+        )
+        self.require_isolation = require_isolation
         quality_checker = QualityContractChecker()
-        self.runtime_layer = RuntimeValidationLayer(self.python_executable, timeout_seconds)
+        self.runtime_layer = RuntimeValidationLayer(self.executor, timeout_seconds)
         self.obligation_layer = ObligationValidationLayer(
-            self.python_executable,
+            self.executor,
             timeout_seconds,
             quality_checker,
         )
@@ -37,10 +48,14 @@ class ValidatorStage:
         plan: FeasiblePlan,
         build_spec: BuildSpec,
     ) -> ValidationArtifact:
+        if self.require_isolation and not self.executor.policy.isolated:
+            return self._isolation_refusal()
+
         failures: List[str] = []
         signatures: List[str] = []
         evidence: Dict[str, object] = {}
         metrics: Dict[str, object] = {}
+        evidence["execution_policy"] = self.executor.policy.evidence()
 
         with tempfile.TemporaryDirectory(
             prefix="forge_validator_",
@@ -114,6 +129,53 @@ class ValidatorStage:
             layer2_result=layer2,
             layer3_result=layer3,
             failure_category=None if passed else self._classify_failure_category(signatures),
+            next_route=None,
+        )
+
+    def _isolation_refusal(self) -> ValidationArtifact:
+        signature = "sandbox_policy_violation"
+        failure = "Validation requires an isolated execution backend; local execution was refused."
+        policy_evidence = self.executor.policy.evidence()
+        layers = [
+            ValidationLayerResult(
+                layer_name=layer_name,
+                passed=False,
+                failures=[failure],
+                evidence={
+                    "failure_signatures": [signature],
+                    "execution_policy": policy_evidence,
+                    "executed": False,
+                },
+                metrics={"duration_ms": 0},
+            )
+            for layer_name in (
+                "layer1_syntax_import_run",
+                "layer2_obligations_tests_acceptance",
+                "layer3_adversarial",
+            )
+        ]
+        return ValidationArtifact(
+            passed=False,
+            failures=[failure],
+            failure_signatures=[signature],
+            evidence={
+                "execution_policy": policy_evidence,
+                "validated_entrypoints": {},
+                "executed_tests": {"ran": False},
+                "manifest_provenance_checks": {},
+                "obligation_acceptance_checks": {},
+                "layer_status": {"layer1": False, "layer2": False, "layer3": False},
+                "failure_signatures": [signature],
+            },
+            metrics={
+                "failure_count": 1,
+                "failure_signature_count": 1,
+                "passed_layers": {"layer1": False, "layer2": False, "layer3": False},
+            },
+            layer1_result=layers[0],
+            layer2_result=layers[1],
+            layer3_result=layers[2],
+            failure_category=FailureCategory.VALIDATION,
             next_route=None,
         )
 

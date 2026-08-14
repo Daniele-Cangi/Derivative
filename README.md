@@ -194,7 +194,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 273 repository tests passing locally. The corresponding GitHub Actions run is required before this checkpoint is considered closed.
+- 279 repository tests passing locally. The corresponding GitHub Actions run is required before this checkpoint is considered closed.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, enforced as a CI quality gate.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.

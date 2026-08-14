@@ -1,12 +1,10 @@
-import os
 import re
-import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.execution import ProcessExecutor, SandboxProcessRequest
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_json_lines_processing,
@@ -21,11 +19,11 @@ from core.forge.validation.quality import QualityContractChecker
 class ObligationValidationLayer(ValidationLayerBase):
     def __init__(
         self,
-        python_executable: str,
+        executor: ProcessExecutor,
         timeout_seconds: int,
         quality_checker: QualityContractChecker,
     ):
-        self.python_executable = python_executable
+        self.executor = executor
         self.timeout_seconds = timeout_seconds
         self.quality_checker = quality_checker
         self.capability_checker = CapabilityContractChecker()
@@ -169,7 +167,10 @@ class ObligationValidationLayer(ValidationLayerBase):
             self._append_unique(signatures, "test_execution_failure")
         elif test_result["returncode"] != 0:
             failures.append("Required test execution failed.")
-            self._append_unique(signatures, "test_execution_failure")
+            self._append_unique(
+                signatures,
+                "sandbox_unavailable" if test_result.get("launch_error") else "test_execution_failure",
+            )
 
         evidence["failure_signatures"] = signatures
         elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -206,39 +207,37 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "stderr": "",
                 "tests": [],
             }
-        environment = os.environ.copy()
-        environment["PYTHONDONTWRITEBYTECODE"] = "1"
-        environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-        with tempfile.TemporaryDirectory(
-            prefix="forge_pytest_",
-            ignore_cleanup_errors=True,
-        ) as pytest_tmp:
-            command = [
-                self.python_executable,
-                "-B",
-                "-m",
-                "pytest",
-                "-q",
-                "-p",
-                "no:cacheprovider",
-                f"--basetemp={pytest_tmp}",
-                *runnable,
-            ]
-            completed = subprocess.run(
-                command,
-                cwd=str(workspace),
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                check=False,
-                env=environment,
+        command = [
+            "python",
+            "-B",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "--basetemp=.pytest_tmp",
+            *runnable,
+        ]
+        completed = self.executor.run(
+            SandboxProcessRequest(
+                command=command,
+                workspace=workspace,
+                timeout_seconds=self.timeout_seconds,
+                environment={
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                },
             )
+        )
         return {
             "ran": True,
             "returncode": completed.returncode,
             "stdout": completed.stdout.strip(),
             "stderr": completed.stderr.strip(),
             "tests": runnable,
+            "backend": completed.backend,
+            "timed_out": completed.timed_out,
+            "launch_error": completed.launch_error,
         }
 
     def _collect_prefixed_tokens(self, artifact: CodeArtifact, prefix: str) -> set[str]:
