@@ -85,6 +85,9 @@ Each requirement is compiled into typed atoms with:
 - `cli`
 - `service`
 - `pipeline`
+- `library`
+
+The adapters are split into narrow domain profiles rather than one growing template. Current deterministic profiles include CSV business CLIs, JSON log and merge CLIs, scored-record JSON sorting, event services, telemetry/sales/JSONL pipelines, email normalization, largest-remainder allocation, Semantic Versioning precedence, and interval merging. Plans outside implemented capability profiles remain fail-closed locally and may use the complete Candidate Compiler transaction in `hybrid` or `remote-only` mode.
 
 The selected adapter is recorded in `artifact_manifest.metadata.domain_adapter`. New domains must implement the same deterministic adapter contract instead of adding branches to `CoderStage`.
 
@@ -187,11 +190,58 @@ OPENAI_MODEL="gpt-4.1-mini"
 
 Derivative is released under the [MIT License](LICENSE).
 
+## Current Verification Status
+
+The repository currently has the following verified baseline:
+
+- 259 repository tests passing locally and in GitHub Actions.
+- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, enforced as a CI quality gate.
+- A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
+- A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
+
+The original sealed blind-v2 run is preserved unchanged and scored 6/10 with an external false-verified rate of 0.0. Later post-fix replays and targeted oracle runs are regression evidence, not new blind evidence, because those requirements are now known to the development process. The latest targeted rerun of the three previously failing feasible cases (`B001`, `B004`, and `B005`) passed 3/3 with all external oracles, but this must not be reported as a fresh blind 10/10 result.
+
+The blind manifest keeps the original expected Forge baseline digest and file count. Reports expose both expected and currently observed baseline metadata; any implementation change keeps `baseline_verified=false` unless the exact sealed implementation is used. The baseline is never silently resealed.
+
+## Scope and Maturity
+
+Forge is currently an advanced Python software-synthesis system, not yet a general-purpose repository coding agent.
+
+Strongest supported areas:
+
+- greenfield Python CLI, service, pipeline, and library artifacts;
+- requirement preservation and executable acceptance coverage;
+- deterministic domain profiles with model-backed fallback;
+- conservative validation and explicit infeasibility proofs;
+- audit, provenance, repair lineage, and verified packaging.
+
+Current boundaries:
+
+- modifying large existing repositories is not yet a first-class workflow;
+- unknown domains still depend on model-generated complete candidate transactions;
+- generated code runs in temporary workspaces but not yet inside an OS-level container or microVM sandbox;
+- packaging does not yet provide wheels, containers, lockfiles, SBOMs, or supply-chain attestations;
+- semantic evidence combines execution with typed, AST, and domain-specific checks and therefore remains incomplete outside covered contracts;
+- current public benchmarks are regression suites once their requirements have been used for implementation fixes.
+
+## Development Roadmap
+
+The next production-oriented checkpoints are:
+
+1. Add isolated execution for generated code with explicit resource, process, filesystem, and network policies.
+2. Introduce an existing-repository workflow for codebase discovery, minimal patch generation, build execution, and regression validation.
+3. Create a genuinely independent blind-v3 benchmark whose requirements and acceptance oracles are not available during implementation.
+4. Continue replacing broad templates with composable typed capabilities and narrow deterministic domain profiles.
+5. Add reproducible distribution artifacts: dependency locks, Python wheels or containers, SBOMs, and verification attestations.
+6. Track generation cost, execution latency, repair count, and external Verified@1 by domain.
+
+The intended strategy is a general truth-preserving substrate with incrementally certified software domains. Forge should expand only when a new domain can preserve the same obligation, execution, adversarial-validation, and fail-closed guarantees.
+
 ## Tests
 
 Run all tests:
 ```bash
-python -B -m pytest -q -p no:cacheprovider
+python -B -m pytest -q -p no:cacheprovider tests
 ```
 
 Run the Forge benchmark quality gate locally (same thresholds used in CI):
