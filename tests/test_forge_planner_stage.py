@@ -62,6 +62,19 @@ ZERO_BYTE_JSON_REQUIREMENT = (
     "simultaneously contain a non-empty valid JSON object."
 )
 
+LOSSLESS_ENCODER_REQUIREMENT = (
+    "Build a lossless encoder that maps every possible two-byte input to exactly one output byte "
+    "and a decoder that reconstructs the original two-byte input for every encoded value, without "
+    "external state, metadata, probabilistic behavior, or rejection."
+)
+
+ERASABLE_AUDIT_LOG_REQUIREMENT = (
+    "Build an append-only audit log that must permanently retain every appended record and "
+    "simultaneously provide an erase_all operation after which the log contains exactly zero records "
+    "and every erased record remains retrievable from that same log, with no backup, external storage, "
+    "hidden metadata, or reconstruction source."
+)
+
 LIBRARY_REQUIREMENT = (
     "Build a Python library exposing allocate_cents(total_cents: int, weights: list[int]) -> list[int]. "
     "It must use largest-remainder allocation, return integers whose sum equals total_cents, "
@@ -269,6 +282,18 @@ def test_cardinality_and_content_contradictions_are_terminal_infeasibility(tmp_p
         assert output.terminal_status == "infeasible_proven"
         assert output.execution_evidence["is_satisfiable"] is False
         assert output.contradictions
+
+
+def test_information_and_retention_contradictions_are_terminal_infeasibility(tmp_path):
+    planner = _build_planner(tmp_path)
+
+    for requirement in (LOSSLESS_ENCODER_REQUIREMENT, ERASABLE_AUDIT_LOG_REQUIREMENT):
+        output = planner.plan(RequirementCompiler().compile(requirement))
+        assert isinstance(output, InfeasibilityCertificate)
+        assert output.terminal_status == "infeasible_proven"
+        assert output.execution_evidence["is_satisfiable"] is False
+        assert output.contradictions
+        assert output.minimal_relaxations
 
 
 def test_library_plan_exposes_declared_api_without_fake_run_entrypoint(tmp_path):

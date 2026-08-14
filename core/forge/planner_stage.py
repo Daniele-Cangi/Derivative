@@ -980,6 +980,15 @@ class PlannerStage:
                 relaxations.append(
                     "Allow non-zero output length, or remove the requirement that the file contain a JSON object."
                 )
+            elif "pigeonhole principle" in lowered:
+                relaxations.append(
+                    "Increase the encoded output capacity to at least the input capacity, restrict the input domain, "
+                    "or permit explicit external metadata."
+                )
+            elif "erase_all" in lowered and "permanent retention" in lowered:
+                relaxations.append(
+                    "Remove permanent same-log retrieval after erase_all, or permit a separate retained archive."
+                )
         if not relaxations:
             relaxations.append("Relax at least one conflicting numeric bound and rerun planning.")
         return relaxations

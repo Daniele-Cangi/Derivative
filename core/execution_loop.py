@@ -2564,6 +2564,8 @@ class ExecutionLoop:
         contradictions = self._detect_constraint_contradictions(problem)
         contradictions.extend(self._detect_implicit_graph_contradictions(problem))
         contradictions.extend(self._detect_cardinality_content_contradictions(problem))
+        contradictions.extend(self._detect_information_capacity_contradictions(problem))
+        contradictions.extend(self._detect_retention_contradictions(problem))
         deduped: List[str] = []
         seen: set[str] = set()
         for contradiction in contradictions:
@@ -2610,6 +2612,92 @@ class ExecutionLoop:
                 "contain a non-empty valid JSON object."
             )
         return contradictions
+
+    def _detect_information_capacity_contradictions(self, problem: str) -> List[str]:
+        lowered = " ".join(problem.lower().split())
+        if not all(token in lowered for token in ("lossless", "decoder", "reconstruct")):
+            return []
+        if "every possible" not in lowered or not re.search(
+            r"\b(?:without|no)\b.{0,80}\b(?:external state|metadata|side channel)",
+            lowered,
+        ):
+            return []
+
+        input_width = self._extract_information_width(
+            lowered,
+            r"every\s+possible\s+(?P<count>\d+|one|two|three|four|five|six|seven|eight)"
+            r"[-\s]+(?P<unit>bytes?|bits?)\s+input",
+        )
+        output_width = self._extract_information_width(
+            lowered,
+            r"exactly\s+(?P<count>\d+|one|two|three|four|five|six|seven|eight)"
+            r"\s+output\s+(?P<unit>bytes?|bits?)",
+        )
+        if input_width is None or output_width is None or input_width <= output_width:
+            return []
+
+        input_cardinality = 2**input_width
+        output_cardinality = 2**output_width
+        return [
+            "INFEASIBLE: a lossless total encoder needs an injective mapping, but "
+            f"{input_width} input bits represent {input_cardinality} values while "
+            f"{output_width} output bits represent only {output_cardinality} values. "
+            "Without external state or metadata, the pigeonhole principle prevents the decoder "
+            "from reconstructing every input."
+        ]
+
+    @staticmethod
+    def _extract_information_width(text: str, pattern: str) -> Optional[int]:
+        match = re.search(pattern, text)
+        if not match:
+            return None
+        words = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+        }
+        count_text = match.group("count")
+        count = int(count_text) if count_text.isdigit() else words[count_text]
+        multiplier = 8 if match.group("unit").startswith("byte") else 1
+        return count * multiplier
+
+    def _detect_retention_contradictions(self, problem: str) -> List[str]:
+        lowered = " ".join(problem.lower().split())
+        append_only = "append-only" in lowered or "append only" in lowered
+        permanent_retention = bool(
+            re.search(r"\bpermanently\s+retain\s+every\s+appended\s+record\b", lowered)
+        )
+        erased_to_zero = bool(
+            re.search(r"\berase_all\b.{0,100}\bexactly\s+zero\s+records\b", lowered)
+        )
+        same_log_retrieval = bool(
+            re.search(
+                r"\bevery\s+erased\s+record\b.{0,80}\bremains?\s+retrievable\b"
+                r".{0,50}\b(?:same|that)\s+log\b",
+                lowered,
+            )
+        )
+        no_alternate_source = bool(
+            re.search(
+                r"\bno\s+(?:backup|external storage|hidden metadata|reconstruction source)\b",
+                lowered,
+            )
+        )
+        if not all(
+            (append_only, permanent_retention, erased_to_zero, same_log_retrieval, no_alternate_source)
+        ):
+            return []
+        return [
+            "INFEASIBLE: erase_all requires the same log to contain exactly zero records, while "
+            "permanent retention requires every appended and erased record to remain retrievable "
+            "from that log. With no backup, external storage, hidden metadata, or reconstruction "
+            "source, both postconditions cannot hold simultaneously."
+        ]
 
     def _detect_implicit_graph_contradictions(self, problem: str) -> List[str]:
         lowered = problem.lower()

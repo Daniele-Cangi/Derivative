@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from audit.trail import AuditTrail
 from core.execution_loop import (
     CONVERGENCE_THRESHOLD,
@@ -250,6 +252,42 @@ def test_detect_infeasibility_handles_complete_graph_diameter_conflict():
     lowered = " ".join(contradictions).lower()
     assert contradictions
     assert "complete graph has diameter 1" in lowered
+
+
+@pytest.mark.parametrize(
+    ("problem", "proof_terms"),
+    [
+        (
+            "Build a lossless encoder that maps every possible two-byte input to exactly one output "
+            "byte and a decoder that reconstructs the original two-byte input for every encoded value, "
+            "without external state, metadata, probabilistic behavior, or rejection.",
+            ("65536", "256", "pigeonhole"),
+        ),
+        (
+            "Build an append-only audit log that must permanently retain every appended record and "
+            "simultaneously provide an erase_all operation after which the log contains exactly zero "
+            "records and every erased record remains retrievable from that same log, with no backup, "
+            "external storage, hidden metadata, or reconstruction source.",
+            ("erase_all", "zero records", "permanent retention"),
+        ),
+    ],
+)
+def test_execution_loop_proves_information_and_retention_contradictions(problem, proof_terms):
+    loop = ExecutionLoop()
+    contradictions = loop._detect_infeasibility(problem)
+
+    assert contradictions
+    proof = " ".join(contradictions).lower()
+    assert all(term in proof for term in proof_terms)
+
+    result = loop.run(
+        problem,
+        [CognitiveLens("Formal", "framing", ["constraint"], ["proof"], 0.9, "deductive")],
+    )
+    payload = json.loads(result.final_output)["result"]
+    assert payload["mode"] == "infeasible"
+    assert payload["is_satisfiable"] is False
+    assert payload["contradiction_count"] >= 1
 
 
 def test_execution_loop_routes_linear_recurrence_to_symbolic_mode():
