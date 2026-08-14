@@ -194,8 +194,8 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 282 repository tests passing locally, plus 2 Docker-gated isolation tests. The corresponding GitHub Actions run is required before this checkpoint is considered closed.
-- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, enforced as a CI quality gate.
+- 284 repository tests passing in GitHub Actions; 282 pass locally on this workstation and 2 isolation tests are Docker-gated because local firmware virtualization is unavailable.
+- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. The current isolated run reports status accuracy 1.000, Verified@1 1.000, false-verified rate 0.000, and infeasibility detection 1.000.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
 
@@ -266,6 +266,8 @@ docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py31
 ```
 
 The image contains only Python, pytest, and bcrypt needed by the currently certified Forge surface. It is a validation runtime, not a distribution container for generated software. `forge.py`, the benchmark runner, held-out runner, and blind runner select this Docker backend by default. If Docker or the image is unavailable, validation fails closed with `sandbox_unavailable`; Forge does not fall back to local execution. Passing `--execution-backend local` to the production orchestrator is also refused with `sandbox_policy_violation`.
+
+GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case quality gate through the Docker backend. Workflow run `31818254175` is the first green isolated baseline for this policy.
 
 ## Tests
 
