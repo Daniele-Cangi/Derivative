@@ -226,16 +226,28 @@ Current boundaries:
 
 ## Development Roadmap
 
-The next production-oriented checkpoints are:
+The current phase is evidence closure, not feature expansion. Forge will remain focused on its existing Python CLI, service, pipeline, and library surface until that surface has been independently evaluated.
 
-1. Add isolated execution for generated code with explicit resource, process, filesystem, and network policies.
-2. Introduce an existing-repository workflow for codebase discovery, minimal patch generation, build execution, and regression validation.
-3. Create a genuinely independent blind-v3 benchmark whose requirements and acceptance oracles are not available during implementation.
-4. Continue replacing broad templates with composable typed capabilities and narrow deterministic domain profiles.
-5. Add reproducible distribution artifacts: dependency locks, Python wheels or containers, SBOMs, and verification attestations.
-6. Track generation cost, execution latency, repair count, and external Verified@1 by domain.
+Current phase priorities:
 
-The intended strategy is a general truth-preserving substrate with incrementally certified software domains. Forge should expand only when a new domain can preserve the same obligation, execution, adversarial-validation, and fail-closed guarantees.
+1. Freeze a genuinely new blind-v3 dataset and its independent acceptance oracles before Forge executes any requirement.
+2. Run generated code inside an isolated sandbox or container with explicit filesystem, network, timeout, process, and resource policies.
+3. Measure external Verified@1, success after repair, false-verified rate, repair count, execution latency, and model cost.
+4. Correct only structural failures exposed by the frozen blind evaluation. A blind case must not cause a new case-specific template or weakened verification gate.
+5. Preserve capability composition and verification contracts as the only accepted extension mechanism inside the current surface.
+
+This phase is complete only when:
+
+- the blind-v3 manifest, dataset, and oracle digests were frozen before the first Forge execution;
+- generated code and acceptance tests executed under the declared isolation policy;
+- the complete metric report and per-case evidence were persisted;
+- the external false-verified rate remained zero;
+- every post-blind code change is traceable to a structural failure class rather than a benchmark-specific implementation;
+- a final replay uses the unchanged frozen dataset and oracles and is clearly labeled as post-fix regression evidence.
+
+Existing-repository mode, additional languages, frontend generation, new broad domain adapters, wheel/container distribution packaging, SBOM generation, and dependency auditing are explicitly deferred. They are not acceptance criteria for closing the current Forge phase.
+
+The intended strategy remains a general truth-preserving substrate with incrementally certified software domains. Forge expands only after the current system has demonstrated the same obligation, execution, adversarial-validation, and fail-closed guarantees on independent evidence.
 
 ## Tests
 
