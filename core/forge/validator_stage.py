@@ -254,6 +254,10 @@ class ValidatorStage:
                     "function_present": bool(result.get("function_present", False)),
                     "executed": bool(result.get("executed", False)),
                     "returncode": result.get("returncode"),
+                    "backend": result.get("backend", ""),
+                    "timed_out": bool(result.get("timed_out", False)),
+                    "launch_error": result.get("launch_error"),
+                    "isolation": result.get("isolation", {}),
                 }
 
         test_execution = layer2.evidence.get("test_execution", {})
@@ -291,6 +295,10 @@ class ValidatorStage:
                 "tests": test_execution.get("tests", []),
                 "stdout": test_execution.get("stdout", ""),
                 "stderr": test_execution.get("stderr", ""),
+                "backend": test_execution.get("backend", ""),
+                "timed_out": bool(test_execution.get("timed_out", False)),
+                "launch_error": test_execution.get("launch_error"),
+                "isolation": test_execution.get("isolation", {}),
             },
             "manifest_provenance_checks": manifest_provenance_checks,
             "obligation_acceptance_checks": obligation_acceptance_checks,

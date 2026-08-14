@@ -238,6 +238,7 @@ class ObligationValidationLayer(ValidationLayerBase):
             "backend": completed.backend,
             "timed_out": completed.timed_out,
             "launch_error": completed.launch_error,
+            "isolation": completed.isolation,
         }
 
     def _collect_prefixed_tokens(self, artifact: CodeArtifact, prefix: str) -> set[str]:

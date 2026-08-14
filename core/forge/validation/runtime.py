@@ -157,6 +157,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
         payload["backend"] = completed.backend
         payload["timed_out"] = completed.timed_out
         payload["launch_error"] = completed.launch_error
+        payload["isolation"] = completed.isolation
         return bool(payload.get("ok", False)) and completed.returncode == 0, payload
 
     def _execute_entrypoint(
@@ -277,6 +278,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
         result["backend"] = completed.backend
         result["timed_out"] = completed.timed_out
         result["launch_error"] = completed.launch_error
+        result["isolation"] = completed.isolation
         return result
 
     def _sample_input_content(self, build_spec: BuildSpec) -> str:

@@ -275,3 +275,4 @@ def test_real_validator_executes_generated_artifact_inside_docker(tmp_path):
     assert validation.evidence["execution_policy"]["backend"] == "docker"
     assert validation.evidence["execution_policy"]["isolated"] is True
     assert validation.evidence["executed_tests"]["backend"] == "docker"
+    assert validation.evidence["executed_tests"]["isolation"]["network_mode"] == "none"
