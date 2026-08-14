@@ -204,6 +204,8 @@ class ValidatorStage:
         if {"missing_required_file", "manifest_mismatch", "provenance_mismatch"} & signature_set:
             return FailureCategory.ARCHITECTURAL
         if {
+            "sandbox_policy_violation",
+            "sandbox_unavailable",
             "underspecified_requirement",
             "missing_obligation",
             "missing_acceptance_coverage",

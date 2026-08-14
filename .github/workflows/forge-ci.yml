@@ -26,13 +26,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Build Forge sandbox image
+        run: docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+
       - name: Run test suite
         run: python -B -m pytest -q -p no:cacheprovider
+        env:
+          FORGE_RUN_DOCKER_TESTS: "1"
 
       - name: Run Forge benchmark quality gate
         run: >
           python forge_benchmark.py
           --preset extended
+          --execution-backend docker
+          --sandbox-image derivative-forge-sandbox:py311
           --enforce-thresholds
           --min-status-accuracy 0.95
           --min-verified-at-1 0.95

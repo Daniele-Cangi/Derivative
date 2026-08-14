@@ -194,7 +194,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 281 repository tests passing locally. The corresponding GitHub Actions run is required before this checkpoint is considered closed.
+- 282 repository tests passing locally, plus 2 Docker-gated isolation tests. The corresponding GitHub Actions run is required before this checkpoint is considered closed.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, enforced as a CI quality gate.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
@@ -219,7 +219,7 @@ Current boundaries:
 
 - modifying large existing repositories is not yet a first-class workflow;
 - unknown domains still depend on model-generated complete candidate transactions;
-- generated code runs in temporary workspaces but not yet inside an OS-level container or microVM sandbox;
+- generated code execution is routed through a typed policy boundary; production Forge runs require the Docker sandbox, while the local backend is restricted to trusted tests and cannot produce a verified package through `run_forge`;
 - packaging does not yet provide wheels, containers, lockfiles, SBOMs, or supply-chain attestations;
 - semantic evidence combines execution with typed, AST, and domain-specific checks and therefore remains incomplete outside covered contracts;
 - current public benchmarks are regression suites once their requirements have been used for implementation fixes.
@@ -248,6 +248,24 @@ This phase is complete only when:
 Existing-repository mode, additional languages, frontend generation, new broad domain adapters, wheel/container distribution packaging, SBOM generation, and dependency auditing are explicitly deferred. They are not acceptance criteria for closing the current Forge phase.
 
 The intended strategy remains a general truth-preserving substrate with incrementally certified software domains. Forge expands only after the current system has demonstrated the same obligation, execution, adversarial-validation, and fail-closed guarantees on independent evidence.
+
+## Execution Isolation
+
+Forge validation, repair preflight, candidate preflight, and external acceptance oracles share one execution policy. The production backend runs each command in an ephemeral Docker container with:
+
+- `--network none`;
+- a read-only container root filesystem;
+- a single read-write bind mount containing only the temporary execution workspace;
+- all Linux capabilities dropped and `no-new-privileges` enabled;
+- bounded memory, CPU, PID count, tmpfs size, timeout, and captured output;
+- an explicit environment allowlist that does not inherit `.env`, OpenAI credentials, or other host secrets.
+
+Build the minimal validation image:
+```bash
+docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+```
+
+The image contains only Python, pytest, and bcrypt needed by the currently certified Forge surface. It is a validation runtime, not a distribution container for generated software. `forge.py`, the benchmark runner, held-out runner, and blind runner select this Docker backend by default. If Docker or the image is unavailable, validation fails closed with `sandbox_unavailable`; Forge does not fall back to local execution. Passing `--execution-backend local` to the production orchestrator is also refused with `sandbox_policy_violation`.
 
 ## Tests
 

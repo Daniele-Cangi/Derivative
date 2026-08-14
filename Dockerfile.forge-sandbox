@@ -1,0 +1,11 @@
+FROM python:3.11.9-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN python -m pip install --no-cache-dir \
+    bcrypt==4.3.0 \
+    pytest==8.3.5
+
+WORKDIR /workspace

@@ -11,6 +11,7 @@ from core.forge.benchmark import (
     run_benchmark_cases,
 )
 from forge import run_forge
+from core.forge.execution import DEFAULT_SANDBOX_IMAGE, DOCKER_BACKEND
 
 
 app = typer.Typer(help="Run Forge benchmark cases and emit baseline metrics.")
@@ -56,6 +57,8 @@ def main(
         min=1,
         help="Maximum coder attempts for each case.",
     ),
+    execution_backend: str = typer.Option(DOCKER_BACKEND, "--execution-backend"),
+    sandbox_image: str = typer.Option(DEFAULT_SANDBOX_IMAGE, "--sandbox-image"),
     min_status_accuracy: float = typer.Option(
         0.95,
         "--min-status-accuracy",
@@ -108,6 +111,8 @@ def main(
             packaging_output_root=packaging_root,
             max_planner_attempts=max_planner_attempts,
             max_coder_attempts=max_coder_attempts,
+            execution_backend=execution_backend,
+            sandbox_image=sandbox_image,
         ),
     )
     report_path = persist_benchmark_summary(summary, benchmark_output_root)

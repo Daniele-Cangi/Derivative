@@ -22,6 +22,11 @@ from core.forge.contracts import (
     PackagedArtifact,
     ValidationArtifact,
 )
+from core.forge.execution import (
+    DEFAULT_SANDBOX_IMAGE,
+    DOCKER_BACKEND,
+    create_process_executor,
+)
 from core.forge.packaging_stage import PackagingStage
 from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
@@ -49,6 +54,8 @@ def run_forge(
     packaging_output_root: str = "generated_artifacts/forge_packages",
     max_planner_attempts: int = 1,
     max_coder_attempts: int = 3,
+    execution_backend: str = DOCKER_BACKEND,
+    sandbox_image: str = DEFAULT_SANDBOX_IMAGE,
     requirement_compiler: RequirementCompiler | None = None,
     planner_stage: PlannerStage | None = None,
     coder_stage: CoderStage | None = None,
@@ -61,6 +68,10 @@ def run_forge(
     normalized_coder_attempts = max(1, int(max_coder_attempts))
     compiler = requirement_compiler or RequirementCompiler()
     planner = planner_stage or PlannerStage(execution_mode=execution_mode)
+    process_executor = create_process_executor(
+        execution_backend,
+        image=sandbox_image,
+    )
     if coder_stage is not None:
         coder = coder_stage
     else:
@@ -71,17 +82,22 @@ def run_forge(
                 execution_mode=execution_mode,
                 substrate=getattr(planner, "substrate", None),
                 kernel=getattr(planner, "kernel", None),
+                executor=process_executor,
             )
             candidate_compiler = SubstrateCandidateCompiler(
                 execution_mode=execution_mode,
                 substrate=getattr(planner, "substrate", None),
                 kernel=getattr(planner, "kernel", None),
+                executor=process_executor,
             )
         coder = CoderStage(
             repair_backend=repair_backend,
             candidate_compiler=candidate_compiler,
         )
-    validator = validator_stage or ValidatorStage()
+    validator = validator_stage or ValidatorStage(
+        executor=process_executor,
+        require_isolation=True,
+    )
     packager = packaging_stage or PackagingStage(output_root=packaging_output_root)
     repairs = repair_policy or RepairPolicy()
 
@@ -406,6 +422,16 @@ def main(
         min=1,
         help="Maximum coder attempts per planner attempt.",
     ),
+    execution_backend: str = typer.Option(
+        DOCKER_BACKEND,
+        "--execution-backend",
+        help="Generated-code execution backend. Production verification requires docker.",
+    ),
+    sandbox_image: str = typer.Option(
+        DEFAULT_SANDBOX_IMAGE,
+        "--sandbox-image",
+        help="Docker image used for isolated generated-code execution.",
+    ),
 ) -> None:
     result = run_forge(
         requirement=requirement,
@@ -414,6 +440,8 @@ def main(
         packaging_output_root=packaging_root,
         max_planner_attempts=max_planner_attempts,
         max_coder_attempts=max_coder_attempts,
+        execution_backend=execution_backend,
+        sandbox_image=sandbox_image,
     )
     typer.echo(render_cli_output(result))
 
