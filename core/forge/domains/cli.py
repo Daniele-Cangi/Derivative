@@ -12,6 +12,11 @@ from core.forge.domains.cli_json_merge import (
     render_json_merge_file,
     render_json_merge_test,
 )
+from core.forge.domains.cli_json_sort import (
+    is_json_record_sort_cli,
+    render_json_record_sort_file,
+    render_json_record_sort_test,
+)
 
 
 class CliDomainAdapter(BaseDomainAdapter):
@@ -39,6 +44,10 @@ class CliDomainAdapter(BaseDomainAdapter):
             rendered = render_json_merge_file(plan, path, interfaces)
             if rendered is not None:
                 return rendered
+        if is_json_record_sort_cli(plan):
+            rendered = render_json_record_sort_file(plan, path, interfaces)
+            if rendered is not None:
+                return rendered
         normalized = path.replace("\\", "/").lower()
         if normalized.endswith("src/cli.py") or normalized.endswith("src/main.py"):
             return self._template_cli(plan)
@@ -57,6 +66,8 @@ class CliDomainAdapter(BaseDomainAdapter):
             return render_json_log_test(plan, plan_test)
         if is_recursive_json_merge_cli(plan):
             return render_json_merge_test(plan, plan_test)
+        if is_json_record_sort_cli(plan):
+            return render_json_record_sort_test(plan, plan_test)
         return self._template_for_test(plan, plan_test)
 
     def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
@@ -73,6 +84,15 @@ class CliDomainAdapter(BaseDomainAdapter):
                 "recursive_json_merge",
                 "json_list_replacement",
                 "json_object_root_validation",
+            }
+        if is_json_record_sort_cli(plan):
+            return {
+                "cli_entrypoint",
+                "json_record_input",
+                "stable_record_sorting",
+                "duplicate_id_rejection",
+                "malformed_record_rejection",
+                "json_output",
             }
         return {
             "cli_entrypoint",

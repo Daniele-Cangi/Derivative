@@ -86,6 +86,7 @@ def test_bundled_blind_v2_is_frozen_and_complete():
     assert len(bundle.oracle_sha256) == 6
     assert all("blind-v2" in case.tags for case in bundle.cases)
     assert bundle.baseline_file_count == 48
+    assert bundle.observed_baseline_file_count >= bundle.baseline_file_count
     assert bundle.baseline_verified is False
     assert baseline["baseline_sha256"] == bundle.baseline_sha256
     assert baseline["metrics"]["external_false_verified_rate"] == 0.0

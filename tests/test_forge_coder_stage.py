@@ -96,6 +96,27 @@ ALLOCATION_LIBRARY_REQUIREMENT = (
     "total_cents, preserve input order, reject negative totals or weights, and include tests."
 )
 
+SEMVER_LIBRARY_REQUIREMENT = (
+    "Build a Python library exposing compare_versions(left: str, right: str) -> int for "
+    "Semantic Versioning 2.0.0. Return -1, 0, or 1 by precedence; compare major, minor, "
+    "and patch numerically; order prerelease identifiers according to the SemVer rules; "
+    "ignore build metadata; reject invalid versions with ValueError; and include tests."
+)
+
+INTERVAL_LIBRARY_REQUIREMENT = (
+    "Build a Python library exposing merge_intervals(intervals: list[tuple[int, int]]) -> "
+    "list[tuple[int, int]]. Sort intervals by start, merge overlapping and touching intervals, "
+    "return a deterministic list without mutating the input, reject an interval whose start "
+    "exceeds its end with ValueError, and include tests."
+)
+
+JSON_RECORD_SORT_REQUIREMENT = (
+    "Build a Python CLI whose main(argv) reads a JSON array of objects containing unique string "
+    "id and numeric score fields, stably orders records by descending score and then ascending id, "
+    "writes the ordered array as JSON to an output path, rejects duplicate ids or malformed "
+    "records with ValueError, and includes behavioral tests."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -796,3 +817,74 @@ def test_largest_remainder_library_profile_uses_exact_tie_breaking(tmp_path):
     assert core_module is not None
     assert "divmod(total_cents * weight, total_weight)" in core_module.content
     assert "key=lambda item: (-item[0], item[1])" in core_module.content
+
+
+@pytest.mark.parametrize(
+    ("requirement", "source_terms", "test_terms"),
+    [
+        (
+            SEMVER_LIBRARY_REQUIREMENT,
+            {"_SEMVER_PATTERN", "_compare_prerelease", "compare_versions"},
+            {"1.0.0-alpha.1", "build.99", "pytest.raises(ValueError)"},
+        ),
+        (
+            INTERVAL_LIBRARY_REQUIREMENT,
+            {"merge_intervals", "start > end", "ordered.sort"},
+            {"intervals == original", "(5, 8)", "pytest.raises(ValueError)"},
+        ),
+    ],
+)
+def test_standard_library_profiles_generate_behavioral_implementations(
+    tmp_path,
+    requirement,
+    source_terms,
+    test_terms,
+):
+    spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    assert DomainAdapterRegistry().select(plan).name == "library"
+
+    artifact = CoderStage().generate(plan)
+    source = _find_generated_file(artifact, "src/library/core.py")
+    assert source is not None
+    tests = "\n".join(
+        generated.content
+        for generated in artifact.files
+        if generated.path.startswith("tests/")
+    )
+    assert all(term in source.content for term in source_terms)
+    assert all(term in tests for term in test_terms)
+    assert artifact.artifact_manifest["metadata"]["adapter_capabilities"] == [
+        "library_public_api"
+    ]
+
+
+def test_json_record_sort_profile_preserves_value_error_contract(tmp_path):
+    spec = RequirementCompiler().compile(JSON_RECORD_SORT_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan)
+    source = _find_generated_file(artifact, "src/cli.py")
+    assert source is not None
+    assert "except ValueError" not in source.content
+    assert "raise ValueError" in source.content
+    assert "key=lambda record: (-record[\"score\"], record[\"id\"])" in source.content
+    tests = "\n".join(
+        generated.content
+        for generated in artifact.files
+        if generated.path.startswith("tests/")
+    )
+    assert "test_duplicate_ids_and_malformed_records_raise_value_error" in tests
+    assert "pytest.raises(ValueError)" in tests

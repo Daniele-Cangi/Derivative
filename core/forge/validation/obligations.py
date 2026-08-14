@@ -455,6 +455,7 @@ class ObligationValidationLayer(ValidationLayerBase):
             "input_csv": ("csv.dictreader", "csv.reader", "read_csv"),
             "summary_csv": ("csv.dictwriter", "csv.writer(", "write_summary"),
             "malformed_records": ("jsondecodeerror", "malformed", "invalid_json"),
+            "duplicate_ids": ("duplicate_id", "duplicate_ids"),
             "missing_fields": ("missing_field", "missing_fields"),
             "invalid_timestamp": ("invalid_timestamp", "timestamp_error"),
             "invalid_dates": ("invalid_date", "invalid_dates"),

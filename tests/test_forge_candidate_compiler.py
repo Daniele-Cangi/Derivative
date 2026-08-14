@@ -410,6 +410,22 @@ def test_executable_test_failure_expands_correction_to_imported_source(json_merg
     assert first_preflight["impact_expanded_paths"] == ["src/cli.py"]
 
 
+def test_imported_source_expansion_resolves_nested_module_basename():
+    files = {
+        "src/library/core.py": "def merge_intervals(values):\n    return values\n",
+        "src/library/__init__.py": "from .core import merge_intervals\n",
+        "tests/test_library.py": "import core\n\ndef test_merge():\n    assert core.merge_intervals([]) == []\n",
+    }
+
+    impacted = SubstrateCandidateCompiler._imported_source_paths(
+        files,
+        ["tests/test_library.py"],
+        list(files),
+    )
+
+    assert impacted == ["src/library/core.py"]
+
+
 def test_semantic_preflight_rejects_return_code_only_rejection_test(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {

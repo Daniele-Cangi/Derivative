@@ -339,10 +339,12 @@ class SubstrateCandidateCompiler:
             module = path.removeprefix("src/").removesuffix(".py").replace("/", ".")
             if module.endswith(".__init__"):
                 module = module.removesuffix(".__init__")
+            module_leaf = module.rsplit(".", 1)[-1]
             if any(
                 imported == module
                 or imported.startswith(f"{module}.")
                 or module.startswith(f"{imported}.")
+                or imported == module_leaf
                 for imported in imported_modules
             ):
                 impacted.append(path)

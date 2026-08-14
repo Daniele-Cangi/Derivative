@@ -39,6 +39,7 @@ class BlindBenchmarkBundle:
     baseline_sha256: str
     observed_baseline_sha256: str
     baseline_file_count: int
+    observed_baseline_file_count: int
     baseline_verified: bool
     source_urls: List[str] = field(default_factory=list)
     oracle_sha256: Dict[str, str] = field(default_factory=dict)
@@ -56,6 +57,7 @@ class BlindBenchmarkReport:
     baseline_sha256: str
     observed_baseline_sha256: str
     baseline_file_count: int
+    observed_baseline_file_count: int
     baseline_verified: bool
     source_urls: List[str]
     oracle_sha256: Dict[str, str]
@@ -161,7 +163,7 @@ def load_blind_bundle(
         if repository_root is not None
         else Path(__file__).resolve().parents[2]
     )
-    actual_baseline_sha256, baseline_file_count = compute_forge_baseline_digest(root)
+    actual_baseline_sha256, observed_file_count = compute_forge_baseline_digest(root)
     baseline_verified = actual_baseline_sha256 == expected_baseline_sha256
     if verify_baseline and not baseline_verified:
         raise ValueError(
@@ -170,10 +172,10 @@ def load_blind_bundle(
             f"actual={actual_baseline_sha256}."
         )
     expected_file_count = int(baseline_spec.get("file_count", 0))
-    if verify_baseline and expected_file_count != baseline_file_count:
+    if verify_baseline and expected_file_count != observed_file_count:
         raise ValueError(
             "Forge baseline file count mismatch: "
-            f"expected={expected_file_count}, actual={baseline_file_count}."
+            f"expected={expected_file_count}, actual={observed_file_count}."
         )
 
     sources_raw = payload.get("source_urls", [])
@@ -192,8 +194,9 @@ def load_blind_bundle(
         dataset_sha256=actual_dataset_sha256,
         baseline_sha256=expected_baseline_sha256,
         observed_baseline_sha256=actual_baseline_sha256,
-        baseline_file_count=baseline_file_count,
-        baseline_verified=baseline_verified and expected_file_count == baseline_file_count,
+        baseline_file_count=expected_file_count,
+        observed_baseline_file_count=observed_file_count,
+        baseline_verified=baseline_verified and expected_file_count == observed_file_count,
         source_urls=list(sources_raw),
         oracle_sha256=oracle_sha256,
         cases=cases,
@@ -225,6 +228,7 @@ def run_blind_bundle(
         baseline_sha256=bundle.baseline_sha256,
         observed_baseline_sha256=bundle.observed_baseline_sha256,
         baseline_file_count=bundle.baseline_file_count,
+        observed_baseline_file_count=bundle.observed_baseline_file_count,
         baseline_verified=bundle.baseline_verified,
         source_urls=list(bundle.source_urls),
         oracle_sha256=dict(bundle.oracle_sha256),
@@ -262,6 +266,7 @@ def render_blind_report(report: BlindBenchmarkReport, output_path: str) -> str:
             f"Bundle: {report.bundle_id}",
             f"Baseline verified: {str(report.baseline_verified).lower()}",
             f"Baseline SHA-256: {report.baseline_sha256}",
+            f"Baseline files: expected={report.baseline_file_count}, observed={report.observed_baseline_file_count}",
             f"Cases: {summary.total_cases}",
             f"Passed: {summary.passed_cases}",
             f"Failed: {summary.failed_cases}",

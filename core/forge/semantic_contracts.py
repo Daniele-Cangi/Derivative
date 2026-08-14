@@ -10,6 +10,16 @@ def behaviorally_evidences(
         tree = ast.parse(content)
     except SyntaxError:
         return False
+    if term in {
+        "malformed_records",
+        "malformed_rows",
+        "missing_fields",
+        "invalid_dates",
+        "invalid_timestamp",
+    }:
+        return has_expected_exception_assertion(content, public_interface_names)
+    if term == "duplicate_ids":
+        return has_duplicate_id_rejection_test(content, public_interface_names)
     if term == "json_object_root_validation":
         normalized = content.lower().replace("-", "_").replace(" ", "_")
         constants = {
@@ -77,6 +87,34 @@ def has_json_lines_processing(content: str) -> bool:
                 ):
                     return True
     return False
+
+
+def has_duplicate_id_rejection_test(
+    content: str,
+    target_names: set[str] | None = None,
+) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+
+    id_values: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == "id"
+                and isinstance(value, ast.Constant)
+                and isinstance(value.value, str)
+            ):
+                id_values.append(value.value)
+    has_duplicate_fixture = len(id_values) != len(set(id_values))
+    return has_duplicate_fixture and has_expected_exception_assertion(
+        content,
+        target_names,
+    )
 
 
 def has_expected_exception_assertion(

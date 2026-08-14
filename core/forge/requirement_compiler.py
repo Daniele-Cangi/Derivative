@@ -695,6 +695,7 @@ class RequirementCompiler:
         semantic_patterns = (
             ("timestamp", r"\btimestamps?\b"),
             ("malformed_records", r"\bmalformed\b"),
+            ("duplicate_ids", r"\bduplicate\s+ids?\b"),
             ("missing_fields", r"\bmissing\s+fields?\b"),
             ("invalid_timestamp", r"\binvalid\s+timestamps?\b"),
             ("quarantine", r"\bquarantin(?:e|es|ed|ing)\b"),
