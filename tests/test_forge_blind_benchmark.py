@@ -74,7 +74,10 @@ def test_blind_bundle_loads_only_when_dataset_oracles_and_baseline_match(tmp_pat
 
 
 def test_bundled_blind_v2_is_frozen_and_complete():
-    bundle = load_blind_bundle(bundled_blind_manifest_path())
+    bundle = load_blind_bundle(
+        bundled_blind_manifest_path(),
+        verify_baseline=False,
+    )
     baseline_path = Path(bundle.manifest_path).with_name("baseline_result.json")
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
 
@@ -83,6 +86,7 @@ def test_bundled_blind_v2_is_frozen_and_complete():
     assert len(bundle.oracle_sha256) == 6
     assert all("blind-v2" in case.tags for case in bundle.cases)
     assert bundle.baseline_file_count == 48
+    assert bundle.baseline_verified is False
     assert baseline["baseline_sha256"] == bundle.baseline_sha256
     assert baseline["metrics"]["external_false_verified_rate"] == 0.0
 

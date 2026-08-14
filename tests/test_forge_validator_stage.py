@@ -47,6 +47,13 @@ JSON_MERGE_REQUIREMENT = (
     "them, rejects a non-object root, and includes tests."
 )
 
+JSON_ARRAY_SORT_REQUIREMENT = (
+    "Build a Python CLI whose main(argv) reads a JSON array of objects containing unique string "
+    "id and numeric score fields, stably orders records by descending score and then ascending id, "
+    "writes the ordered array as JSON to an output path, rejects duplicate ids or malformed records "
+    "with ValueError, and includes behavioral tests."
+)
+
 
 @pytest.fixture(scope="module")
 def forge_pipeline(tmp_path_factory):
@@ -513,6 +520,51 @@ def test_validator_uses_invoice_smoke_input_for_invoice_specs():
 
     assert "invoice_id,due_date,amount,customer_name" in sample
     assert "INV-1,2026-01-15,100.00,Acme" in sample
+
+
+def test_runtime_smoke_uses_json_array_contract_for_json_cli(tmp_path):
+    build_spec = RequirementCompiler().compile(JSON_ARRAY_SORT_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(build_spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+    cli_file = _find_file(artifact, "src/cli.py")
+    assert cli_file is not None
+    cli_file.content = '''import argparse
+import json
+from pathlib import Path
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_json")
+    parser.add_argument("output_json")
+    args = parser.parse_args(argv)
+    records = json.loads(Path(args.input_json).read_text(encoding="utf-8"))
+    ordered = sorted(records, key=lambda row: (-row["score"], row["id"]))
+    Path(args.output_json).write_text(json.dumps(ordered), encoding="utf-8")
+    return 0
+'''
+    materialized = _materialize_artifact(artifact, tmp_path / "workspace")
+    layer = RuntimeValidationLayer("python", timeout_seconds=30)
+
+    result = layer.validate(
+        artifact,
+        plan,
+        build_spec,
+        materialized,
+        tmp_path / "workspace",
+    )
+
+    assert result.passed is True
+    entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
+    assert entrypoint["executed"] is True
+    assert entrypoint["smoke_contract"]["input_format"] == "json"
+    assert entrypoint["smoke_contract"]["output_format"] == "json"
 
 
 def test_runtime_module_names_are_package_aware():

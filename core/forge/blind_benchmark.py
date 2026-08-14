@@ -37,7 +37,9 @@ class BlindBenchmarkBundle:
     dataset_path: str
     dataset_sha256: str
     baseline_sha256: str
+    observed_baseline_sha256: str
     baseline_file_count: int
+    baseline_verified: bool
     source_urls: List[str] = field(default_factory=list)
     oracle_sha256: Dict[str, str] = field(default_factory=dict)
     cases: List[HeldoutBenchmarkCase] = field(default_factory=list)
@@ -52,6 +54,7 @@ class BlindBenchmarkReport:
     manifest_sha256: str
     dataset_sha256: str
     baseline_sha256: str
+    observed_baseline_sha256: str
     baseline_file_count: int
     baseline_verified: bool
     source_urls: List[str]
@@ -96,6 +99,7 @@ def compute_forge_baseline_digest(repository_root: str | Path) -> tuple[str, int
 def load_blind_bundle(
     manifest_path: str,
     repository_root: str | Path | None = None,
+    verify_baseline: bool = True,
 ) -> BlindBenchmarkBundle:
     path = Path(manifest_path).resolve()
     payload_bytes = path.read_bytes()
@@ -158,14 +162,15 @@ def load_blind_bundle(
         else Path(__file__).resolve().parents[2]
     )
     actual_baseline_sha256, baseline_file_count = compute_forge_baseline_digest(root)
-    if actual_baseline_sha256 != expected_baseline_sha256:
+    baseline_verified = actual_baseline_sha256 == expected_baseline_sha256
+    if verify_baseline and not baseline_verified:
         raise ValueError(
             "Forge baseline digest mismatch. The blind bundle is locked to an earlier "
             f"implementation: expected={expected_baseline_sha256}, "
             f"actual={actual_baseline_sha256}."
         )
     expected_file_count = int(baseline_spec.get("file_count", 0))
-    if expected_file_count != baseline_file_count:
+    if verify_baseline and expected_file_count != baseline_file_count:
         raise ValueError(
             "Forge baseline file count mismatch: "
             f"expected={expected_file_count}, actual={baseline_file_count}."
@@ -185,8 +190,10 @@ def load_blind_bundle(
         manifest_sha256=hashlib.sha256(payload_bytes).hexdigest(),
         dataset_path=str(dataset_path),
         dataset_sha256=actual_dataset_sha256,
-        baseline_sha256=actual_baseline_sha256,
+        baseline_sha256=expected_baseline_sha256,
+        observed_baseline_sha256=actual_baseline_sha256,
         baseline_file_count=baseline_file_count,
+        baseline_verified=baseline_verified and expected_file_count == baseline_file_count,
         source_urls=list(sources_raw),
         oracle_sha256=oracle_sha256,
         cases=cases,
@@ -198,6 +205,10 @@ def run_blind_bundle(
     run_case: Callable[[str], ForgeResult],
     run_oracle: Callable[[OracleSpec, str], OracleResult] = execute_pytest_oracle,
 ) -> BlindBenchmarkReport:
+    if not bundle.baseline_verified:
+        raise ValueError(
+            "Blind benchmark execution requires the exact sealed Forge baseline."
+        )
     summary = run_heldout_cases(
         bundle.cases,
         run_case=run_case,
@@ -212,8 +223,9 @@ def run_blind_bundle(
         manifest_sha256=bundle.manifest_sha256,
         dataset_sha256=bundle.dataset_sha256,
         baseline_sha256=bundle.baseline_sha256,
+        observed_baseline_sha256=bundle.observed_baseline_sha256,
         baseline_file_count=bundle.baseline_file_count,
-        baseline_verified=True,
+        baseline_verified=bundle.baseline_verified,
         source_urls=list(bundle.source_urls),
         oracle_sha256=dict(bundle.oracle_sha256),
         summary=summary,

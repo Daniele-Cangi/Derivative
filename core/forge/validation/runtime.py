@@ -186,16 +186,18 @@ class RuntimeValidationLayer(ValidationLayerBase):
         is_jsonl_input = self._is_jsonl_input(build_spec)
         is_jsonl_pipeline = self._is_jsonl_pipeline(build_spec)
         is_json_merge_cli = self._is_json_merge_cli(build_spec)
-        input_csv = workspace / ("validator_input.jsonl" if is_jsonl_input else "validator_input.csv")
-        output_csv = workspace / "validator_output.csv"
-        input_csv.write_text(self._sample_input_content(build_spec), encoding="utf-8")
+        input_format = self._input_format(build_spec)
+        output_format = self._output_format(build_spec)
+        input_path = workspace / f"validator_input.{input_format}"
+        output_path = workspace / f"validator_output.{output_format}"
+        input_path.write_text(self._sample_input_content(build_spec), encoding="utf-8")
         call_args = ""
         if candidate == "main":
             if is_jsonl_pipeline:
                 quarantine_jsonl = workspace / "validator_quarantine.jsonl"
                 call_args = (
-                    f"[{str(input_csv)!r}, {str(quarantine_jsonl)!r}, "
-                    f"{str(output_csv)!r}]"
+                    f"[{str(input_path)!r}, {str(quarantine_jsonl)!r}, "
+                    f"{str(output_path)!r}]"
                 )
             elif is_json_merge_cli:
                 base_json = workspace / "validator_base.json"
@@ -214,7 +216,13 @@ class RuntimeValidationLayer(ValidationLayerBase):
                     f"{str(output_json)!r}]"
                 )
             elif entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
-                call_args = f"[{str(input_csv)!r}, {str(output_csv)!r}]"
+                call_args = f"[{str(input_path)!r}, {str(output_path)!r}]"
+        result["smoke_contract"] = {
+            "input_format": input_format,
+            "output_format": output_format,
+            "input_path": str(input_path),
+            "output_path": str(output_path),
+        }
         script = (
             "import importlib\n"
             "import json\n"
@@ -239,8 +247,12 @@ class RuntimeValidationLayer(ValidationLayerBase):
             atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
             if "application log" in atom_text or "counts_by_level" in atom_text:
                 return '{"level":"INFO","message":"validator"}\n'
+            if "sensor_id" in atom_text and "numeric value" in atom_text:
+                return '{"sensor_id":"sensor-1","value":21.5}\n'
             return '{"device_id":"device-1","timestamp":"2026-01-15T12:00:00Z","temperature_c":21.5}\n'
         atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
+        if self._is_json_array_input(build_spec):
+            return '[{"id":"validator-a","score":2},{"id":"validator-b","score":1}]\n'
         if "invoice" in atom_text or "due_date" in atom_text:
             return (
                 "invoice_id,due_date,amount,customer_name\n"
@@ -272,6 +284,28 @@ class RuntimeValidationLayer(ValidationLayerBase):
             for term in atom.evidence_terms
         }
         return "recursive_json_merge" in evidence_terms
+
+    def _input_format(self, build_spec: BuildSpec) -> str:
+        if self._is_jsonl_input(build_spec):
+            return "jsonl"
+        if self._is_json_array_input(build_spec) or self._is_json_merge_cli(build_spec):
+            return "json"
+        return "csv"
+
+    def _output_format(self, build_spec: BuildSpec) -> str:
+        atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
+        if "summary csv" in atom_text or "writes a csv" in atom_text:
+            return "csv"
+        if "writes" in atom_text and "json" in atom_text:
+            return "json"
+        if "summary_json" in atom_text or "summary json" in atom_text:
+            return "json"
+        return "csv"
+
+    @staticmethod
+    def _is_json_array_input(build_spec: BuildSpec) -> bool:
+        atom_text = " ".join(atom.text.lower() for atom in build_spec.requirement_atoms)
+        return "reads a json array" in atom_text or "reads json array" in atom_text
 
     def _run_subprocess(self, script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
