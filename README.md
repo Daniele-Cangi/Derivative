@@ -194,7 +194,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 259 repository tests passing locally and in GitHub Actions.
+- 273 repository tests passing locally. The corresponding GitHub Actions run is required before this checkpoint is considered closed.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, enforced as a CI quality gate.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
@@ -275,6 +275,19 @@ python forge_blind_benchmark.py --mode hybrid
 
 `benchmarks/blind_v2/manifest.json` locks the dataset, every external oracle, and the protected Forge source baseline with SHA-256 digests. Loading fails before execution if any locked input or Forge implementation file changed. The bundled calibration set includes contracts derived from Semantic Versioning 2.0.0, RFC 6901, and RFC 3339 plus independently specified behavioral cases. Forge receives only each natural-language requirement; the acceptance oracle runs afterward against the packaged artifact. The first run is preserved in `benchmarks/blind_v2/baseline_result.json`. For later genuinely private evaluations, pass an independently maintained bundle with `--manifest` and do not commit it into the repository.
 
+Freeze a new externally authored blind bundle before its first Forge execution:
+```bash
+python forge_blind_freeze.py PATH_TO_PRIVATE_BUNDLE \
+  --bundle-id forge-blind-v3-external-001 \
+  --producer "Independent benchmark producer" \
+  --requirements-origin "Requirements authored outside the Forge process" \
+  --oracle-origin "Independent black-box acceptance suite" \
+  --declaration "Requirements and oracles were finalized before Forge execution" \
+  --source-url https://example.com/benchmark-spec
+```
+
+The freezer accepts an existing `cases.json` and its referenced oracle files; it never generates either. It writes a schema-v2 manifest once and refuses overwrite. The manifest records UTC freeze time, explicit provenance attestations, optional HTTPS source URLs, and SHA-256 digests for the dataset, each oracle, and the protected Forge baseline. The exact private bundle can then be executed with `python forge_blind_benchmark.py --manifest PATH_TO_PRIVATE_BUNDLE/manifest.json`. See `benchmarks/blind_v3/README.md` for the intake protocol. Provenance is an auditable declaration rather than cryptographic proof, so the external producer remains responsible for keeping inputs hidden until freeze.
+
 Key Forge tests include:
 - `tests/test_forge_planner_stage.py`
 - `tests/test_forge_coder_stage.py`
@@ -284,3 +297,4 @@ Key Forge tests include:
 - `tests/test_forge_requirement_preservation.py`
 - `tests/test_forge_heldout_benchmark.py`
 - `tests/test_forge_blind_benchmark.py`
+- `tests/test_forge_blind_freeze.py`

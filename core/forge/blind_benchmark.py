@@ -19,12 +19,24 @@ from core.forge.heldout_benchmark import (
 )
 
 
-BLIND_BENCHMARK_SCHEMA_VERSION = 1
+BLIND_BENCHMARK_SCHEMA_VERSION = 2
+SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2})
 _EXCLUDED_BASELINE_FILES = {
     "core/forge/benchmark.py",
     "core/forge/blind_benchmark.py",
+    "core/forge/blind_freeze.py",
     "core/forge/heldout_benchmark.py",
 }
+
+
+@dataclass(frozen=True)
+class BlindBenchmarkProvenance:
+    producer: str
+    requirements_origin: str
+    oracle_origin: str
+    independent_of_forge: bool
+    sealed_before_first_execution: bool
+    declaration: str
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,7 @@ class BlindBenchmarkBundle:
     baseline_file_count: int
     observed_baseline_file_count: int
     baseline_verified: bool
+    provenance: BlindBenchmarkProvenance | None = None
     source_urls: List[str] = field(default_factory=list)
     oracle_sha256: Dict[str, str] = field(default_factory=dict)
     cases: List[HeldoutBenchmarkCase] = field(default_factory=list)
@@ -59,6 +72,7 @@ class BlindBenchmarkReport:
     baseline_file_count: int
     observed_baseline_file_count: int
     baseline_verified: bool
+    provenance: BlindBenchmarkProvenance | None
     source_urls: List[str]
     oracle_sha256: Dict[str, str]
     summary: HeldoutBenchmarkSummary
@@ -110,15 +124,17 @@ def load_blind_bundle(
         raise ValueError("Blind benchmark manifest must be a JSON object.")
 
     schema_version = int(payload.get("schema_version", 0))
-    if schema_version != BLIND_BENCHMARK_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS:
         raise ValueError(
             "Unsupported blind benchmark schema_version: "
-            f"{schema_version}; expected {BLIND_BENCHMARK_SCHEMA_VERSION}."
+            f"{schema_version}; supported={sorted(SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS)}."
         )
     bundle_id = str(payload.get("bundle_id", "")).strip()
     frozen_at = str(payload.get("frozen_at", "")).strip()
     if not bundle_id or not frozen_at:
         raise ValueError("Blind benchmark manifest requires bundle_id and frozen_at.")
+    if schema_version >= 2:
+        _validate_utc_timestamp(frozen_at)
 
     dataset_spec = _required_mapping(payload, "dataset")
     dataset_path = _resolve_bundle_file(path.parent, dataset_spec.get("path"), "dataset")
@@ -183,6 +199,7 @@ def load_blind_bundle(
         isinstance(item, str) and item.startswith("https://") for item in sources_raw
     ):
         raise ValueError("Blind benchmark source_urls must be a list of HTTPS URLs.")
+    provenance = _load_provenance(payload, schema_version)
 
     return BlindBenchmarkBundle(
         bundle_id=bundle_id,
@@ -197,6 +214,7 @@ def load_blind_bundle(
         baseline_file_count=expected_file_count,
         observed_baseline_file_count=observed_file_count,
         baseline_verified=baseline_verified and expected_file_count == observed_file_count,
+        provenance=provenance,
         source_urls=list(sources_raw),
         oracle_sha256=oracle_sha256,
         cases=cases,
@@ -230,6 +248,7 @@ def run_blind_bundle(
         baseline_file_count=bundle.baseline_file_count,
         observed_baseline_file_count=bundle.observed_baseline_file_count,
         baseline_verified=bundle.baseline_verified,
+        provenance=bundle.provenance,
         source_urls=list(bundle.source_urls),
         oracle_sha256=dict(bundle.oracle_sha256),
         summary=summary,
@@ -261,7 +280,8 @@ def render_blind_report(report: BlindBenchmarkReport, output_path: str) -> str:
     summary = report.summary
     return "\n".join(
         [
-            "Forge Blind Benchmark v2",
+            "Forge Blind Benchmark",
+            f"Schema version: {report.schema_version}",
             f"Report id: {report.report_id}",
             f"Bundle: {report.bundle_id}",
             f"Baseline verified: {str(report.baseline_verified).lower()}",
@@ -286,6 +306,57 @@ def _required_mapping(payload: Dict[str, object], key: str) -> Dict[str, object]
     if not isinstance(value, dict):
         raise ValueError(f"Blind benchmark manifest field '{key}' must be an object.")
     return value
+
+
+def _load_provenance(
+    payload: Dict[str, object],
+    schema_version: int,
+) -> BlindBenchmarkProvenance | None:
+    if schema_version == 1:
+        return None
+
+    raw = _required_mapping(payload, "provenance")
+    text_fields = {
+        key: str(raw.get(key, "")).strip()
+        for key in (
+            "producer",
+            "requirements_origin",
+            "oracle_origin",
+            "declaration",
+        )
+    }
+    missing = [key for key, value in text_fields.items() if not value]
+    if missing:
+        raise ValueError(
+            "Blind benchmark provenance requires non-empty fields: "
+            + ", ".join(missing)
+            + "."
+        )
+    if raw.get("independent_of_forge") is not True:
+        raise ValueError(
+            "Blind benchmark provenance must declare independent_of_forge=true."
+        )
+    if raw.get("sealed_before_first_execution") is not True:
+        raise ValueError(
+            "Blind benchmark provenance must declare sealed_before_first_execution=true."
+        )
+    return BlindBenchmarkProvenance(
+        producer=text_fields["producer"],
+        requirements_origin=text_fields["requirements_origin"],
+        oracle_origin=text_fields["oracle_origin"],
+        independent_of_forge=True,
+        sealed_before_first_execution=True,
+        declaration=text_fields["declaration"],
+    )
+
+
+def _validate_utc_timestamp(value: str) -> None:
+    if not value.endswith("Z"):
+        raise ValueError("Blind benchmark frozen_at must be a UTC timestamp ending in Z.")
+    try:
+        datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
+    except ValueError as exc:
+        raise ValueError("Blind benchmark frozen_at is not a valid UTC timestamp.") from exc
 
 
 def _resolve_bundle_file(bundle_root: Path, raw_path: object, label: str) -> Path:
