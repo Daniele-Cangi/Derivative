@@ -318,6 +318,20 @@ python forge_blind_freeze.py PATH_TO_PRIVATE_BUNDLE \
 
 The freezer accepts an existing `cases.json` and its referenced oracle files; it never generates either. It writes a schema-v2 manifest once and refuses overwrite. The manifest records UTC freeze time, explicit provenance attestations, optional HTTPS source URLs, and SHA-256 digests for the dataset, each oracle, and the protected Forge baseline. The exact private bundle can then be executed with `python forge_blind_benchmark.py --manifest PATH_TO_PRIVATE_BUNDLE/manifest.json`. See `benchmarks/blind_v3/README.md` for the intake protocol. Provenance is an auditable declaration rather than cryptographic proof, so the external producer remains responsible for keeping inputs hidden until freeze.
 
+If no human producer is available, create and freeze a fresh bundle through the
+isolated one-shot OpenAI producer. It uses separate stateless generation requests
+for requirements and black-box oracles, receives no Forge source, stages all
+outputs privately, and publishes only after the schema-v2 freeze succeeds:
+
+```bash
+python forge_blind_produce.py benchmarks/blind_v3/external_001 \
+  --bundle-id forge-blind-v3-external-001
+```
+
+This is an operational isolation mechanism, not cryptographic proof of model
+independence. The destination must not already exist, and the Forge baseline must
+be clean and committed before production.
+
 Key Forge tests include:
 - `tests/test_forge_planner_stage.py`
 - `tests/test_forge_coder_stage.py`
@@ -328,3 +342,4 @@ Key Forge tests include:
 - `tests/test_forge_heldout_benchmark.py`
 - `tests/test_forge_blind_benchmark.py`
 - `tests/test_forge_blind_freeze.py`
+- `tests/test_forge_blind_producer.py`
