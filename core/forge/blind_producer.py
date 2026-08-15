@@ -80,9 +80,8 @@ def produce_and_freeze_blind_bundle(
             raw_cases=raw_cases,
             config=config,
         )
-        (staging / "cases.json").write_text(
-            json.dumps(dataset, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+        (staging / "cases.json").write_bytes(
+            (json.dumps(dataset, indent=2, sort_keys=True) + "\n").encode("utf-8")
         )
         freeze_blind_bundle(
             bundle_root=staging,
@@ -220,7 +219,7 @@ def _materialize_cases_and_oracles(
             )
             oracle_path = staging / relative_oracle
             oracle_path.parent.mkdir(parents=True, exist_ok=True)
-            oracle_path.write_text(oracle_source.rstrip() + "\n", encoding="utf-8")
+            oracle_path.write_bytes((oracle_source.rstrip() + "\n").encode("utf-8"))
             case["oracle"] = {
                 "path": relative_oracle.as_posix(),
                 "timeout_seconds": 30,

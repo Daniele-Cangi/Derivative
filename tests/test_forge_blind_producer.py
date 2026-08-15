@@ -92,6 +92,10 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert output_root.is_dir()
     assert Path(bundle.manifest_path).is_file()
     assert len(bundle.cases) == 3
+    assert b"\r\n" not in (output_root / "cases.json").read_bytes()
+    assert b"\r\n" not in (
+        output_root / "oracles" / "V3-001" / "oracle.py"
+    ).read_bytes()
     assert [call["output_schema_name"] for call in generator.calls] == [
         "forge_blind_v3_requirements",
         "forge_blind_v3_oracle",
@@ -161,3 +165,10 @@ def test_one_shot_producer_rejects_superficial_oracle_and_publishes_nothing(tmp_
     assert [call["output_schema_name"] for call in generator.calls].count(
         "forge_blind_v3_oracle"
     ) == 2
+
+
+def test_frozen_bundle_transport_disables_git_text_normalization():
+    repository_root = Path(__file__).resolve().parents[1]
+    attributes = (repository_root / ".gitattributes").read_text(encoding="utf-8")
+
+    assert "benchmarks/blind_v3/external_*/** -text" in attributes
