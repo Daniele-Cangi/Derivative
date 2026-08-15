@@ -30,6 +30,8 @@ class LibraryDomainAdapter(BaseDomainAdapter):
     def matches(self, plan: FeasiblePlan) -> bool:
         if plan.build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
             return True
+        if plan.build_spec.target_artifact_type != ArtifactTargetType.UNKNOWN:
+            return False
         paths = {item.path.replace("\\", "/").lower() for item in plan.file_tree_plan}
         return {"src/library/__init__.py", "src/library/core.py"}.issubset(paths)
 

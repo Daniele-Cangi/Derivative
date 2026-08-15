@@ -207,6 +207,31 @@ def test_seeded_pseudorandom_output_without_algorithm_is_materially_ambiguous():
     )
 
 
+def test_explicitly_unprovable_or_ambiguous_semantics_are_material_flags():
+    requirements = (
+        "Specify a function that merges infinite streams. Its behavioral equivalence is unprovable "
+        "and the ordering semantics are inherently ambiguous.",
+        "Create a synchronous method that claims asynchronous behavior, but no mechanism for true "
+        "asynchrony is defined, making the semantics formally unprovable.",
+    )
+
+    for requirement in requirements:
+        spec = RequirementCompiler().compile(requirement)
+
+        assert any("materially unspecified or unprovable" in flag for flag in spec.ambiguity_flags)
+
+
+def test_normative_must_not_clause_remains_a_hard_requirement():
+    spec = RequirementCompiler().compile(
+        "Create a service module exposing def hash_stream(stream) -> str. "
+        "The function must read the stream sequentially and must not close it."
+    )
+
+    atom = next(item for item in spec.requirement_atoms if "must not close it" in item.text.lower())
+    assert atom.category == "functional"
+    assert atom.strength == "hard"
+
+
 def test_universal_proof_scope_distinguishes_open_guarantees_from_properties():
     open_guarantee = RequirementCompiler().compile(
         "Build a parser that guarantees support for every possible external encoding."

@@ -226,6 +226,44 @@ def test_domain_registry_routes_typed_plans(
     assert "recursive_json_merge" not in cli_capabilities
 
 
+def test_typed_library_target_outranks_service_module_filename(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Create a service module exposing def hash_stream(stream: bytes) -> str that returns "
+        "a SHA-256 digest and includes tests."
+    )
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+
+    assert isinstance(plan, FeasiblePlan)
+    assert plan.build_spec.target_artifact_type == ArtifactTargetType.LIBRARY
+    assert {item.path for item in plan.file_tree_plan} == {
+        "src/service.py",
+        "tests/test_service.py",
+    }
+    assert DomainAdapterRegistry().select(plan).name == "library"
+
+
+def test_pipeline_blueprint_outranks_external_cli_artifact_type(tmp_path):
+    spec = RequirementCompiler().compile(TELEMETRY_CLI_REQUIREMENT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+
+    assert isinstance(plan, FeasiblePlan)
+    assert plan.build_spec.target_artifact_type == ArtifactTargetType.CLI
+    assert plan.implementation_blueprint.entrypoint_path == "src/pipeline.py"
+    assert DomainAdapterRegistry().select(plan).name == "pipeline"
+
+
 def test_domain_registry_uses_typed_plan_instead_of_raw_requirement(pipeline_feasible_plan):
     misleading_spec = replace(
         pipeline_feasible_plan.build_spec,

@@ -467,6 +467,14 @@ class RequirementCompiler:
                 flags.append("Risk classification criteria are materially unspecified.")
         if re.search(r"\b(?:appropriate|suitable)\s+report\b", lowered):
             flags.append("Report schema and output format are materially unspecified.")
+        if re.search(
+            r"\b(?:formally\s+)?unprovable\b|\binherently\s+ambiguous\b|"
+            r"\bno\s+mechanism\b.{0,80}\bdefined\b",
+            lowered,
+        ):
+            flags.append(
+                "Requirement explicitly declares behavior materially unspecified or unprovable."
+            )
         if (
             re.search(r"\b(?:pseudo[- ]random|prng|random\s+generator)\b", lowered)
             and re.search(r"\bseed(?:ed)?\b", lowered)
@@ -789,6 +797,8 @@ class RequirementCompiler:
             return "non_functional"
         if comparator_pattern.search(clause):
             return "non_functional"
+        if re.search(r"\b(?:must(?:\s+not)?|shall(?:\s+not)?)\b", lowered):
+            return "functional"
         if any(token in lowered for token in functional_tokens):
             return "functional"
         return "ambiguity"
