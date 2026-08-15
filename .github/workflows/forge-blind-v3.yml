@@ -37,11 +37,14 @@ jobs:
           assert len(bundle.cases) == 12;
           print(f'sealed_inputs_verified baseline_verified={bundle.baseline_verified}')"
 
-      - name: Execute frozen blind v3 once
+      - name: Execute model-backed post-fix replay
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1-mini
         run: >
           python forge_blind_benchmark.py
           --manifest benchmarks/blind_v3/external_002/manifest.json
-          --mode local-only
+          --mode hybrid
           --execution-backend docker
           --sandbox-image derivative-forge-sandbox:py311
           --post-fix-replay
@@ -51,7 +54,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forge-blind-v3-post-fix-replay
+          name: forge-blind-v3-model-backed-replay
           path: |
             generated_artifacts/forge_blind_benchmarks/
             generated_artifacts/forge_blind_runs/
