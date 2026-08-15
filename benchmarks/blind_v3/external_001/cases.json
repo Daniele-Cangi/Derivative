@@ -1,0 +1,170 @@
+[
+  {
+    "case_id": "V3-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Develop a CLI tool that reads a UTF-8 encoded text file and outputs the frequency of each Unicode grapheme cluster found, sorted by descending frequency and then lexicographically ascending for ties. The tool must handle files larger than available memory by streaming and must produce deterministic outputs regardless of input size or Python version, using only the standard library.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "text-processing",
+      "unicode",
+      "streaming"
+    ]
+  },
+  {
+    "case_id": "V3-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Implement a library function that accepts a generator producing datetime.date objects and returns an iterator over contiguous date ranges as (start_date, end_date) tuples. Ranges are inclusive and merged if dates are consecutive. The function must handle infinite generators gracefully without exhausting memory and must raise ValueError for non-date inputs.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "date-ranges",
+      "generator",
+      "streaming"
+    ]
+  },
+  {
+    "case_id": "V3-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Create a service-module exposing a function that accepts a list of HTTP header strings (e.g., 'Content-Type: text/plain') and returns a dictionary with normalized header names (lowercase, hyphen-separated) mapping to lists of header values preserving original order. The function must reject invalid header lines with an explicit error and be case-insensitive regarding header names.",
+    "tags": [
+      "blind-v3",
+      "service-module",
+      "http",
+      "headers",
+      "parsing"
+    ]
+  },
+  {
+    "case_id": "V3-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Design a data-pipeline function that atomically renames a specified directory tree to a new location, preserving all symbolic links and file permissions, and providing rollback on failure. The function must raise OSError on partial failures and guarantee no directory is left in a partially renamed state. Only the standard library os and shutil modules are allowed.",
+    "tags": [
+      "blind-v3",
+      "data-pipeline",
+      "filesystem",
+      "atomic",
+      "rename"
+    ]
+  },
+  {
+    "case_id": "V3-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Implement a CLI command that reads lines from standard input, interprets each line as a mathematical expression containing integers and the operators +, -, *, and // (floor division), evaluates them safely without eval or exec, and outputs the results line-by-line. The command must reject expressions with any invalid tokens and report line numbers on errors.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "expression-evaluation",
+      "safe",
+      "stdin"
+    ]
+  },
+  {
+    "case_id": "V3-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Create a library function that receives a callable and an iterable, and returns the index of the first element in the iterable for which the callable returns True, or -1 if none match. The function must raise TypeError if the callable is not callable or if the iterable is not iterable, and must not consume more elements than necessary.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "functional",
+      "search",
+      "iterator"
+    ]
+  },
+  {
+    "case_id": "V3-007",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Specify a CLI utility that, given an input text file, outputs a JSON array of unique substrings of length exactly 5 containing only ASCII alphabetic characters, ordered by the frequency of occurrence descending. The utility must reveal frequency ties arbitrarily and use only the Python standard library. The requirement's feasibility of exact substring extraction with frequency sorting under streaming is ambiguous due to memory constraints.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "string-processing",
+      "frequency",
+      "ascii"
+    ]
+  },
+  {
+    "case_id": "V3-008",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Define a service-module interface that accepts an undirected graph represented as adjacency lists and returns a minimal vertex cover of the graph. The requirement claims efficiency and minimality using polynomial-time standard library algorithms, which is ambiguous since minimal vertex cover is NP-hard and the standard library has no specialized graph algorithms.",
+    "tags": [
+      "blind-v3",
+      "service-module",
+      "graph",
+      "vertex-cover",
+      "complexity"
+    ]
+  },
+  {
+    "case_id": "V3-009",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Request a data-pipeline component that accepts a CSV file and produces an XML document representing its content with arbitrarily deep nested elements based on detected data hierarchies, all inferred with zero additional metadata. The requirement's claim of accurately deducing nesting and transforming without any user input or heuristics is ambiguous and likely unfeasible in the standard library.",
+    "tags": [
+      "blind-v3",
+      "data-pipeline",
+      "csv",
+      "xml",
+      "transformation"
+    ]
+  },
+  {
+    "case_id": "V3-010",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Mandate a library function that takes a list of integers sorted in ascending order and returns a strictly ascending list by removing duplicates and negative numbers, but requires the output list to be identical to the input list object in memory, implying in-place removal with length preservation, a formal contradiction given list immutability of length.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "list",
+      "in-place",
+      "contradiction"
+    ]
+  },
+  {
+    "case_id": "V3-011",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Define a CLI program that reads arbitrary binary files and outputs their SHA-256 checksum without using any hashlib or other non-standard library modules, contradicting the assertion that checksum calculation must be done without external libraries while requiring standard library only implementations of SHA-256 which do not exist.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "checksum",
+      "binary",
+      "contradiction"
+    ]
+  },
+  {
+    "case_id": "V3-012",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Specify a service-module function that receives two never-ending infinite generators of strictly increasing integers and merges them into an infinite sorted generator with no duplicates, but requires the function to return all results immediately on a finite computation basis, an inherent logical contradiction without waiting on infinite inputs.",
+    "tags": [
+      "blind-v3",
+      "service-module",
+      "generator",
+      "merge",
+      "infinite"
+    ]
+  }
+]
