@@ -156,3 +156,39 @@ standalone function. The remaining terminal-status mismatch is a seeded
 pseudo-random CLI whose algorithm is unspecified but was not treated as a
 material ambiguity. These are the next structural contract-extraction gaps; the
 result does not establish a new blind baseline.
+
+## Post-fix replay 004 (hybrid)
+
+Run `31885082173` executed the unchanged sealed inputs after generalizing public
+module extraction across functions, components, CLI commands, and standalone
+callables, and after treating an unspecified seeded pseudo-random algorithm as a
+material ambiguity. Its report is preserved in
+`external_002/post_fix_replay_004_hybrid.json` with
+`execution_kind=post_fix_replay` and `baseline_verified=false`.
+
+The replay produced:
+
+- 6 of 12 cases passed and status accuracy was 0.667;
+- infeasibility detection remained 1.000;
+- external `Verified@1` remained 0.000 and success after repair was 0.333;
+- two of four executed independent oracles passed, for an oracle pass rate of
+  0.500;
+- external false-verified rate improved from 0.833 to 0.667;
+- 9 repairs were attempted across 30 model requests and 264,277 tokens;
+- median runtime was 46.64 seconds and P95 runtime was 138.25 seconds;
+- estimated model cost remained unavailable because pricing metadata was not set.
+
+`invert_dictionary` and `filter_by_predicate` now preserve their public modules
+and pass the independent oracles. The unspecified pseudo-random CLI now fails
+closed as expected. Two requirements containing explicit `unprovable` and
+`inherently ambiguous` language still became false `verified`, revealing a
+material-ambiguity extraction gap. The `service.hash_stream` regression came
+from path-based adapter selection overriding the typed library target when the
+declared module happened to be named `service`.
+
+The remaining V3-005 and V3-006 oracle failures are not clean implementation
+signals. The frozen V3-005 oracle requires `SystemExit` rather than accepting a
+non-zero return code and its redirect fixture does not capture the observed
+stdout under pytest. The frozen V3-006 oracle comments `0d` as allowed while
+also parametrizing it as an input that must raise `ValueError`. These oracle
+files remain untouched so the sealed bundle and recorded metrics stay auditable.
