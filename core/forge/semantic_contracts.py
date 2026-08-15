@@ -25,6 +25,14 @@ def non_semantic_test_paths(
         if not test_functions:
             non_semantic.append(test_path)
             continue
+        if any(
+            _is_tautological_assertion(node)
+            for function in test_functions
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assert)
+        ):
+            non_semantic.append(test_path)
+            continue
         file_is_semantic = any(_test_function_is_semantic(function) for function in test_functions)
         if not file_is_semantic:
             non_semantic.append(test_path)
@@ -49,6 +57,8 @@ def _test_function_is_semantic(function: ast.FunctionDef | ast.AsyncFunctionDef)
 
 
 def _is_semantic_assertion(node: ast.Assert) -> bool:
+    if _is_tautological_assertion(node):
+        return False
     test = node.test
     if isinstance(test, ast.Constant):
         return test.value is not True
@@ -67,6 +77,94 @@ def _is_semantic_assertion(node: ast.Assert) -> bool:
         if any(isinstance(value, ast.Name) and value.id == "target" for value in values):
             return False
     return True
+
+
+def _is_tautological_assertion(node: ast.Assert) -> bool:
+    return _expression_is_tautological(node.test)
+
+
+def _expression_is_tautological(node: ast.expr) -> bool:
+    literal_truth = _literal_truthiness(node)
+    if literal_truth is not None:
+        return literal_truth
+    if not isinstance(node, ast.BoolOp) or not isinstance(node.op, ast.Or):
+        return False
+
+    expressions = _flatten_boolean_or(node)
+    if any(_expression_is_tautological(expression) for expression in expressions):
+        return True
+    return any(
+        _expressions_are_complements(left, right)
+        for index, left in enumerate(expressions)
+        for right in expressions[index + 1 :]
+    )
+
+
+def _flatten_boolean_or(node: ast.expr) -> list[ast.expr]:
+    if not isinstance(node, ast.BoolOp) or not isinstance(node.op, ast.Or):
+        return [node]
+    return [
+        expression
+        for value in node.values
+        for expression in _flatten_boolean_or(value)
+    ]
+
+
+def _expressions_are_complements(left: ast.expr, right: ast.expr) -> bool:
+    if isinstance(left, ast.UnaryOp) and isinstance(left.op, ast.Not):
+        return _same_expression(left.operand, right)
+    if isinstance(right, ast.UnaryOp) and isinstance(right.op, ast.Not):
+        return _same_expression(right.operand, left)
+
+    left_comparison = _single_comparison(left)
+    right_comparison = _single_comparison(right)
+    if left_comparison is None or right_comparison is None:
+        return False
+    left_operand, left_operator, left_comparator = left_comparison
+    right_operand, right_operator, right_comparator = right_comparison
+    complementary_operators = (
+        (ast.Eq, ast.NotEq),
+        (ast.NotEq, ast.Eq),
+        (ast.Is, ast.IsNot),
+        (ast.IsNot, ast.Is),
+        (ast.In, ast.NotIn),
+        (ast.NotIn, ast.In),
+    )
+    return (
+        any(
+            isinstance(left_operator, left_type)
+            and isinstance(right_operator, right_type)
+            for left_type, right_type in complementary_operators
+        )
+        and _same_expression(left_operand, right_operand)
+        and _same_expression(left_comparator, right_comparator)
+    )
+
+
+def _single_comparison(
+    node: ast.expr,
+) -> tuple[ast.expr, ast.cmpop, ast.expr] | None:
+    if (
+        not isinstance(node, ast.Compare)
+        or len(node.ops) != 1
+        or len(node.comparators) != 1
+    ):
+        return None
+    return node.left, node.ops[0], node.comparators[0]
+
+
+def _same_expression(left: ast.AST, right: ast.AST) -> bool:
+    return ast.dump(left, include_attributes=False) == ast.dump(
+        right,
+        include_attributes=False,
+    )
+
+
+def _literal_truthiness(node: ast.expr) -> bool | None:
+    try:
+        return bool(ast.literal_eval(node))
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return None
 
 
 def _is_pytest_raises_context(node: ast.With | ast.AsyncWith) -> bool:

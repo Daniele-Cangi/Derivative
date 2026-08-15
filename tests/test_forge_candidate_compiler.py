@@ -508,6 +508,42 @@ def test_public_api_exists():
     )
 
 
+def test_semantic_preflight_rejects_tautological_acceptance_assertion(json_merge_case):
+    _, plan, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/cli.py"] = _source()
+    test_paths = sorted(path for path in files if path.startswith("tests/"))
+    for path in test_paths:
+        files[path] = _test_source(path)
+    target_path = test_paths[0]
+    files[target_path] = '''def test_exit_status_contract():
+    target = lambda: 0
+    result = target()
+    assert isinstance(result, int)
+    assert result == 0 or result != 0
+'''
+    contracts = build_test_generation_contracts(test_paths, plan, artifact)
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    assert result["passed"] is False
+    assert result["phase"] == "semantic_contract"
+    assert any(
+        failure.get("kind") == "non_semantic_test"
+        and failure.get("path") == target_path
+        for failure in result["failures"]
+    )
+
+
 def test_imported_source_expansion_resolves_nested_module_basename():
     files = {
         "src/library/core.py": "def merge_intervals(values):\n    return values\n",
