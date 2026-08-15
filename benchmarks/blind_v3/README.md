@@ -126,3 +126,33 @@ expose overly literal semantic evidence terms, coarse universal-constraint
 classification, and repair routing that does not consistently invoke the
 candidate compiler for semantic omissions. These are structural findings, not
 justifications for benchmark-specific templates.
+
+## Post-fix replay 003 (hybrid)
+
+Run `31882743848` executed the unchanged sealed inputs after structural changes
+to preserve exact public modules, distinguish property tests from absolute
+universal proofs, accept AST-grounded entrypoint evidence, and route unsupported
+adapter semantics to the candidate compiler. Its report is preserved in
+`external_002/post_fix_replay_003_hybrid.json` with
+`execution_kind=post_fix_replay` and `baseline_verified=false`.
+
+The replay produced:
+
+- 6 of 12 cases passed and status accuracy increased to 0.833;
+- infeasibility detection remained 1.000;
+- external `Verified@1` remained 0.000 and success after repair was 0.167;
+- one of five executed independent oracles passed, for an oracle pass rate of
+  0.200;
+- five of six internally verified builds failed either an oracle or the expected
+  terminal status, so external false-verified rate was 0.833;
+- 11 repairs were attempted across 32 model requests and 299,800 tokens;
+- median runtime was 44.79 seconds and P95 runtime was 240.55 seconds;
+- estimated model cost remained unavailable because pricing metadata was not set.
+
+The exact `service.hash_stream` public contract now passes all five independent
+oracle tests. Four other feasible artifacts still substitute a generic module
+for a public name declared as a library function, component, CLI tool, or
+standalone function. The remaining terminal-status mismatch is a seeded
+pseudo-random CLI whose algorithm is unspecified but was not treated as a
+material ambiguity. These are the next structural contract-extraction gaps; the
+result does not establish a new blind baseline.
