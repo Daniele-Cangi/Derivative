@@ -227,6 +227,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 environment={
                     "PYTHONDONTWRITEBYTECODE": "1",
                     "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                    "PYTHONPATH": "src",
                 },
             )
         )

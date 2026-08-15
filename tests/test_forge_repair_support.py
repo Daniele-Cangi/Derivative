@@ -5,6 +5,7 @@ from core.forge.execution import (
 from core.forge.repair_support import (
     preflight_failed_paths,
     preflight_has_source_failure,
+    pytest_failure_details,
     run_test_preflight,
     source_api_contracts,
 )
@@ -125,6 +126,39 @@ def test_candidate_gate_maps_pytest_failure_to_exact_test_file():
     assert preflight_failed_paths(result, prefix="tests/") == [
         "tests/test_component.py"
     ]
+    assert pytest_failure_details(result) == [
+        {
+            "path": "tests/test_component.py",
+            "node_id": "tests/test_component.py::test_component",
+            "message": "assert 1 == 2",
+        }
+    ]
+
+
+def test_candidate_gate_exposes_src_layout_to_nested_python_processes():
+    result = run_test_preflight(
+        {
+            "src/tool.py": (
+                "def main() -> int:\n"
+                "    print('ready')\n"
+                "    return 0\n\n"
+                "if __name__ == '__main__':\n"
+                "    raise SystemExit(main())\n"
+            ),
+            "tests/test_tool.py": (
+                "import subprocess\n"
+                "import sys\n\n"
+                "def test_module_entrypoint():\n"
+                "    completed = subprocess.run([sys.executable, '-m', 'tool'], capture_output=True, text=True)\n"
+                "    assert completed.returncode == 0, completed.stderr\n"
+                "    assert completed.stdout.strip() == 'ready'\n"
+            ),
+        },
+        ["tests/test_tool.py"],
+        timeout_seconds=20,
+    )
+
+    assert result["passed"] is True
 
 
 def test_candidate_gate_uses_one_injected_executor_for_imports_and_tests():
@@ -145,4 +179,5 @@ def test_candidate_gate_uses_one_injected_executor_for_imports_and_tests():
     assert len(executor.requests) == 2
     assert executor.requests[0].command[:3] == ["python", "-B", "-c"]
     assert "pytest" in executor.requests[1].command
+    assert executor.requests[1].environment["PYTHONPATH"] == "src"
     assert all(request.workspace == executor.requests[0].workspace for request in executor.requests)

@@ -244,6 +244,8 @@ class CoderStage:
             "target_paths": list(directive.target_paths),
             "operations": list(directive.operations),
             "evidence_refs": list(directive.evidence_refs),
+            "requirement_ids": list(directive.requirement_ids),
+            "target_symbols": list(directive.target_symbols),
             "changed_paths": list(changed_paths),
             "previous_artifact_id": previous_artifact.artifact_id,
             "previous_digest": previous_digest,

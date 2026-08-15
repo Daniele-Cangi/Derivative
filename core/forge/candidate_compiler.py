@@ -141,14 +141,23 @@ class SubstrateCandidateCompiler:
             attempt_context["candidate_compilation_attempt"] = attempt + 1
             attempt_context["current_target_paths"] = list(active_paths)
             attempt_context["candidate_transaction_correction"] = bool(attempts)
-            attempt_context["preserve_passing_paths"] = sorted(
-                set(target_paths) - set(active_paths)
-            )
+            preserved_paths = sorted(set(target_paths) - set(active_paths))
+            attempt_context["preserve_passing_paths"] = preserved_paths
+            if candidate_files and preserved_paths:
+                attempt_context["preserved_candidate_files"] = {
+                    path: candidate_files[path]
+                    for path in preserved_paths
+                    if path in candidate_files
+                }
+                attempt_context["preservation_contract"] = (
+                    "These files passed the previous preflight and are immutable context. "
+                    "The revision must remain compatible with their imports, fixtures, and assertions."
+                )
             if attempts:
                 previous_preflight = attempts[-1]["preflight"]
                 attempt_context["preflight_test_execution"] = previous_preflight
-                attempt_context["candidate_correction_requirements"] = list(
-                    previous_preflight.get("correction_requirements", [])
+                attempt_context["candidate_correction_requirements"] = (
+                    self._correction_requirements(previous_preflight)
                 )
                 if previous_preflight.get("phase") == "tests":
                     attempt_context["candidate_correction_requirements"].append(
@@ -352,3 +361,22 @@ class SubstrateCandidateCompiler:
             ):
                 impacted.append(path)
         return sorted(set(impacted))
+
+    @staticmethod
+    def _correction_requirements(preflight: dict[str, Any]) -> list[str]:
+        requirements = [
+            str(item).strip()
+            for item in preflight.get("correction_requirements", [])
+            if str(item).strip()
+        ]
+        for detail in preflight.get("failure_details", []):
+            if not isinstance(detail, dict):
+                continue
+            node_id = str(detail.get("node_id") or detail.get("path") or "pytest failure")
+            message = str(detail.get("message") or "pytest assertion failed")
+            requirements.append(
+                f"{node_id}: resolve the observed failure '{message}' against the normalized requirement; "
+                "preserve every previously passing test and do not change an expected value unless its fixture "
+                "trace proves that the expectation contradicts the requirement."
+            )
+        return list(dict.fromkeys(requirements))

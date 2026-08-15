@@ -51,6 +51,7 @@ class RepairPolicy:
             artifact,
             signatures,
         )
+        requirement_ids = self._requirement_ids(validation)
         metadata = (
             artifact.artifact_manifest.get("metadata", {})
             if isinstance(artifact.artifact_manifest, dict)
@@ -74,8 +75,17 @@ class RepairPolicy:
             evidence_refs = self._dedupe(
                 [*evidence_refs, "artifact_manifest.metadata.candidate_compilation"]
             )
+        target_symbols = self._target_symbols(plan, target_paths, requirement_ids)
         digest_source = "|".join(
-            [plan.plan_id, str(attempt), *signatures, *operations, *target_paths]
+            [
+                plan.plan_id,
+                str(attempt),
+                *signatures,
+                *operations,
+                *target_paths,
+                *requirement_ids,
+                *target_symbols,
+            ]
         )
         repair_id = f"repair-{hashlib.sha256(digest_source.encode('utf-8')).hexdigest()[:12]}"
         repairable = bool(operations)
@@ -92,6 +102,8 @@ class RepairPolicy:
             target_paths=target_paths,
             operations=operations,
             evidence_refs=evidence_refs,
+            requirement_ids=requirement_ids,
+            target_symbols=target_symbols,
             repairable=repairable,
             stop_reason=stop_reason,
         )
@@ -228,6 +240,65 @@ class RepairPolicy:
             refs.append("layer2.adapter_capability_checks")
 
         return self._dedupe(paths), self._dedupe(refs)
+
+    def _requirement_ids(self, validation: ValidationArtifact) -> List[str]:
+        evidence = validation.evidence if isinstance(validation.evidence, dict) else {}
+        layer2 = self._mapping(evidence.get("layer2"))
+        layer3 = self._mapping(evidence.get("layer3"))
+        requirement_ids: List[str] = []
+
+        semantic_checks = self._mapping(layer2.get("requirement_semantic_checks"))
+        for mismatch in self._list(semantic_checks.get("semantic_content_mismatches")):
+            if isinstance(mismatch, dict) and isinstance(mismatch.get("requirement_id"), str):
+                requirement_ids.append(mismatch["requirement_id"])
+
+        coverage_checks = self._mapping(layer2.get("requirement_coverage_checks"))
+        for key in ("semantic_omissions", "missing_coverage", "universal_unproven"):
+            self._extend_strings(requirement_ids, coverage_checks.get(key))
+
+        adversarial_coverage = self._mapping(
+            layer3.get("semantic_requirement_test_coverage")
+        )
+        self._extend_strings(
+            requirement_ids,
+            adversarial_coverage.get("missing_semantic_coverage"),
+        )
+        return self._dedupe(requirement_ids)
+
+    def _target_symbols(
+        self,
+        plan: FeasiblePlan,
+        target_paths: List[str],
+        requirement_ids: List[str],
+    ) -> List[str]:
+        normalized_targets = {path.replace("\\", "/") for path in target_paths}
+        symbols: List[str] = []
+        entrypoint_path = plan.implementation_blueprint.entrypoint_path.replace("\\", "/")
+        for interface in plan.interfaces:
+            expected_path = self._interface_source_path(
+                interface.module_path,
+                entrypoint_path,
+            )
+            if expected_path and expected_path in normalized_targets:
+                symbols.append(interface.name)
+        required = set(requirement_ids)
+        for capability in plan.implementation_blueprint.capabilities:
+            if capability.module_path.replace("\\", "/") not in normalized_targets:
+                continue
+            if required and not (required & set(capability.requirement_ids)):
+                continue
+            symbols.extend(capability.interfaces)
+        return self._dedupe(symbols)
+
+    @staticmethod
+    def _interface_source_path(module_path: str, entrypoint_path: str) -> str:
+        raw = module_path.replace("\\", "/").strip("/")
+        if not raw:
+            return entrypoint_path
+        if raw.endswith(".py"):
+            return raw if raw.startswith("src/") else f"src/{raw}"
+        normalized = raw.removeprefix("src/").replace(".", "/")
+        return f"src/{normalized}.py"
 
     @staticmethod
     def _source_path_for_module(module_name: str, artifact: CodeArtifact) -> str:

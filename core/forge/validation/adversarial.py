@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.semantic_contracts import non_semantic_test_paths
 from core.forge.validation.common import ValidationLayerBase
 
 
@@ -267,87 +268,12 @@ class AdversarialValidationLayer(ValidationLayerBase):
         expected_test_paths: set[str],
         materialized: Dict[str, Path],
     ) -> List[str]:
-        non_semantic: List[str] = []
-        for test_path in sorted(expected_test_paths):
-            target = materialized.get(test_path)
-            if target is None or not target.exists():
-                continue
-            try:
-                tree = ast.parse(target.read_text(encoding="utf-8"))
-            except SyntaxError:
-                continue
-            test_functions = [
-                node
-                for node in ast.walk(tree)
-                if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
-            ]
-            if not test_functions:
-                self._append_unique(non_semantic, test_path)
-                continue
-            file_non_semantic = True
-            for function in test_functions:
-                has_call = any(isinstance(node, ast.Call) for node in ast.walk(function))
-                has_semantic_assertion = any(
-                    self._is_semantic_assertion(node)
-                    for node in ast.walk(function)
-                    if isinstance(node, ast.Assert)
-                )
-                has_expected_exception = any(
-                    self._is_pytest_raises_context(node)
-                    for node in ast.walk(function)
-                    if isinstance(node, (ast.With, ast.AsyncWith))
-                )
-                is_placeholder_name = function.name in {"test_acceptance_requirement", "test_stub"}
-                if is_placeholder_name:
-                    continue
-                if has_call and (has_semantic_assertion or has_expected_exception):
-                    file_non_semantic = False
-                    break
-            if file_non_semantic:
-                self._append_unique(non_semantic, test_path)
-        return non_semantic
-
-    @staticmethod
-    def _is_semantic_assertion(node: ast.Assert) -> bool:
-        test = node.test
-        if isinstance(test, ast.Constant):
-            return test.value is not True
-        if isinstance(test, ast.Call):
-            function_name = ""
-            if isinstance(test.func, ast.Name):
-                function_name = test.func.id
-            elif isinstance(test.func, ast.Attribute):
-                function_name = test.func.attr
-            if function_name in {"callable", "hasattr", "isinstance", "issubclass"}:
-                return False
-        if isinstance(test, ast.Compare):
-            values = [test.left, *test.comparators]
-            if any(
-                isinstance(value, ast.Call)
-                and isinstance(value.func, ast.Name)
-                and value.func.id in {"callable", "hasattr", "isinstance", "issubclass"}
-                for value in values
-            ):
-                return False
-            if any(isinstance(value, ast.Name) and value.id == "target" for value in values):
-                return False
-        return True
-
-    @staticmethod
-    def _is_pytest_raises_context(node: ast.With | ast.AsyncWith) -> bool:
-        for item in node.items:
-            expression = item.context_expr
-            if not isinstance(expression, ast.Call):
-                continue
-            function = expression.func
-            if (
-                isinstance(function, ast.Attribute)
-                and isinstance(function.value, ast.Name)
-                and function.value.id == "pytest"
-                and function.attr == "raises"
-            ):
-                return True
-        return False
+        contents = {
+            path: target.read_text(encoding="utf-8")
+            for path, target in materialized.items()
+            if path in expected_test_paths and target.exists()
+        }
+        return non_semantic_test_paths(expected_test_paths, contents)
 
     def _validate_semantic_requirement_test_coverage(
         self,

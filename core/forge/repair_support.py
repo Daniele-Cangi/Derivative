@@ -66,6 +66,39 @@ def preflight_failed_paths(
     return unique
 
 
+def pytest_failure_details(preflight: dict[str, Any]) -> list[dict[str, str]]:
+    """Extract stable pytest node ids and summaries for targeted repair prompts."""
+    output = "\n".join(
+        str(preflight.get(field, ""))
+        for field in ("stdout", "stderr")
+    )
+    details: list[dict[str, str]] = []
+    for match in re.finditer(
+        r"^FAILED\s+(?P<node>[^\s]+?\.py(?:::[^\s]+)?)(?:\s+-\s+(?P<message>.*))?$",
+        output,
+        re.IGNORECASE | re.MULTILINE,
+    ):
+        node_id = match.group("node").replace("\\", "/")
+        path = node_id.split("::", 1)[0]
+        detail = {
+            "path": path,
+            "node_id": node_id,
+            "message": (match.group("message") or "pytest assertion failed").strip(),
+        }
+        if detail not in details:
+            details.append(detail)
+    if details:
+        return details
+    return [
+        {
+            "path": path,
+            "node_id": path,
+            "message": "pytest reported a failure for this file",
+        }
+        for path in preflight_failed_paths(preflight, prefix="tests/")
+    ]
+
+
 def source_api_contracts(source_files: dict[str, str]) -> dict[str, Any]:
     contracts: dict[str, Any] = {}
     for path, content in sorted(source_files.items()):
@@ -324,6 +357,7 @@ def run_test_preflight(
                     environment={
                         "PYTHONDONTWRITEBYTECODE": "1",
                         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                        "PYTHONPATH": "src",
                     },
                 )
             )
@@ -344,6 +378,7 @@ def run_test_preflight(
                 result["error_type"] = "TimeoutExpired"
             if completed.returncode != 0:
                 failed_paths = preflight_failed_paths(result)
+                failure_details = pytest_failure_details(result)
                 result.update(
                     {
                         "failed_paths": failed_paths,
@@ -353,14 +388,16 @@ def run_test_preflight(
                         "test_failed_paths": [
                             path for path in failed_paths if path.startswith("tests/")
                         ],
+                        "failure_details": failure_details,
                         "failures": [
                             {
-                                "path": path,
+                                "path": detail["path"],
                                 "kind": "test_failure",
                                 "line": None,
-                                "message": "pytest reported a failure for this file",
+                                "node_id": detail["node_id"],
+                                "message": detail["message"],
                             }
-                            for path in failed_paths
+                            for detail in failure_details
                         ],
                     }
                 )

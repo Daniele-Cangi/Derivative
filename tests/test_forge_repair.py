@@ -229,6 +229,7 @@ def test_candidate_followup_repair_remains_a_complete_transaction(repair_case):
                 "requirement_semantic_checks": {
                     "semantic_content_mismatches": [
                         {
+                            "requirement_id": "R001",
                             "source_paths": ["src/cli.py"],
                             "test_paths": [artifact.test_paths[0]],
                         }
@@ -252,6 +253,8 @@ def test_candidate_followup_repair_remains_a_complete_transaction(repair_case):
         if generated.path not in artifact.manifest_paths
     }
     assert "artifact_manifest.metadata.candidate_compilation" in directive.evidence_refs
+    assert directive.requirement_ids == ["R001"]
+    assert "main" in directive.target_symbols
 
 
 def test_execution_repair_targets_only_pytest_failed_paths(repair_case):

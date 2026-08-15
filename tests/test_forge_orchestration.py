@@ -503,6 +503,16 @@ def test_semantic_content_mismatch_retries_coder_before_planner(tmp_path):
     assert result.run_metrics.success_after_repair is True
     assert result.run_metrics.validation_attempts == 2
     assert result.run_metrics.repair_count == 1
+    metadata_path = next((tmp_path / "runs").glob("*/run_metadata.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    validation_delta = metadata["attempt_trace"][1]["repair"]["validation_delta"]
+    assert validation_delta["resolved_signatures"] == [
+        "semantic_content_mismatch",
+        "semantic_omission",
+    ]
+    assert validation_delta["introduced_signatures"] == []
+    assert validation_delta["passed_after_repair"] is True
+    assert result.validation.evidence["repair_effectiveness"] == validation_delta
 
 
 def test_forge_orchestration_retries_planner_on_architectural_failures(tmp_path):

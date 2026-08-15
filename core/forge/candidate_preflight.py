@@ -8,6 +8,7 @@ from core.forge.semantic_contracts import (
     has_expected_exception_assertion,
     has_json_lines_processing,
     interface_parameter_is_exercised,
+    non_semantic_test_paths,
     structurally_evidences,
 )
 from core.forge.validation.obligations import ObligationValidationLayer
@@ -23,6 +24,13 @@ def run_semantic_preflight(
         candidate_files,
         plan,
         contracts,
+    )
+    test_failures.extend(
+        _non_semantic_test_failures(
+            candidate_files,
+            contracts,
+            failed_paths,
+        )
     )
     source_failures = _source_contract_failures(
         candidate_files,
@@ -135,6 +143,31 @@ def _test_contract_failures(
     return failures, failed_paths, atoms_by_id
 
 
+def _non_semantic_test_failures(
+    candidate_files: dict[str, str],
+    contracts: dict[str, Any],
+    failed_paths: list[str],
+) -> list[dict[str, Any]]:
+    mapped_paths = [path for path in contracts if path.startswith("tests/")]
+    failures: list[dict[str, Any]] = []
+    for path in non_semantic_test_paths(mapped_paths, candidate_files):
+        if path not in failed_paths:
+            failed_paths.append(path)
+        requirement_ids = [
+            str(requirement.get("id", ""))
+            for requirement in contracts.get(path, {}).get("requirements", [])
+            if str(requirement.get("id", ""))
+        ]
+        failures.append(
+            {
+                "path": path,
+                "kind": "non_semantic_test",
+                "requirement_ids": requirement_ids,
+            }
+        )
+    return failures
+
+
 def _source_contract_failures(
     candidate_files: dict[str, str],
     plan: FeasiblePlan,
@@ -203,6 +236,14 @@ def correction_requirements(
     requirements: list[str] = []
     for failure in test_failures:
         path = str(failure.get("path", ""))
+        if failure.get("kind") == "non_semantic_test":
+            requirement_ids = [str(item) for item in failure.get("requirement_ids", [])]
+            requirements.append(
+                f"{path}: replace callable/type/file-presence or placeholder checks with a test that invokes "
+                "a declared public interface using concrete input and asserts an observable behavioral result "
+                f"for requirements {requirement_ids}."
+            )
+            continue
         requirement_id = str(failure.get("requirement_id", ""))
         atom = atoms_by_id.get(requirement_id)
         atom_text = atom.text if atom is not None else requirement_id

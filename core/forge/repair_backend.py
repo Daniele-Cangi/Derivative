@@ -492,6 +492,8 @@ class SubstrateRepairBackend:
             "validator_evidence": validation.evidence,
             "repair_operations": list(directive.operations),
             "evidence_refs": list(directive.evidence_refs),
+            "repair_requirement_ids": list(directive.requirement_ids),
+            "repair_target_symbols": list(directive.target_symbols),
         }
 
     @staticmethod

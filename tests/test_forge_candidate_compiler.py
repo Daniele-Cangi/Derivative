@@ -88,9 +88,11 @@ class _ExtraPathKernel(_JsonMergeKernel):
 class _MonotonicCorrectionKernel(_JsonMergeKernel):
     def __init__(self):
         self.target_history = []
+        self.context_history = []
 
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         self.target_history.append(sorted(target_files))
+        self.context_history.append(copy.deepcopy(repair_context))
         return super().propose_code_revision(
             repair_context,
             target_files,
@@ -356,6 +358,9 @@ def test_candidate_correction_preserves_passing_files(json_merge_case):
     assert candidate.files["src/cli.py"] == preflight_calls[0]["src/cli.py"]
     second_attempt = candidate.evidence["candidate_attempts"][1]
     assert "src/cli.py" in second_attempt["preserved_paths"]
+    preserved = kernel.context_history[1]["preserved_candidate_files"]
+    assert preserved["src/cli.py"] == preflight_calls[0]["src/cli.py"]
+    assert "immutable context" in kernel.context_history[1]["preservation_contract"]
 
 
 def test_executable_test_failure_expands_correction_to_imported_source(json_merge_case):
@@ -408,6 +413,99 @@ def test_executable_test_failure_expands_correction_to_imported_source(json_merg
     ]
     first_preflight = candidate.evidence["candidate_attempts"][0]["preflight"]
     assert first_preflight["impact_expanded_paths"] == ["src/cli.py"]
+
+
+def test_candidate_correction_receives_structured_pytest_failure(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _MonotonicCorrectionKernel()
+    calls = 0
+
+    def preflight(files, tests):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {
+                "ran": True,
+                "passed": False,
+                "phase": "tests",
+                "failed_paths": ["tests/test_replaces_json_lists.py"],
+                "source_failed_paths": [],
+                "test_failed_paths": ["tests/test_replaces_json_lists.py"],
+                "failure_details": [
+                    {
+                        "path": "tests/test_replaces_json_lists.py",
+                        "node_id": "tests/test_replaces_json_lists.py::test_replacement",
+                        "message": "assert [1, 2, 3] == [3]",
+                    }
+                ],
+            }
+        return {
+            "ran": True,
+            "passed": True,
+            "phase": "tests",
+            "failed_paths": [],
+            "source_failed_paths": [],
+            "test_failed_paths": [],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=1,
+        test_preflight_runner=preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert candidate.files
+    requirements = kernel.context_history[1]["candidate_correction_requirements"]
+    assert any("test_replacement" in item for item in requirements)
+    assert any("assert [1, 2, 3] == [3]" in item for item in requirements)
+
+
+def test_semantic_preflight_uses_validator_anti_stub_contract(json_merge_case):
+    _, plan, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/cli.py"] = _source()
+    test_paths = sorted(path for path in files if path.startswith("tests/"))
+    for path in test_paths:
+        files[path] = _test_source(path)
+    target_path = test_paths[0]
+    files[target_path] = '''import cli
+
+
+def test_public_api_exists():
+    assert callable(cli.main)
+'''
+    contracts = build_test_generation_contracts(test_paths, plan, artifact)
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    assert result["passed"] is False
+    assert result["phase"] == "semantic_contract"
+    assert any(
+        failure.get("kind") == "non_semantic_test"
+        and failure.get("path") == target_path
+        for failure in result["failures"]
+    )
+    assert any(
+        target_path in requirement and "observable behavioral result" in requirement
+        for requirement in result["correction_requirements"]
+    )
 
 
 def test_imported_source_expansion_resolves_nested_module_basename():

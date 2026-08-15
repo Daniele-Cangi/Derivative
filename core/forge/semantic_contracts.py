@@ -1,5 +1,114 @@
 import ast
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
+
+
+def non_semantic_test_paths(
+    test_paths: Iterable[str],
+    file_contents: Mapping[str, str],
+) -> list[str]:
+    """Return test files that do not invoke behavior and assert an outcome."""
+    non_semantic: list[str] = []
+    for test_path in sorted(set(test_paths)):
+        content = file_contents.get(test_path)
+        if content is None:
+            continue
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            continue
+        test_functions = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        ]
+        if not test_functions:
+            non_semantic.append(test_path)
+            continue
+        file_is_semantic = any(_test_function_is_semantic(function) for function in test_functions)
+        if not file_is_semantic:
+            non_semantic.append(test_path)
+    return non_semantic
+
+
+def _test_function_is_semantic(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    if function.name in {"test_acceptance_requirement", "test_stub"}:
+        return False
+    has_call = any(isinstance(node, ast.Call) for node in ast.walk(function))
+    has_assertion = any(
+        _is_semantic_assertion(node)
+        for node in ast.walk(function)
+        if isinstance(node, ast.Assert)
+    )
+    has_expected_exception = any(
+        _is_pytest_raises_context(node)
+        for node in ast.walk(function)
+        if isinstance(node, (ast.With, ast.AsyncWith))
+    ) or _has_explicit_try_exception_assertion(function)
+    return has_call and (has_assertion or has_expected_exception)
+
+
+def _is_semantic_assertion(node: ast.Assert) -> bool:
+    test = node.test
+    if isinstance(test, ast.Constant):
+        return test.value is not True
+    if isinstance(test, ast.Call):
+        function_name = _expression_name(test.func)
+        if function_name in {"callable", "hasattr", "isinstance", "issubclass"}:
+            return False
+    if isinstance(test, ast.Compare):
+        values = [test.left, *test.comparators]
+        if any(
+            isinstance(value, ast.Call)
+            and _expression_name(value.func) in {"callable", "hasattr", "isinstance", "issubclass"}
+            for value in values
+        ):
+            return False
+        if any(isinstance(value, ast.Name) and value.id == "target" for value in values):
+            return False
+    return True
+
+
+def _is_pytest_raises_context(node: ast.With | ast.AsyncWith) -> bool:
+    for item in node.items:
+        expression = item.context_expr
+        if not isinstance(expression, ast.Call):
+            continue
+        if _expression_name(expression.func) in {"pytest.raises", "raises"}:
+            return True
+    return False
+
+
+def _has_explicit_try_exception_assertion(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    expected_exceptions = {"ValueError", "TypeError", "SystemExit"}
+    catches_expected = any(
+        expected_exceptions & set(_exception_names(handler.type))
+        for node in ast.walk(function)
+        if isinstance(node, ast.Try)
+        for handler in node.handlers
+    )
+    raises_failure = any(
+        isinstance(node, ast.Raise)
+        and node.exc is not None
+        and (
+            _expression_name(node.exc.func) == "AssertionError"
+            if isinstance(node.exc, ast.Call)
+            else _expression_name(node.exc) == "AssertionError"
+        )
+        for node in ast.walk(function)
+    )
+    return catches_expected and raises_failure
+
+
+def _expression_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _expression_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
 
 
 def structurally_evidences(

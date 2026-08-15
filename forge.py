@@ -240,6 +240,23 @@ def run_forge(
                         code_artifact = repair_result.artifact
                         validation = validator.validate(code_artifact, planning_output, build_spec)
 
+            if repair_trace is not None and previous_validation is not None:
+                previous_signatures = set(previous_validation.failure_signatures)
+                current_signatures = set(validation.failure_signatures)
+                resolved_signatures = sorted(previous_signatures - current_signatures)
+                introduced_signatures = sorted(current_signatures - previous_signatures)
+                validation_delta = {
+                    "resolved_signatures": resolved_signatures,
+                    "remaining_signatures": sorted(previous_signatures & current_signatures),
+                    "introduced_signatures": introduced_signatures,
+                    "failure_count_before": len(previous_validation.failures),
+                    "failure_count_after": len(validation.failures),
+                    "passed_after_repair": validation.passed,
+                    "evidence_improved": bool(resolved_signatures) or validation.passed,
+                }
+                repair_trace["validation_delta"] = validation_delta
+                validation.evidence["repair_effectiveness"] = dict(validation_delta)
+
             if code_artifact is None:
                 raise RuntimeError("Coder attempt did not produce a CodeArtifact.")
             latest_code_artifact = code_artifact

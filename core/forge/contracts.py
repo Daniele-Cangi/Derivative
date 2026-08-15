@@ -233,6 +233,8 @@ class RepairDirective:
     target_paths: List[str] = field(default_factory=list)
     operations: List[str] = field(default_factory=list)
     evidence_refs: List[str] = field(default_factory=list)
+    requirement_ids: List[str] = field(default_factory=list)
+    target_symbols: List[str] = field(default_factory=list)
     repairable: bool = True
     stop_reason: str = ""
 
