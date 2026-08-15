@@ -141,6 +141,20 @@ class AdversarialValidationLayer(ValidationLayerBase):
             return []
 
         mismatches: List[str] = []
+        for interface in plan.interfaces:
+            if not interface.module_path:
+                continue
+            expected_path = f"src/{interface.module_path.replace('.', '/')}.py"
+            target = materialized.get(expected_path)
+            if target is None or not target.exists():
+                mismatches.append(f"{expected_path}:{interface.name}:missing_public_module")
+                continue
+            try:
+                tree = ast.parse(target.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            if not self._module_exports_name(tree, interface.name):
+                mismatches.append(f"{expected_path}:{interface.name}:missing_public_export")
         for path, target in materialized.items():
             if not path.startswith("src/") or not path.endswith(".py"):
                 continue
@@ -161,6 +175,19 @@ class AdversarialValidationLayer(ValidationLayerBase):
                 ):
                     mismatches.append(f"{path}:{node.name}:decorated_cli_command")
         return mismatches
+
+    @staticmethod
+    def _module_exports_name(tree: ast.AST, name: str) -> bool:
+        for node in getattr(tree, "body", []):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name:
+                return True
+            if isinstance(node, ast.ImportFrom):
+                if any(alias.asname == name or (alias.asname is None and alias.name == name) for alias in node.names):
+                    return True
+            if isinstance(node, ast.Assign):
+                if any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+                    return True
+        return False
 
     def _decorator_name(self, node: ast.expr) -> str:
         if isinstance(node, ast.Call):

@@ -603,3 +603,21 @@ def test_jsonl_cli_pipeline_separates_workflow_from_cli_entrypoint(tmp_path):
     assert "timestamp validation" in purposes["src/validator.py"].lower()
     assert "quarantine jsonl" in purposes["src/quarantine.py"].lower()
     assert "sqlite" not in " ".join(purposes.values()).lower()
+
+
+def test_declared_public_module_is_preserved_in_plan_layout_and_interface(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Create a codec module exposing def encode_stream(stream: bytes) -> str "
+        "that returns a deterministic digest and includes tests."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert {item.path for item in output.file_tree_plan} == {
+        "src/codec.py",
+        "tests/test_codec.py",
+    }
+    interface = next(item for item in output.interfaces if item.name == "encode_stream")
+    assert interface.module_path == "codec"
+    assert "codec" in output.architecture_summary

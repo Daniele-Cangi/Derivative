@@ -95,6 +95,9 @@ class PipelineDomainAdapter(BaseDomainAdapter):
             capabilities.add("structured_logging")
         return capabilities
 
+    def implements_plan_semantics(self, plan: FeasiblePlan) -> bool:
+        return True
+
     def _template_pipeline_entrypoint(self, plan: FeasiblePlan) -> str:
         quality = plan.quality_contract
         entrypoint_name = self._pipeline_workflow_name(plan)

@@ -37,6 +37,7 @@ class RequirementAtom:
     strength: str
     source_fragment: str
     evidence_terms: List[str] = field(default_factory=list)
+    verification_method: str = "behavioral_test"
 
 
 @dataclass
@@ -140,6 +141,7 @@ class BuildSpec:
     obligation_contract: Optional[ObligationContract] = None
     quality_contract: QualityContract = field(default_factory=QualityContract)
     target_artifact_type: ArtifactTargetType = ArtifactTargetType.UNKNOWN
+    public_module: str = ""
     risk_hints: List[str] = field(default_factory=list)
     ambiguity_flags: List[str] = field(default_factory=list)
     assumptions: List[str] = field(default_factory=list)
@@ -158,6 +160,7 @@ class PlanInterface:
     interface_type: str
     signature: str = ""
     description: str = ""
+    module_path: str = ""
 
 
 @dataclass

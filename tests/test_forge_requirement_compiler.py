@@ -124,3 +124,54 @@ def test_internal_that_clause_does_not_truncate_callable_contract():
     assert "preserve order" in atom_text
     assert "infinite iterators" in atom_text
     assert all(atom.source_fragment for atom in spec.requirement_atoms)
+
+
+def test_declared_public_module_and_callable_drive_library_contract():
+    requirement = (
+        "Create a codec module exposing def encode_stream(stream: bytes) -> str "
+        "that returns a deterministic digest and includes tests."
+    )
+
+    spec = RequirementCompiler().compile(requirement)
+
+    assert spec.target_artifact_type == ArtifactTargetType.LIBRARY
+    assert spec.public_module == "codec"
+    interface_atom = next(atom for atom in spec.requirement_atoms if "encode_stream" in atom.text)
+    assert interface_atom.verification_method == "interface_contract"
+
+
+def test_named_callable_component_outranks_pipeline_domain_noun():
+    requirement = (
+        "Design a data pipeline component 'select_records' accepting an iterator and a predicate. "
+        "It yields matching records in input order and includes tests."
+    )
+
+    spec = RequirementCompiler().compile(requirement)
+
+    assert spec.target_artifact_type == ArtifactTargetType.LIBRARY
+
+
+def test_universal_proof_scope_distinguishes_open_guarantees_from_properties():
+    open_guarantee = RequirementCompiler().compile(
+        "Build a parser that guarantees support for every possible external encoding."
+    )
+    property_requirement = RequirementCompiler().compile(
+        "Implement a function that accepts arbitrary payload objects and preserves their order."
+    )
+    exact_cardinality = RequirementCompiler().compile(
+        "Implement a parser where the delimiter must appear exactly once."
+    )
+
+    assert any(
+        atom.verification_method == "universal_proof"
+        for atom in open_guarantee.requirement_atoms
+    )
+    assert any(
+        atom.category == "universal_constraint" and atom.verification_method == "property_test"
+        for atom in property_requirement.requirement_atoms
+    )
+    assert all(
+        atom.category != "universal_constraint"
+        for atom in exact_cardinality.requirement_atoms
+        if "exactly once" in atom.text.lower()
+    )

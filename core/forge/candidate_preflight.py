@@ -8,6 +8,7 @@ from core.forge.semantic_contracts import (
     has_expected_exception_assertion,
     has_json_lines_processing,
     interface_parameter_is_exercised,
+    structurally_evidences,
 )
 from core.forge.validation.obligations import ObligationValidationLayer
 
@@ -172,6 +173,7 @@ def _source_contract_failures(
             term
             for term in atom.evidence_terms
             if not ObligationValidationLayer._semantic_term_present(term, source_corpus)
+            and not structurally_evidences(term, source_content, plan.interfaces)
             and not (
                 term in {"jsonl", "input_jsonl"}
                 and has_json_lines_processing(source_content)

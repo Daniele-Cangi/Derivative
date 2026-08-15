@@ -30,6 +30,7 @@ class RequirementCompiler:
         if not functional_goals:
             functional_goals = self._extract_functional_goals(normalized)
         target_artifact_type = self._detect_target_artifact_type(normalized)
+        public_module = self._extract_public_module(normalized, target_artifact_type)
         non_functional_constraints = [
             atom.text
             for atom in requirement_atoms
@@ -66,6 +67,7 @@ class RequirementCompiler:
             obligation_contract=obligation_contract,
             quality_contract=quality_contract,
             target_artifact_type=target_artifact_type,
+            public_module=public_module,
             risk_hints=self._derive_risk_hints(
                 normalized,
                 ambiguity_flags,
@@ -183,6 +185,10 @@ class RequirementCompiler:
                     strength=strength,
                     source_fragment=clause,
                     evidence_terms=self._extract_evidence_terms(normalized_clause),
+                    verification_method=self._verification_method_for_clause(
+                        normalized_clause,
+                        category,
+                    ),
                 )
             )
             index += 1
@@ -357,6 +363,11 @@ class RequirementCompiler:
                 r"\b(?:implement|create|provide|define|write|develop)\b.{0,80}\bfunction\b",
                 lowered,
             )
+            or re.search(
+                r"\b(?:function|method|component)\s+['\"]?[a-z_][a-z0-9_]*['\"]?"
+                r"\s+(?:accepting|taking|that|to|with)\b",
+                lowered,
+            )
         )
         explicit_http_service = bool(
             re.search(r"\b(?:rest|http|api|endpoint|microservice|server)\b", lowered)
@@ -374,6 +385,27 @@ class RequirementCompiler:
         if re.search(r"\bscript\b", lowered):
             return ArtifactTargetType.SCRIPT
         return ArtifactTargetType.UNKNOWN
+
+    def _extract_public_module(
+        self,
+        requirement: str,
+        target_artifact_type: ArtifactTargetType,
+    ) -> str:
+        if target_artifact_type != ArtifactTargetType.LIBRARY:
+            return ""
+        patterns = (
+            r"\bmodule\s+(?:named|called)\s+['\"]?([a-z_][a-z0-9_]*)['\"]?",
+            r"\b(?:create|implement|provide|define|write|develop)\s+(?:an?\s+)?"
+            r"(?:python\s+)?['\"]?([a-z_][a-z0-9_]*)['\"]?\s+module\b",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, requirement, re.IGNORECASE)
+            if not match:
+                continue
+            module_name = match.group(1).lower()
+            if module_name not in {"python", "library", "package", "public"}:
+                return module_name
+        return ""
 
     def _extract_ambiguity_flags(
         self,
@@ -447,7 +479,12 @@ class RequirementCompiler:
                     criterion_id=f"AC{index:03d}",
                     description=description,
                     required=True,
-                    verification_hint="Validate through executable behavior and tests.",
+                    verification_hint={
+                        "interface_contract": "Validate the declared public interface structurally.",
+                        "static_analysis": "Validate through static source and dependency analysis.",
+                        "property_test": "Validate through executable property-oriented tests.",
+                        "universal_proof": "Require explicit proof evidence; finite examples are insufficient.",
+                    }.get(atom.verification_method, "Validate through executable behavior and tests."),
                     requirement_ids=[atom.requirement_id],
                 )
             )
@@ -627,7 +664,6 @@ class RequirementCompiler:
             "arbitrary",
             "guarantee",
             "guarantees",
-            "exactly",
             "for every",
             "for all",
         )
@@ -775,6 +811,33 @@ class RequirementCompiler:
             if re.search(pattern, lowered):
                 add(term)
         return terms
+
+    def _verification_method_for_clause(self, clause: str, category: str) -> str:
+        lowered = clause.lower()
+        absolute_universal_tokens = (
+            "every possible",
+            "all possible",
+            "any possible",
+            "guarantee",
+            "guarantees",
+            "for every",
+            "for all",
+        )
+        if any(token in lowered for token in absolute_universal_tokens):
+            return "universal_proof"
+        if category == "universal_constraint":
+            return "property_test"
+        if re.search(r"\bdef\s+[a-z_][a-z0-9_]*\s*\(", lowered):
+            return "interface_contract"
+        if re.match(
+            r"^(?:build|create|implement|develop|provide|define)\b.*"
+            r"\b(?:cli|command|function|method|module|library|service|component)\b",
+            lowered,
+        ):
+            return "interface_contract"
+        if "standard library" in lowered or "stdlib" in lowered:
+            return "static_analysis"
+        return "behavioral_test"
 
     def _strength_for_clause(self, clause: str, category: str) -> str:
         lowered = clause.lower()

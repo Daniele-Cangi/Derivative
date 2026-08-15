@@ -71,3 +71,14 @@ class LibraryDomainAdapter(BaseDomainAdapter):
             )
         )
         return {"library_public_api"} if supported else set()
+
+    def implements_plan_semantics(self, plan: FeasiblePlan) -> bool:
+        return any(
+            matcher(plan)
+            for matcher in (
+                is_email_normalization_library,
+                is_largest_remainder_library,
+                is_semver_library,
+                is_interval_merge_library,
+            )
+        )

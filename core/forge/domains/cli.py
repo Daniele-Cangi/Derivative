@@ -105,6 +105,23 @@ class CliDomainAdapter(BaseDomainAdapter):
             "invoice_totals_counts",
         }
 
+    def implements_plan_semantics(self, plan: FeasiblePlan) -> bool:
+        if any(
+            predicate(plan)
+            for predicate in (
+                is_json_log_cli,
+                is_recursive_json_merge_cli,
+                is_json_record_sort_cli,
+            )
+        ):
+            return True
+        paths = {item.path.replace("\\", "/").lower() for item in plan.file_tree_plan}
+        return {
+            "src/contracts_csv.py",
+            "src/expiration_rules.py",
+            "src/summary_writer.py",
+        }.issubset(paths)
+
     def _template_cli(self, plan: FeasiblePlan) -> str:
         is_invoice = self._is_invoice_plan(plan)
         parser_description = "Process invoice due dates from CSV input." if is_invoice else "Process contract expirations from CSV input."

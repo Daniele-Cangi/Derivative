@@ -273,6 +273,11 @@ class PlannerStage:
                 "audit, and observability capability modules."
             )
         if build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
+            if build_spec.public_module:
+                return (
+                    f"Python library exposing the declared public module '{build_spec.public_module}' "
+                    "with its callable contract and behavioral tests."
+                )
             return "Python library architecture with public API module, core workflow module, and tests."
         return "Python executable architecture with explicit entrypoint, workflow module, and tests."
 
@@ -438,6 +443,23 @@ class PlannerStage:
             )
             return planned_files
         if build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
+            if build_spec.public_module:
+                module_path = f"src/{build_spec.public_module.replace('.', '/')}.py"
+                return [
+                    PlanFile(
+                        path=module_path,
+                        purpose=f"Declared public module '{build_spec.public_module}' and callable implementation.",
+                        source_requirement_refs=self._library_requirement_ids(build_spec),
+                    ),
+                    PlanFile(
+                        path=f"tests/test_{build_spec.public_module.replace('.', '_')}.py",
+                        purpose="Behavioral verification of the declared public module contract.",
+                        source_requirement_refs=self._requirement_ids_for_file(
+                            build_spec,
+                            f"tests/test_{build_spec.public_module.replace('.', '_')}.py",
+                        ),
+                    ),
+                ]
             return [
                 PlanFile(
                     path="src/library/__init__.py",
@@ -741,6 +763,7 @@ class PlannerStage:
                     interface_type="function",
                     signature=signature,
                     description=f"Public library API declared by the requirement: {signature}.",
+                    module_path=build_spec.public_module,
                 )
             )
         return interfaces
@@ -1087,6 +1110,8 @@ class PlannerStage:
         return deduped
 
     def _is_pipeline_build(self, build_spec: BuildSpec) -> bool:
+        if build_spec.target_artifact_type == ArtifactTargetType.LIBRARY:
+            return False
         combined = " ".join(
             [
                 build_spec.normalized_requirement.lower(),

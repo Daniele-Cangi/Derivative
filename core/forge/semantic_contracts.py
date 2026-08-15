@@ -1,4 +1,32 @@
 import ast
+from typing import Any, Iterable
+
+
+def structurally_evidences(
+    term: str,
+    source_content: str,
+    interfaces: Iterable[Any],
+) -> bool:
+    if term != "cli_entrypoint":
+        return False
+    expected_names = {
+        interface.name
+        for interface in interfaces
+        if getattr(interface, "interface_type", "") == "cli_entrypoint"
+        and getattr(interface, "name", "").isidentifier()
+    }
+    if not expected_names:
+        return False
+    try:
+        tree = ast.parse(source_content)
+    except SyntaxError:
+        return False
+    defined_names = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    return bool(expected_names & defined_names)
 
 
 def behaviorally_evidences(

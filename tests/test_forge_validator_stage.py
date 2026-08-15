@@ -6,10 +6,13 @@ import pytest
 
 import core.forge.validator_stage as validator_stage_module
 from core.forge.coder_stage import CoderStage
-from core.forge.contracts import CodeArtifact, FeasiblePlan, ValidationArtifact
+from core.forge.contracts import CodeArtifact, FeasiblePlan, PlanInterface, ValidationArtifact
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
-from core.forge.semantic_contracts import has_end_to_end_file_workflow_test
+from core.forge.semantic_contracts import (
+    has_end_to_end_file_workflow_test,
+    structurally_evidences,
+)
 from core.forge.validator_stage import ValidatorStage
 from core.forge.validation.adversarial import AdversarialValidationLayer
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
@@ -62,6 +65,60 @@ SENSOR_PIPELINE_REQUIREMENT = (
     "and mean for each sensor, return 0 on success, produce deterministic keys, and include "
     "end-to-end tests."
 )
+
+
+def test_cli_entrypoint_is_structural_evidence_without_framework_tokens():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI utility that reads one value and includes tests."
+    )
+    interfaces = [PlanInterface(name="main", interface_type="cli_entrypoint")]
+
+    assert structurally_evidences(
+        "cli_entrypoint",
+        "def main(argv=None):\n    return 0\n",
+        interfaces,
+    )
+    assert spec.requirement_atoms[0].evidence_terms == ["cli_entrypoint"]
+
+
+def test_custom_cli_requires_candidate_generation_capability(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI utility that reads newline-delimited words from standard input, "
+        "emits the first repeated word, and includes behavioral tests."
+    )
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+
+    assert isinstance(plan, FeasiblePlan)
+    required = AdapterCapabilityContractChecker().required_capabilities(plan)
+    assert "candidate_generation_required" in required
+
+
+def test_declared_public_module_is_checked_as_interface_contract(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Create a codec module exposing def encode_stream(stream: bytes) -> str "
+        "that returns a deterministic digest and includes tests."
+    )
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    wrong_module = tmp_path / "other.py"
+    wrong_module.write_text("def encode_stream(stream):\n    return 'digest'\n", encoding="utf-8")
+
+    mismatches = AdversarialValidationLayer()._detect_interface_contract_mismatches(
+        plan,
+        {"src/other.py": wrong_module},
+    )
+
+    assert "src/codec.py:encode_stream:missing_public_module" in mismatches
 
 
 @pytest.fixture(scope="module")

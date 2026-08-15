@@ -22,6 +22,9 @@ class BaseDomainAdapter:
     def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
         return set()
 
+    def implements_plan_semantics(self, plan: FeasiblePlan) -> bool:
+        return False
+
     def _entrypoint_name(self, plan: FeasiblePlan, default: str = "run") -> str:
         for interface in plan.interfaces:
             if interface.interface_type in {"entrypoint", "cli_entrypoint"} and interface.name.isidentifier():

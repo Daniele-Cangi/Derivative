@@ -9,6 +9,7 @@ from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_json_lines_processing,
     interface_parameter_is_exercised,
+    structurally_evidences,
 )
 from core.forge.validation.common import ValidationLayerBase
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
@@ -287,6 +288,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "text": atom.text,
                 "category": atom.category,
                 "strength": atom.strength,
+                "verification_method": atom.verification_method,
                 "files": files,
                 "tests": tests,
                 "acceptance_criteria": acceptance,
@@ -301,7 +303,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 missing_coverage.append(atom.requirement_id)
             if (
                 atom.category == "universal_constraint" or atom.strength == "universal"
-            ) and atom.requirement_id not in universal_proofs:
+            ) and atom.verification_method != "property_test" and atom.requirement_id not in universal_proofs:
                 universal_unproven.append(atom.requirement_id)
 
         if semantic_omissions:
@@ -365,6 +367,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                     term
                     for term in atom.evidence_terms
                     if not self._semantic_term_present(term, source_corpus)
+                    and not structurally_evidences(term, source_content, plan.interfaces)
                     and not (
                         term in {"jsonl", "input_jsonl"}
                         and has_json_lines_processing(source_content)

@@ -98,6 +98,9 @@ class ServiceDomainAdapter(BaseDomainAdapter):
             capabilities.add("distributed_rate_limiting")
         return capabilities
 
+    def implements_plan_semantics(self, plan: FeasiblePlan) -> bool:
+        return True
+
     def _template_service_plan_test_module(self, plan: FeasiblePlan) -> str:
         quality = plan.quality_contract
         extra_assert = "    assert service.QUALITY_LEVEL >= 8\n" if quality.overall_level >= 8 else ""

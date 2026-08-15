@@ -216,6 +216,10 @@ class AdapterCapabilityContractChecker:
         elif target in {ArtifactTargetType.SCRIPT, ArtifactTargetType.UNKNOWN}:
             required.add("planned_entrypoint")
 
+        selected_adapter = self.registry.select(plan)
+        if not selected_adapter.implements_plan_semantics(plan):
+            required.add("candidate_generation_required")
+
         if any(
             "csv" in atom and re.search(r"\b(read|reads|input|loads?)\b", atom)
             for atom in atoms
