@@ -2566,6 +2566,7 @@ class ExecutionLoop:
         contradictions.extend(self._detect_cardinality_content_contradictions(problem))
         contradictions.extend(self._detect_information_capacity_contradictions(problem))
         contradictions.extend(self._detect_retention_contradictions(problem))
+        contradictions.extend(self._detect_logical_contract_contradictions(problem))
         deduped: List[str] = []
         seen: set[str] = set()
         for contradiction in contradictions:
@@ -2575,6 +2576,52 @@ class ExecutionLoop:
             seen.add(normalized)
             deduped.append(contradiction)
         return deduped
+
+    def _detect_logical_contract_contradictions(self, problem: str) -> List[str]:
+        lowered = " ".join(problem.lower().split())
+        contradictions: List[str] = []
+        simultaneous = bool(re.search(r"\b(?:simultaneously|both)\b", lowered))
+        opposed_terms = (
+            ("ignore", "enforce"),
+            ("include", "exclude"),
+            ("allow", "forbid"),
+            ("accept", "reject"),
+            ("present", "absent"),
+            ("case-sensitive", "case-insensitive"),
+            ("case sensitive", "case insensitive"),
+        )
+        for left, right in opposed_terms:
+            if simultaneous and re.search(rf"\b{re.escape(left)}\b", lowered) and re.search(
+                rf"\b{re.escape(right)}\b", lowered
+            ):
+                contradictions.append(
+                    "INFEASIBLE: the requirement simultaneously mandates opposed postconditions "
+                    f"('{left}' and '{right}'), so no single result can satisfy both."
+                )
+
+        infinite_stream = bool(re.search(r"\binfinite\s+(?:input\s+)?streams?\b", lowered))
+        exact_comparison = bool(
+            re.search(r"\b(?:exact(?:ly)?\s+equal(?:ity)?|delta\s+tolerance\s+of\s+exactly\s+zero)\b", lowered)
+        )
+        finite_observation = bool(
+            re.search(
+                r"\b(?:without\s+(?:consuming|reading).{0,40}(?:entirely|all)|finite\s+prefix|"
+                r"before\s+(?:consuming|reading).{0,40}(?:entire|all))\b",
+                lowered,
+            )
+        )
+        decision_required = bool(
+            re.search(
+                r"\b(?:compare|detect\s+(?:a\s+)?difference|decide\s+(?:exact\s+)?equality)\b",
+                lowered,
+            )
+        )
+        if infinite_stream and exact_comparison and finite_observation and decision_required:
+            contradictions.append(
+                "INFEASIBLE: exact equality or difference of arbitrary infinite streams cannot be "
+                "decided from a finite prefix; two streams may share every observed value and diverge later."
+            )
+        return contradictions
 
     def _detect_cardinality_content_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())

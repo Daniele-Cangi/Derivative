@@ -591,7 +591,17 @@ def deduplicate_emails(values: list[str]) -> list[str]:
     files["src/library/__init__.py"] = (
         "from .core import canonicalize_email, deduplicate_emails\n"
     )
-    mapped_path = "tests/test_implement_functional_goal_build_a_python.py"
+    deduplication_atom = next(
+        atom
+        for atom in spec.requirement_atoms
+        if "deduplication must preserve" in atom.text.lower()
+    )
+    mapped_test = next(
+        test
+        for test in plan.required_tests
+        if deduplication_atom.requirement_id in test.requirement_ids
+    )
+    mapped_path = f"tests/{mapped_test.test_name}.py"
     files[mapped_path] = '''from library import deduplicate_emails
 
 
@@ -615,7 +625,9 @@ def test_deduplicate_preserves_original_first_value():
 
     assert result["passed"] is False
     failure = next(
-        item for item in result["failures"] if item.get("requirement_id") == "R001"
+        item
+        for item in result["failures"]
+        if item.get("requirement_id") == deduplication_atom.requirement_id
     )
     assert failure["canonicalized_deduplication_missing"] is True
 

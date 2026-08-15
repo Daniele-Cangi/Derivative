@@ -104,3 +104,23 @@ def test_material_business_policy_ambiguities_are_preserved():
 
     assert "Risk classification criteria are materially unspecified." in spec.ambiguity_flags
     assert "Report schema and output format are materially unspecified." in spec.ambiguity_flags
+
+
+def test_internal_that_clause_does_not_truncate_callable_contract():
+    requirement = (
+        "Provide a Python service module exposing def transform_items(items, predicate) "
+        "that yields accepted items. If the predicate raises for an item, that item must "
+        "be skipped. It must preserve order and tolerate infinite iterators."
+    )
+
+    spec = RequirementCompiler().compile(requirement)
+    atom_text = " ".join(atom.text.lower() for atom in spec.requirement_atoms)
+
+    assert spec.target_artifact_type == ArtifactTargetType.LIBRARY
+    assert "def transform_items(items, predicate)" in atom_text
+    assert "yields accepted items" in atom_text
+    assert "predicate raises for an item" in atom_text
+    assert "item must be skipped" in atom_text
+    assert "preserve order" in atom_text
+    assert "infinite iterators" in atom_text
+    assert all(atom.source_fragment for atom in spec.requirement_atoms)

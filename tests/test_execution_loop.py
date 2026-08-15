@@ -290,6 +290,38 @@ def test_execution_loop_proves_information_and_retention_contradictions(problem,
     assert payload["contradiction_count"] >= 1
 
 
+@pytest.mark.parametrize(
+    ("problem", "proof_term"),
+    [
+        (
+            "Build a formatter whose output must simultaneously include and exclude every header.",
+            "opposed postconditions",
+        ),
+        (
+            "Build a comparator that must decide exact equality between arbitrary infinite streams "
+            "without reading all values from either stream.",
+            "finite prefix",
+        ),
+    ],
+)
+def test_execution_loop_proves_general_logical_contract_contradictions(problem, proof_term):
+    contradictions = ExecutionLoop()._detect_infeasibility(problem)
+
+    assert contradictions
+    assert proof_term in " ".join(contradictions).lower()
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "Build a validator that detects contradictions and rejects invalid input.",
+        "Merge two infinite sorted streams without reading either stream into memory.",
+    ],
+)
+def test_logical_contract_detector_does_not_infer_unstated_impossibility(problem):
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
 def test_execution_loop_routes_linear_recurrence_to_symbolic_mode():
     from sympy import N, sqrt, sympify
 

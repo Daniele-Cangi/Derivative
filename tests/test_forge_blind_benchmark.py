@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -194,3 +195,40 @@ def test_blind_runner_exposes_requirement_only_and_persists_seal(tmp_path):
     assert "External success after repair: n/a" in rendered
     assert "P95 case runtime:" in rendered
     assert "Estimated model cost: $0.00000000" in rendered
+
+
+def test_post_fix_replay_is_explicit_and_cannot_be_reported_as_sealed_baseline(tmp_path):
+    repository_root = Path(__file__).resolve().parents[1]
+    manifest_path = _write_bundle(tmp_path, repository_root)
+    sealed = load_blind_bundle(str(manifest_path), repository_root=repository_root)
+    changed = replace(
+        sealed,
+        baseline_verified=False,
+        observed_baseline_sha256="0" * 64,
+    )
+
+    with pytest.raises(ValueError, match="exact sealed Forge baseline"):
+        run_blind_bundle(changed, run_case=lambda requirement: None)
+
+    report = run_blind_bundle(
+        changed,
+        run_case=lambda requirement: ForgeResult(
+            route=ForgeRoute.TERMINAL_VERIFIED,
+            terminal_status=TERMINAL_VERIFIED,
+            summary="verified",
+            artifact_path="package",
+            run_metrics=ForgeRunMetrics(validation_attempts=1, verified_at_1=True),
+        ),
+        run_oracle=lambda oracle, package: OracleResult(
+            executed=True,
+            passed=True,
+            exit_code=0,
+        ),
+        post_fix_replay=True,
+    )
+
+    assert report.execution_kind == "post_fix_replay"
+    assert report.baseline_verified is False
+    rendered = render_blind_report(report, "report.json")
+    assert "Execution kind: post_fix_replay" in rendered
+    assert "Baseline verified: false" in rendered

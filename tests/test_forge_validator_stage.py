@@ -462,6 +462,21 @@ def test_missing_semantic_requirement_coverage_is_detected(forge_pipeline):
     assert result.failure_category is not None and result.failure_category.value == "validation"
 
 
+def test_universal_category_fails_closed_even_when_strength_is_hard(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = copy.deepcopy(forge_pipeline["build_spec"])
+    atom = next(item for item in build_spec.requirement_atoms if item.category != "ambiguity")
+    atom.category = "universal_constraint"
+    atom.strength = "hard"
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "universal_constraint_unproven" in result.failure_signatures
+
+
 def test_callability_and_return_type_only_do_not_count_as_semantic_coverage(forge_pipeline):
     validator: ValidatorStage = forge_pipeline["validator"]
     artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])

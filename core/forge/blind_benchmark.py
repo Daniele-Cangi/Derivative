@@ -22,6 +22,8 @@ from core.forge.heldout_benchmark import (
 BLIND_BENCHMARK_SCHEMA_VERSION = 2
 SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2})
 FORGE_BASELINE_DIGEST_MODE = "canonical_lf_v1"
+BLIND_EXECUTION_KIND_BASELINE = "sealed_baseline"
+BLIND_EXECUTION_KIND_POST_FIX_REPLAY = "post_fix_replay"
 _EXCLUDED_BASELINE_FILES = {
     "core/forge/benchmark.py",
     "core/forge/blind_benchmark.py",
@@ -77,6 +79,7 @@ class BlindBenchmarkReport:
     source_urls: List[str]
     oracle_sha256: Dict[str, str]
     summary: HeldoutBenchmarkSummary
+    execution_kind: str = BLIND_EXECUTION_KIND_BASELINE
 
 
 def bundled_blind_manifest_path() -> str:
@@ -237,8 +240,9 @@ def run_blind_bundle(
     bundle: BlindBenchmarkBundle,
     run_case: Callable[[str], ForgeResult],
     run_oracle: Callable[[OracleSpec, str], OracleResult] = execute_pytest_oracle,
+    post_fix_replay: bool = False,
 ) -> BlindBenchmarkReport:
-    if not bundle.baseline_verified:
+    if not bundle.baseline_verified and not post_fix_replay:
         raise ValueError(
             "Blind benchmark execution requires the exact sealed Forge baseline."
         )
@@ -264,6 +268,11 @@ def run_blind_bundle(
         source_urls=list(bundle.source_urls),
         oracle_sha256=dict(bundle.oracle_sha256),
         summary=summary,
+        execution_kind=(
+            BLIND_EXECUTION_KIND_POST_FIX_REPLAY
+            if post_fix_replay
+            else BLIND_EXECUTION_KIND_BASELINE
+        ),
     )
 
 
@@ -296,6 +305,7 @@ def render_blind_report(report: BlindBenchmarkReport, output_path: str) -> str:
             f"Schema version: {report.schema_version}",
             f"Report id: {report.report_id}",
             f"Bundle: {report.bundle_id}",
+            f"Execution kind: {report.execution_kind}",
             f"Baseline verified: {str(report.baseline_verified).lower()}",
             f"Baseline SHA-256: {report.baseline_sha256}",
             f"Baseline files: expected={report.baseline_file_count}, observed={report.observed_baseline_file_count}",

@@ -161,9 +161,6 @@ class RequirementCompiler:
     def _extract_requirement_atoms(self, requirement: str) -> List[RequirementAtom]:
         body = self._requirement_body(requirement)
         clauses = self._extract_atomic_clauses(body)
-        leading_clause = self._leading_requirement_clause(requirement)
-        if leading_clause:
-            clauses = [leading_clause, *clauses]
 
         atoms: List[RequirementAtom] = []
         seen = set()
@@ -354,9 +351,23 @@ class RequirementCompiler:
         lowered = requirement.lower()
         if re.search(r"\bcli\b|command[- ]line", lowered):
             return ArtifactTargetType.CLI
+        explicit_callable = bool(
+            re.search(r"\bdef\s+[a-z_][a-z0-9_]*\s*\(", lowered)
+            or re.search(
+                r"\b(?:implement|create|provide|define|write|develop)\b.{0,80}\bfunction\b",
+                lowered,
+            )
+        )
+        explicit_http_service = bool(
+            re.search(r"\b(?:rest|http|api|endpoint|microservice|server)\b", lowered)
+        )
+        if explicit_callable and not explicit_http_service:
+            return ArtifactTargetType.LIBRARY
         if re.search(r"\bdata\s+pipeline\b|\bpipeline\b", lowered):
             return ArtifactTargetType.PIPELINE
-        if re.search(r"\bservice\b|\bapi\b|\bserver\b", lowered):
+        if explicit_http_service:
+            return ArtifactTargetType.SERVICE
+        if re.search(r"\bservice\b", lowered):
             return ArtifactTargetType.SERVICE
         if re.search(r"\blibrary\b|\bpackage\b|\bsdk\b", lowered):
             return ArtifactTargetType.LIBRARY
@@ -554,30 +565,35 @@ class RequirementCompiler:
         return segments
 
     def _requirement_body(self, requirement: str) -> str:
-        lowered = requirement.lower()
-        pivot = lowered.find(" that ")
-        if pivot >= 0:
-            return requirement[pivot + len(" that "):].strip(" .")
         return requirement.strip(" .")
 
     def _extract_atomic_clauses(self, body: str) -> List[str]:
-        verb_pattern = re.compile(
-            r"\b(reads?|extracts?|flags?|writes?|includes?|guarantees?|supports?|validates?|"
-            r"processes?|identifies?|produces?|parses?|builds?|rejects?|computes?|aggregates?)\b",
+        clauses: List[str] = []
+        clause_verb = (
+            r"builds?|creates?|implements?|develops?|delivers?|provides?|designs?|defines?|"
+            r"writes?|reads?|extracts?|flags?|includes?|guarantees?|supports?|validates?|"
+            r"processes?|identifies?|produces?|parses?|rejects?|computes?|aggregates?|"
+            r"exposes?|accepts?|yields?|preserves?|tolerates?|inverts?|maps?|sorts?|"
+            r"returns?|raises?|skips?|handles?|exits?|merges?|compares?|detects?|removes?|outputs?|uses?"
+            r"|survives?"
+        )
+        quality_clause_start = (
+            r"persistent\b|(?:a\s+)?full\s+audit\b|structured\b|integration\s+tests?\b|"
+            r"health\s+(?:check|endpoint)\b|versioned\s+schema\b"
+        )
+        boundary = re.compile(
+            rf",\s*(?=(?:and\s+|then\s+)?(?:must\b|shall\b|should\b|will\b|"
+            rf"{clause_verb}\b|{quality_clause_start}))|"
+            rf"\s+and\s+(?=(?:must\b|shall\b|should\b|will\b|{clause_verb}\b))|"
+            rf"\s+that\s+(?=(?:must\b|shall\b|should\b|will\b|{clause_verb}\b))",
             re.IGNORECASE,
         )
-        matches = list(verb_pattern.finditer(body))
-        clauses: List[str] = []
-        if matches:
-            for index, match in enumerate(matches):
-                start = match.start()
-                end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
-                clause = body[start:end].strip(" ,.;")
-                clause = re.sub(r"^(and|then)\s+", "", clause, flags=re.IGNORECASE)
-                if clause:
-                    clauses.append(clause)
-            return self._normalize_clause_boundaries(clauses)
-        return self._segment_requirement(body)
+        for sentence in re.split(r"(?<=[.!?])\s+|;\s*", body):
+            for clause in boundary.split(sentence):
+                cleaned = re.sub(r"^(and|then)\s+", "", clause.strip(" ,.;"), flags=re.IGNORECASE)
+                if cleaned:
+                    clauses.append(cleaned)
+        return self._normalize_clause_boundaries(clauses)
 
     def _normalize_clause_boundaries(self, clauses: List[str]) -> List[str]:
         normalized: List[str] = []
@@ -639,6 +655,13 @@ class RequirementCompiler:
         )
         functional_tokens = (
             "build",
+            "create",
+            "implement",
+            "develop",
+            "deliver",
+            "provide",
+            "design",
+            "define",
             "read",
             "reads",
             "extract",
@@ -652,6 +675,24 @@ class RequirementCompiler:
             "produce",
             "parse",
             "support",
+            "expose",
+            "accept",
+            "yield",
+            "preserve",
+            "tolerate",
+            "invert",
+            "map",
+            "sort",
+            "return",
+            "raise",
+            "skip",
+            "handle",
+            "exit",
+            "merge",
+            "compare",
+            "detect",
+            "remove",
+            "output",
         )
 
         if any(token in lowered for token in universal_tokens):
@@ -659,13 +700,17 @@ class RequirementCompiler:
         if any(token in lowered for token in validation_tokens):
             return "validation"
         if re.match(
-            r"^(reads?|extracts?|flags?|writes?|includes?|processes?|identifies?|produces?|parses?|builds?|"
-            r"rejects?|computes?|aggregates?)\b",
+            r"^(builds?|creates?|implements?|develops?|delivers?|provides?|designs?|defines?|writes?|"
+            r"reads?|extracts?|flags?|includes?|processes?|identifies?|produces?|parses?|rejects?|"
+            r"computes?|aggregates?|exposes?|accepts?|yields?|preserves?|tolerates?|inverts?|maps?|"
+            r"sorts?|returns?|raises?|skips?|handles?|exits?|merges?|compares?|detects?|removes?|outputs?)\b",
             lowered,
         ):
             return "functional"
         if any(token in lowered for token in quality_tokens):
             return "quality"
+        if re.search(r"\b(?:has|have|contains?|consists?\s+of|requires?)\b", lowered):
+            return "non_functional"
         if comparator_pattern.search(clause):
             return "non_functional"
         if any(token in lowered for token in functional_tokens):

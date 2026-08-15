@@ -299,7 +299,9 @@ class ObligationValidationLayer(ValidationLayerBase):
                 semantic_omissions.append(atom.requirement_id)
             if not has_test_mapping or not has_acceptance_mapping:
                 missing_coverage.append(atom.requirement_id)
-            if atom.strength == "universal" and atom.requirement_id not in universal_proofs:
+            if (
+                atom.category == "universal_constraint" or atom.strength == "universal"
+            ) and atom.requirement_id not in universal_proofs:
                 universal_unproven.append(atom.requirement_id)
 
         if semantic_omissions:

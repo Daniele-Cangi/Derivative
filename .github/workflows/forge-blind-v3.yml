@@ -33,10 +33,9 @@ jobs:
         run: >
           python -c
           "from core.forge.blind_benchmark import load_blind_bundle;
-          bundle = load_blind_bundle('benchmarks/blind_v3/external_002/manifest.json');
-          assert bundle.baseline_verified;
+          bundle = load_blind_bundle('benchmarks/blind_v3/external_002/manifest.json', verify_baseline=False);
           assert len(bundle.cases) == 12;
-          print('sealed_bundle_verified')"
+          print(f'sealed_inputs_verified baseline_verified={bundle.baseline_verified}')"
 
       - name: Execute frozen blind v3 once
         run: >
@@ -45,13 +44,14 @@ jobs:
           --mode local-only
           --execution-backend docker
           --sandbox-image derivative-forge-sandbox:py311
+          --post-fix-replay
           --no-enforce-thresholds
 
       - name: Upload complete blind evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forge-blind-v3-first-run
+          name: forge-blind-v3-post-fix-replay
           path: |
             generated_artifacts/forge_blind_benchmarks/
             generated_artifacts/forge_blind_runs/

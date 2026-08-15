@@ -177,11 +177,29 @@ def test_service_plan_contains_typed_capability_blueprint(tmp_path):
         capability.capability_id: capability
         for capability in output.implementation_blueprint.capabilities
     }
-    assert "R002" in capabilities_by_id["cap_storage"].requirement_ids
-    assert "R003" in capabilities_by_id["cap_audit"].requirement_ids
-    assert "R004" in capabilities_by_id["cap_observability"].requirement_ids
-    assert "R002" not in capabilities_by_id["cap_service_api"].requirement_ids
-    assert "R003" not in capabilities_by_id["cap_rate_limit"].requirement_ids
+    requirement_ids_by_text = {
+        atom.text.lower(): atom.requirement_id for atom in build_spec.requirement_atoms
+    }
+    rate_limit_ids = {
+        requirement_id
+        for text, requirement_id in requirement_ids_by_text.items()
+        if "rate limit" in text or "restart" in text
+    }
+    audit_ids = {
+        requirement_id
+        for text, requirement_id in requirement_ids_by_text.items()
+        if "audit" in text or "logging" in text
+    }
+    logging_ids = {
+        requirement_id
+        for text, requirement_id in requirement_ids_by_text.items()
+        if "logging" in text
+    }
+    assert rate_limit_ids <= set(capabilities_by_id["cap_storage"].requirement_ids)
+    assert audit_ids <= set(capabilities_by_id["cap_audit"].requirement_ids)
+    assert logging_ids <= set(capabilities_by_id["cap_observability"].requirement_ids)
+    assert rate_limit_ids.isdisjoint(capabilities_by_id["cap_service_api"].requirement_ids)
+    assert audit_ids.isdisjoint(capabilities_by_id["cap_rate_limit"].requirement_ids)
     planned_paths = {plan_file.path for plan_file in output.file_tree_plan}
     assert {
         capability.module_path for capability in output.implementation_blueprint.capabilities

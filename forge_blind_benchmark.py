@@ -49,12 +49,20 @@ def main(
     max_external_false_verified_rate: float = typer.Option(0.0, min=0.0, max=1.0),
     min_infeasible_detection_rate: float = typer.Option(0.0, min=0.0, max=1.0),
     enforce_thresholds: bool = typer.Option(False, "--enforce-thresholds/--no-enforce-thresholds"),
+    post_fix_replay: bool = typer.Option(
+        False,
+        "--post-fix-replay",
+        help="Run sealed inputs against a changed Forge baseline and label the report as regression evidence.",
+    ),
 ) -> None:
     process_executor = create_process_executor(
         execution_backend,
         image=sandbox_image,
     )
-    bundle = load_blind_bundle(manifest or bundled_blind_manifest_path())
+    bundle = load_blind_bundle(
+        manifest or bundled_blind_manifest_path(),
+        verify_baseline=not post_fix_replay,
+    )
     report = run_blind_bundle(
         bundle,
         run_case=lambda requirement: run_forge(
@@ -72,6 +80,7 @@ def main(
             package,
             executor=process_executor,
         ),
+        post_fix_replay=post_fix_replay,
     )
     report_path = persist_blind_report(report, benchmark_output_root)
     typer.echo(render_blind_report(report, report_path))
