@@ -194,7 +194,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 294 repository tests passing; 2 additional isolation tests are Docker-gated on this workstation and run in GitHub Actions.
+- 303 repository tests passing in GitHub Actions. The local run passes 301 and skips 2 Docker-gated isolation tests on this workstation.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. The current isolated run reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, median latency 1.49s, and P95 latency 2.39s.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
@@ -203,6 +203,8 @@ The repository currently has the following verified baseline:
 The original sealed blind-v2 run is preserved unchanged and scored 6/10 with an external false-verified rate of 0.0. Later post-fix replays and targeted oracle runs are regression evidence, not new blind evidence, because those requirements are now known to the development process. The latest targeted rerun of the three previously failing feasible cases (`B001`, `B004`, and `B005`) passed 3/3 with all external oracles, but this must not be reported as a fresh blind 10/10 result.
 
 Blind-v3 run `31877186602` is the first execution of `external_002`; two preceding workflow runs failed integrity preflight and executed no cases. The blind result exposes structural gaps in atomic requirement extraction, domain routing, semantic test alignment, and general contradiction detection. Fixes after this point are evaluated only as regression replays against the unchanged bundle. The original report is stored at `benchmarks/blind_v3/external_002/baseline_result.json`.
+
+Post-fix replay `31879547356` is explicitly labeled `post_fix_replay` with `baseline_verified=false`. It improved the unchanged suite to 6/12, reduced external false-verified rate from 1.000 to 0.000, and raised infeasibility detection from 0.000 to 1.000. External Verified@1 and oracle pass rate remained 0.000 because all six feasible cases still failed closed. The replay used `local-only` mode and zero model calls, so the remaining measured bottleneck is feasible candidate generation beyond the deterministic adapters, not truth-gate permissiveness. Its report is stored at `benchmarks/blind_v3/external_002/post_fix_replay_001.json`.
 
 The blind manifest keeps the original expected Forge baseline digest and file count. Reports expose both expected and currently observed baseline metadata; any implementation change keeps `baseline_verified=false` unless the exact sealed implementation is used. The baseline is never silently resealed.
 

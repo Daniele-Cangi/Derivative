@@ -76,3 +76,25 @@ The first-run result is intentionally reported without retrospective thresholds:
 These metrics are the immutable blind baseline, not a quality gate result. Any
 later run is post-fix regression evidence and must not be described as a new blind
 evaluation.
+
+## Post-fix replay 001
+
+Run `31879547356` executed the unchanged sealed inputs after structural fixes to
+requirement preservation, universal fail-closed handling, and contradiction
+detection. Its report is preserved in `external_002/post_fix_replay_001.json` and
+is explicitly marked `execution_kind=post_fix_replay` with
+`baseline_verified=false`.
+
+The replay produced:
+
+- 6 of 12 cases passed; status accuracy increased from 0.333 to 0.500;
+- external false-verified rate decreased from 1.000 to 0.000;
+- infeasibility detection increased from 0.000 to 1.000;
+- external `Verified@1`, success after repair, and oracle pass rate remained 0.000;
+- repairs decreased from 10 to 8;
+- median runtime was 1.25 seconds and P95 runtime was 1.61 seconds.
+
+This replay establishes that the first structural repair restored fail-closed
+behavior but did not improve feasible build capability. It used `local-only`
+execution and made no model requests, so it evaluates deterministic adapters and
+verification rather than the model-backed candidate compiler.
