@@ -192,3 +192,41 @@ non-zero return code and its redirect fixture does not capture the observed
 stdout under pytest. The frozen V3-006 oracle comments `0d` as allowed while
 also parametrizing it as an input that must raise `ValueError`. These oracle
 files remain untouched so the sealed bundle and recorded metrics stay auditable.
+
+## Post-fix replay 005 (hybrid)
+
+Run `31887238434` executed the unchanged sealed inputs after enforcing typed
+target precedence in domain selection, preserving blueprint-selected pipeline
+entrypoints, materializing explicitly unprovable or ambiguous requirements, and
+classifying normative `must` and `must not` clauses as hard functional atoms.
+Its report is preserved in
+`external_002/post_fix_replay_005_hybrid.json` with
+`execution_kind=post_fix_replay` and `baseline_verified=false`.
+
+The replay produced:
+
+- 7 of 12 cases passed and status accuracy was 0.583;
+- external `Verified@1` remained 0.000 and success after repair was 0.167;
+- external false-verified rate decreased to 0.000;
+- infeasibility detection remained 1.000;
+- one independent oracle executed and passed all five tests, yielding an oracle
+  pass rate of 1.000 among executed oracles;
+- 11 repairs were attempted across 35 model requests and 328,053 tokens;
+- median runtime was 50.94 seconds and P95 runtime was 95.47 seconds;
+- estimated model cost remained unavailable because pricing metadata was not set.
+
+The typed library target now wins over the path-shaped `service` heuristic:
+V3-003 generated the declared `service.hash_stream` interface, preserved the
+hard `must not close` requirement, and passed its external oracle. V3-007,
+V3-008, and V3-009 all returned `validation_failed` for materially unspecified
+or explicitly unprovable behavior, eliminating false verification in this
+replay. V3-010 through V3-012 remained correctly `infeasible_proven`.
+
+The result does not demonstrate broad feasible synthesis. Five of six expected
+feasible cases failed closed with combinations of `adapter_capability_mismatch`,
+missing semantic coverage, non-semantic tests, superficial stubs, failed tests,
+or no-change repairs. This replay therefore establishes stronger terminal
+safety while exposing candidate generation and evidence-aligned repair as the
+remaining bottleneck. Frozen oracle defects already documented for V3-005 and
+V3-006 remain unchanged. The immutable report SHA-256 is
+`472441EE52F89CBD1BFE6C44FAE1BD00DBECE99BA011E6101ACFC975F9FA9FDC`.
