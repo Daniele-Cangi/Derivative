@@ -98,3 +98,31 @@ This replay establishes that the first structural repair restored fail-closed
 behavior but did not improve feasible build capability. It used `local-only`
 execution and made no model requests, so it evaluates deterministic adapters and
 verification rather than the model-backed candidate compiler.
+
+## Post-fix replay 002 (hybrid)
+
+Run `31879929684` executed the same sealed inputs through the OpenAI-backed
+candidate compiler in `hybrid` mode. Its report is preserved in
+`external_002/post_fix_replay_002_hybrid.json` with
+`execution_kind=post_fix_replay` and `baseline_verified=false`.
+
+The replay produced:
+
+- 6 of 12 cases passed and status accuracy was 0.583;
+- infeasibility detection remained 1.000;
+- external `Verified@1`, success after repair, and oracle pass rate were 0.000;
+- one internally verified feasible build failed its independent oracle, so the
+  external false-verified rate was 1.000;
+- 13 repairs were attempted across 38 model requests and 347,287 tokens;
+- median runtime was 41.55 seconds and P95 runtime was 185.28 seconds;
+- estimated model cost was unavailable because pricing metadata was not set.
+
+The false verification was caused by a public package contract mismatch: the
+requirement requested a `service` module exporting `hash_stream`, while planning
+and generation substituted `library` as the package path. Internal generated
+tests validated the substituted path, but the independent oracle correctly
+failed to import `service.hash_stream`. The remaining feasible failures also
+expose overly literal semantic evidence terms, coarse universal-constraint
+classification, and repair routing that does not consistently invoke the
+candidate compiler for semantic omissions. These are structural findings, not
+justifications for benchmark-specific templates.
