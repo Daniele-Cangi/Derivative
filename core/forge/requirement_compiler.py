@@ -391,20 +391,47 @@ class RequirementCompiler:
         requirement: str,
         target_artifact_type: ArtifactTargetType,
     ) -> str:
-        if target_artifact_type != ArtifactTargetType.LIBRARY:
-            return ""
-        patterns = (
+        explicit_module_patterns = (
             r"\bmodule\s+(?:named|called)\s+['\"]?([a-z_][a-z0-9_]*)['\"]?",
             r"\b(?:create|implement|provide|define|write|develop)\s+(?:an?\s+)?"
             r"(?:python\s+)?['\"]?([a-z_][a-z0-9_]*)['\"]?\s+module\b",
         )
-        for pattern in patterns:
+        for pattern in explicit_module_patterns:
             match = re.search(pattern, requirement, re.IGNORECASE)
             if not match:
                 continue
             module_name = match.group(1).lower()
             if module_name not in {"python", "library", "package", "public"}:
                 return module_name
+
+        if target_artifact_type == ArtifactTargetType.CLI:
+            cli_match = re.search(
+                r"\b(?:cli|command[- ]line)\s+(?:utility|tool|command)\s+"
+                r"['\"]([a-z_][a-z0-9_]*)['\"]",
+                requirement,
+                re.IGNORECASE,
+            )
+            return cli_match.group(1).lower() if cli_match else ""
+
+        if target_artifact_type != ArtifactTargetType.LIBRARY:
+            return ""
+
+        signature_match = re.search(
+            r"\bdef\s+([a-z_][a-z0-9_]*)\s*\(",
+            requirement,
+            re.IGNORECASE,
+        )
+        if signature_match:
+            return signature_match.group(1).lower()
+
+        named_callable_match = re.search(
+            r"\b(?:library\s+function|function|method|component)\s+"
+            r"['\"]([a-z_][a-z0-9_]*)['\"]",
+            requirement,
+            re.IGNORECASE,
+        )
+        if named_callable_match:
+            return named_callable_match.group(1).lower()
         return ""
 
     def _extract_ambiguity_flags(
@@ -440,6 +467,19 @@ class RequirementCompiler:
                 flags.append("Risk classification criteria are materially unspecified.")
         if re.search(r"\b(?:appropriate|suitable)\s+report\b", lowered):
             flags.append("Report schema and output format are materially unspecified.")
+        if (
+            re.search(r"\b(?:pseudo[- ]random|prng|random\s+generator)\b", lowered)
+            and re.search(r"\bseed(?:ed)?\b", lowered)
+            and not re.search(
+                r"\b(?:mt19937|mersenne\s+twister|pcg(?:32|64)?|xorshift|"
+                r"splitmix|chacha(?:8|12|20)?|random\.random|random\.randint)\b",
+                lowered,
+            )
+        ):
+            flags.append(
+                "Pseudo-random algorithm is materially unspecified; a seed alone does not define "
+                "a portable output sequence."
+            )
         universal_atoms = [atom for atom in requirement_atoms if atom.strength == "universal"]
         if universal_atoms:
             flags.append(

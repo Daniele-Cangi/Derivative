@@ -312,6 +312,35 @@ def test_coder_stage_returns_typed_code_artifact(feasible_plan):
             ast.parse(file.content)
 
 
+def test_named_cli_artifact_preserves_declared_module_through_generation(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Develop a CLI tool 'jsoncompact' that reads a JSON array from standard input, writes JSON "
+        "to standard output, and includes tests."
+    )
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+
+    artifact = CoderStage().generate(plan)
+
+    generated_paths = {item.path for item in artifact.files}
+    assert "src/jsoncompact.py" in generated_paths
+    assert "src/cli.py" not in generated_paths
+    assert artifact.runnable_entrypoints == ["src/jsoncompact.py"]
+    assert artifact.artifact_manifest["implementation_blueprint"]["entrypoint_path"] == (
+        "src/jsoncompact.py"
+    )
+    source = _find_generated_file(artifact, "src/jsoncompact.py")
+    assert source is not None
+    assert "interface:main" in source.generated_from_plan_sections
+    assert "import cli" not in "\n".join(item.content for item in artifact.files)
+
+
 def test_code_artifact_contains_plan_file_tree(feasible_plan):
     coder = CoderStage()
     artifact = coder.generate(feasible_plan)

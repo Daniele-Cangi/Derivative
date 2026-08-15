@@ -621,3 +621,38 @@ def test_declared_public_module_is_preserved_in_plan_layout_and_interface(tmp_pa
     interface = next(item for item in output.interfaces if item.name == "encode_stream")
     assert interface.module_path == "codec"
     assert "codec" in output.architecture_summary
+
+
+def test_named_callable_component_becomes_public_module_contract(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Design a data pipeline component 'filter_by_predicate' accepting an iterator and a predicate. "
+        "It yields matching records in input order and includes tests."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert {item.path for item in output.file_tree_plan} == {
+        "src/filter_by_predicate.py",
+        "tests/test_filter_by_predicate.py",
+    }
+    interface = next(item for item in output.interfaces if item.name == "filter_by_predicate")
+    assert interface.module_path == "filter_by_predicate"
+
+
+def test_named_cli_command_preserves_module_entrypoint_contract(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Develop a CLI tool 'jsoncompact' that reads a JSON array from standard input, writes JSON "
+        "to standard output, and includes tests."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    paths = {item.path for item in output.file_tree_plan}
+    assert "src/jsoncompact.py" in paths
+    assert "src/cli.py" not in paths
+    assert output.implementation_blueprint.entrypoint_path == "src/jsoncompact.py"
+    interface = next(item for item in output.interfaces if item.interface_type == "cli_entrypoint")
+    assert interface.name == "main"
+    assert interface.module_path == "jsoncompact"

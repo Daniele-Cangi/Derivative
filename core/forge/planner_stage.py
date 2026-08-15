@@ -243,23 +243,28 @@ class PlannerStage:
             )
         goals = " ".join(build_spec.functional_goals).lower()
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
+            public_module = (
+                f" exposing the declared public module '{build_spec.public_module}'"
+                if build_spec.public_module
+                else ""
+            )
             if self._is_json_log_cli(build_spec):
                 return (
-                    "Python CLI with JSON Lines application-log parsing, malformed-line accounting, "
+                    f"Python CLI{public_module} with JSON Lines application-log parsing, malformed-line accounting, "
                     "per-level aggregation, and JSON report output."
                 )
             if self._is_recursive_json_merge_cli(build_spec):
                 return (
-                    "Python CLI with recursive JSON object merge, list replacement, root validation, "
+                    f"Python CLI{public_module} with recursive JSON object merge, list replacement, root validation, "
                     "and JSON file output."
                 )
             if self._is_csv_date_cli(build_spec):
                 return (
-                    "Python CLI with modular pipeline: CSV input loader, expiration-date extractor, "
+                    f"Python CLI{public_module} with modular pipeline: CSV input loader, expiration-date extractor, "
                     "horizon-based contract flagger, and summary CSV writer."
                 )
             return (
-                "Python CLI with one declared command entrypoint, requirement-specific input processing, "
+                f"Python CLI{public_module} with one declared command entrypoint, requirement-specific input processing, "
                 "validation, output persistence, and behavioral tests."
             )
         if build_spec.target_artifact_type == ArtifactTargetType.SERVICE:
@@ -376,26 +381,36 @@ class PlannerStage:
                 ),
             ]
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
+            entrypoint_path = self._cli_entrypoint_path(build_spec)
+            entrypoint_test_path = (
+                f"tests/test_{build_spec.public_module.replace('.', '_')}.py"
+                if build_spec.public_module
+                else "tests/test_cli_flow.py"
+            )
             if not self._is_csv_date_cli(build_spec):
                 return [
                     PlanFile(
-                        path="src/cli.py",
+                        path=entrypoint_path,
                         purpose=(
-                            "CLI argument parsing and complete requirement-specific workflow implementation."
+                            "Declared CLI module, argument parsing, and complete requirement-specific workflow "
+                            "implementation."
                         ),
-                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/cli.py"),
+                        source_requirement_refs=self._requirement_ids_for_file(build_spec, entrypoint_path),
                     ),
                     PlanFile(
-                        path="tests/test_cli_flow.py",
+                        path=entrypoint_test_path,
                         purpose="End-to-end behavioral verification of the declared CLI contract.",
-                        source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_cli_flow.py"),
+                        source_requirement_refs=self._requirement_ids_for_file(
+                            build_spec,
+                            entrypoint_test_path,
+                        ),
                     ),
                 ]
             return [
                 PlanFile(
-                    path="src/cli.py",
+                    path=entrypoint_path,
                     purpose="CLI argument parsing and workflow dispatch.",
-                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/cli.py"),
+                    source_requirement_refs=self._requirement_ids_for_file(build_spec, entrypoint_path),
                 ),
                 PlanFile(
                     path="src/contracts_csv.py",
@@ -413,9 +428,12 @@ class PlannerStage:
                     source_requirement_refs=self._requirement_ids_for_file(build_spec, "src/summary_writer.py"),
                 ),
                 PlanFile(
-                    path="tests/test_cli_flow.py",
+                    path=entrypoint_test_path,
                     purpose="End-to-end CLI behavior tests.",
-                    source_requirement_refs=self._requirement_ids_for_file(build_spec, "tests/test_cli_flow.py"),
+                    source_requirement_refs=self._requirement_ids_for_file(
+                        build_spec,
+                        entrypoint_test_path,
+                    ),
                 ),
                 PlanFile(
                     path="tests/test_expiration_rules.py",
@@ -601,6 +619,7 @@ class PlannerStage:
                     interface_type="cli_entrypoint",
                     signature="main(argv: Optional[list[str]] = None) -> int",
                     description="Runs the CLI workflow and returns process exit code.",
+                    module_path=build_spec.public_module,
                 )
             ]
             if not self._is_csv_date_cli(build_spec):
@@ -766,6 +785,18 @@ class PlannerStage:
                     module_path=build_spec.public_module,
                 )
             )
+        if not interfaces and build_spec.public_module:
+            interfaces.append(
+                PlanInterface(
+                    name=build_spec.public_module.rsplit(".", 1)[-1],
+                    interface_type="function",
+                    signature=f"{build_spec.public_module.rsplit('.', 1)[-1]}(...)",
+                    description=(
+                        "Public callable name declared by the requirement; behavior is defined by its atoms."
+                    ),
+                    module_path=build_spec.public_module,
+                )
+            )
         return interfaces
 
     def _packaging_target(self, artifact_type: ArtifactTargetType) -> str:
@@ -779,6 +810,12 @@ class PlannerStage:
             return "python_library_package"
         return "python_package"
 
+    @staticmethod
+    def _cli_entrypoint_path(build_spec: BuildSpec) -> str:
+        if build_spec.public_module:
+            return f"src/{build_spec.public_module.replace('.', '/')}.py"
+        return "src/cli.py"
+
     def _derive_implementation_blueprint(self, build_spec: BuildSpec) -> ImplementationBlueprint:
         if self._is_pipeline_build(build_spec):
             return ImplementationBlueprint(
@@ -786,7 +823,11 @@ class PlannerStage:
                 entrypoint_path="src/pipeline.py",
             )
         if build_spec.target_artifact_type != ArtifactTargetType.SERVICE:
-            entrypoint = "src/cli.py" if build_spec.target_artifact_type == ArtifactTargetType.CLI else ""
+            entrypoint = (
+                self._cli_entrypoint_path(build_spec)
+                if build_spec.target_artifact_type == ArtifactTargetType.CLI
+                else ""
+            )
             return ImplementationBlueprint(
                 target_artifact_type=build_spec.target_artifact_type,
                 entrypoint_path=entrypoint,
@@ -1057,6 +1098,11 @@ class PlannerStage:
 
     def _requirement_ids_for_file(self, build_spec: BuildSpec, path: str) -> List[str]:
         lowered_path = path.lower()
+        public_module_path = (
+            f"src/{build_spec.public_module.replace('.', '/')}.py".lower()
+            if build_spec.public_module
+            else ""
+        )
         ids: List[str] = []
         for atom in build_spec.requirement_atoms:
             lowered_atom = atom.text.lower()
@@ -1080,7 +1126,10 @@ class PlannerStage:
                 if any(token in lowered_atom for token in ("quarantine", "reject", "error", "invalid")):
                     ids.append(atom.requirement_id)
                     continue
-            if lowered_path in {"src/cli.py", "src/main.py"} and atom.category != "ambiguity":
+            if (
+                lowered_path in {"src/cli.py", "src/main.py", public_module_path}
+                and atom.category != "ambiguity"
+            ):
                 ids.append(atom.requirement_id)
                 continue
             if lowered_path.endswith("src/contracts_csv.py"):

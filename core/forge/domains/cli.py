@@ -106,6 +106,9 @@ class CliDomainAdapter(BaseDomainAdapter):
         }
 
     def implements_plan_semantics(self, plan: FeasiblePlan) -> bool:
+        entrypoint_path = plan.implementation_blueprint.entrypoint_path.replace("\\", "/").lower()
+        if entrypoint_path not in {"", "src/cli.py"}:
+            return False
         if any(
             predicate(plan)
             for predicate in (
@@ -293,6 +296,13 @@ class CliDomainAdapter(BaseDomainAdapter):
     def _template_plan_test_module(self, plan: FeasiblePlan, path: str) -> str:
         normalized = path.replace("\\", "/").lower()
         is_invoice = self._is_invoice_plan(plan)
+        entrypoint_path = plan.implementation_blueprint.entrypoint_path.replace("\\", "/")
+        entrypoint_module = entrypoint_path.removeprefix("src/").removesuffix(".py").replace("/", ".")
+        entrypoint_import = (
+            "import cli"
+            if entrypoint_module in {"", "cli"}
+            else f"import {entrypoint_module} as cli"
+        )
         if normalized.endswith("tests/test_expiration_rules.py"):
             if is_invoice:
                 return (
@@ -336,7 +346,7 @@ class CliDomainAdapter(BaseDomainAdapter):
                 "\n"
                 "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
                 "\n"
-                "import cli\n"
+                f"{entrypoint_import}\n"
                 "\n"
                 "\n"
                 "def test_cli_flow_end_to_end(tmp_path):\n"
@@ -361,7 +371,7 @@ class CliDomainAdapter(BaseDomainAdapter):
             "\n"
             "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
             "\n"
-            "import cli\n"
+            f"{entrypoint_import}\n"
             "\n"
             "\n"
             "def test_cli_flow_end_to_end(tmp_path):\n"

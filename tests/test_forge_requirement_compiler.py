@@ -149,6 +149,62 @@ def test_named_callable_component_outranks_pipeline_domain_noun():
     spec = RequirementCompiler().compile(requirement)
 
     assert spec.target_artifact_type == ArtifactTargetType.LIBRARY
+    assert spec.public_module == "select_records"
+
+
+def test_public_python_names_are_preserved_across_declared_artifact_shapes():
+    cases = (
+        (
+            "Implement a CLI utility 'dupfilter' that reads lines from standard input.",
+            ArtifactTargetType.CLI,
+            "dupfilter",
+        ),
+        (
+            "Provide a Python library function 'invert_dictionary' with signature "
+            "'def invert_dictionary(d: dict[str, str]) -> dict[str, list[str]]'.",
+            ArtifactTargetType.LIBRARY,
+            "invert_dictionary",
+        ),
+        (
+            "Design a data pipeline component 'filter_by_predicate' accepting an iterator and predicate.",
+            ArtifactTargetType.LIBRARY,
+            "filter_by_predicate",
+        ),
+        (
+            "Create a service module exposing 'def hash_stream(stream: io.BufferedReader) -> str'.",
+            ArtifactTargetType.LIBRARY,
+            "service",
+        ),
+        (
+            "Develop a CLI tool 'jsoncompact' that reads JSON from standard input.",
+            ArtifactTargetType.CLI,
+            "jsoncompact",
+        ),
+        (
+            "Implement a function 'def parse_time_delta(s: str) -> datetime.timedelta'.",
+            ArtifactTargetType.LIBRARY,
+            "parse_time_delta",
+        ),
+    )
+
+    for requirement, expected_type, expected_module in cases:
+        spec = RequirementCompiler().compile(requirement)
+
+        assert spec.target_artifact_type == expected_type
+        assert spec.public_module == expected_module
+
+
+def test_seeded_pseudorandom_output_without_algorithm_is_materially_ambiguous():
+    spec = RequirementCompiler().compile(
+        "Define a CLI command 'random_walk' that accepts steps and seed and emits a reproducible "
+        "pseudo-random walk seeded by seed."
+    )
+
+    assert spec.public_module == "random_walk"
+    assert any(
+        "pseudo-random algorithm is materially unspecified" in flag.lower()
+        for flag in spec.ambiguity_flags
+    )
 
 
 def test_universal_proof_scope_distinguishes_open_guarantees_from_properties():

@@ -725,6 +725,30 @@ def test_materially_underspecified_requirement_fails_closed(forge_pipeline):
     assert result.layer2_result.evidence["material_ambiguities"]
 
 
+def test_unspecified_seeded_prng_contract_fails_closed_after_compilation(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Define a CLI command 'random_walk' that accepts integer arguments steps and seed and "
+        "outputs a reproducible pseudo-random walk seeded by seed. Include behavioral tests."
+    )
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
+
+    result = ValidatorStage().validate(artifact, plan, spec)
+
+    assert result.passed is False
+    assert "underspecified_requirement" in result.failure_signatures
+    assert any(
+        "pseudo-random algorithm is materially unspecified" in flag.lower()
+        for flag in result.layer2_result.evidence["material_ambiguities"]
+    )
+
+
 def test_quality_contract_violation_detected_for_hashed_service(tmp_path):
     compiler = RequirementCompiler()
     spec = compiler.compile(PRODUCTION_SERVICE_REQUIREMENT)

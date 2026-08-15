@@ -531,9 +531,16 @@ class CoderStage:
         for interface in plan.interfaces:
             if interface.interface_type not in {"cli_entrypoint", "entrypoint"}:
                 continue
+            declared_module_path = (
+                f"src/{interface.module_path.replace('.', '/')}.py"
+                if interface.module_path
+                else ""
+            )
             matching_paths: List[str] = []
             for path, generated_file in sorted(generated_files.items()):
                 if not path.startswith("src/") or not path.endswith(".py"):
+                    continue
+                if declared_module_path and path.replace("\\", "/") != declared_module_path:
                     continue
                 try:
                     tree = ast.parse(generated_file.content)
@@ -610,6 +617,14 @@ class CoderStage:
         normalized_entrypoint = entrypoint_path.replace("\\", "/").lower()
         for interface in interfaces:
             name = interface.name.lower()
+            declared_module_path = (
+                f"src/{interface.module_path.replace('.', '/')}.py".lower()
+                if interface.module_path
+                else ""
+            )
+            if declared_module_path and lowered == declared_module_path:
+                refs.append(interface.name)
+                continue
             if interface.interface_type == "cli_entrypoint" and lowered in {
                 "src/cli.py",
                 "src/main.py",
