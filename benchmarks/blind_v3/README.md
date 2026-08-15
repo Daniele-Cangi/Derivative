@@ -1,8 +1,9 @@
 # Blind v3 intake
 
-This directory intentionally contains no benchmark cases or acceptance oracles.
 Blind v3 inputs must be authored outside the Forge development process and frozen
-before Forge receives any requirement.
+before Forge receives any requirement. Frozen bundles are stored in dedicated
+`external_*` directories; their requirements and oracles must not be used for
+implementation changes until the first execution is complete.
 
 The external benchmark producer prepares a private directory containing:
 
@@ -42,3 +43,36 @@ python forge_blind_produce.py benchmarks/blind_v3/external_001 \
 The command refuses an existing destination and never prints requirement or
 oracle contents before sealing. This provides process isolation from Forge, not
 cryptographic proof that the model has never encountered related public material.
+
+## First frozen run
+
+`external_002` is the first bundle that reached Forge execution. It contains 12
+cases with a frozen distribution of six `verified`, three `validation_failed`,
+and three `infeasible_proven` expectations, plus independent black-box oracles
+for the six expected verified cases. Requirements and oracles were sealed before
+execution.
+
+Two earlier workflow runs stopped during preflight and exposed no cases to Forge:
+
+- run `31875840401` rejected `external_001` because Git changed dataset line endings;
+- run `31876481677` rejected the initial `external_002` manifest because the Forge
+  source fingerprint hashed platform-specific line endings.
+
+The fingerprint algorithm was then changed to `canonical_lf_v1`, the manifest
+metadata was migrated before any case execution, and run `31877186602` passed the
+Linux integrity gate and executed the frozen suite once. The unmodified report is
+preserved in `external_002/baseline_result.json`.
+
+The first-run result is intentionally reported without retrospective thresholds:
+
+- 3 of 12 cases passed; status accuracy was 0.333;
+- external `Verified@1`, success after repair, and oracle pass rate were 0.000;
+- external false-verified rate was 1.000;
+- infeasibility detection rate was 0.000;
+- 10 repairs were attempted, averaging 0.83 per case;
+- median runtime was 1.72 seconds and P95 runtime was 2.36 seconds;
+- the `local-only` run made no model requests and used zero model tokens.
+
+These metrics are the immutable blind baseline, not a quality gate result. Any
+later run is post-fix regression evidence and must not be described as a new blind
+evaluation.

@@ -194,12 +194,15 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 290 repository tests passing in GitHub Actions; 288 pass locally on this workstation and 2 isolation tests are Docker-gated because local firmware virtualization is unavailable.
+- 294 repository tests passing; 2 additional isolation tests are Docker-gated on this workstation and run in GitHub Actions.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. The current isolated run reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, median latency 1.49s, and P95 latency 2.39s.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
+- A genuinely new blind-v3 bundle frozen before execution with 12 cases and six independent black-box oracles. Its first run is preserved unchanged and establishes a deliberately unfiltered baseline: 3/12 passed, status accuracy 0.333, external Verified@1 0.000, oracle pass rate 0.000, false-verified rate 1.000, and infeasibility detection 0.000.
 
 The original sealed blind-v2 run is preserved unchanged and scored 6/10 with an external false-verified rate of 0.0. Later post-fix replays and targeted oracle runs are regression evidence, not new blind evidence, because those requirements are now known to the development process. The latest targeted rerun of the three previously failing feasible cases (`B001`, `B004`, and `B005`) passed 3/3 with all external oracles, but this must not be reported as a fresh blind 10/10 result.
+
+Blind-v3 run `31877186602` is the first execution of `external_002`; two preceding workflow runs failed integrity preflight and executed no cases. The blind result exposes structural gaps in atomic requirement extraction, domain routing, semantic test alignment, and general contradiction detection. Fixes after this point are evaluated only as regression replays against the unchanged bundle. The original report is stored at `benchmarks/blind_v3/external_002/baseline_result.json`.
 
 The blind manifest keeps the original expected Forge baseline digest and file count. Reports expose both expected and currently observed baseline metadata; any implementation change keeps `baseline_verified=false` unless the exact sealed implementation is used. The baseline is never silently resealed.
 
@@ -230,10 +233,10 @@ The current phase is evidence closure, not feature expansion. Forge will remain 
 
 Current phase priorities:
 
-1. Freeze a genuinely new blind-v3 dataset and its independent acceptance oracles before Forge executes any requirement.
-2. Run generated code inside an isolated sandbox or container with explicit filesystem, network, timeout, process, and resource policies.
-3. Measure external Verified@1, success after repair, false-verified rate, repair count, execution latency, and model cost.
-4. Correct only structural failures exposed by the frozen blind evaluation. A blind case must not cause a new case-specific template or weakened verification gate.
+1. Preserve the completed blind-v3 first-run report and its frozen inputs as immutable evidence.
+2. Correct only structural failures exposed by the frozen blind evaluation. A blind case must not cause a new case-specific template or weakened verification gate.
+3. Re-run the unchanged bundle as explicitly labeled post-fix regression evidence.
+4. Measure external Verified@1, success after repair, false-verified rate, repair count, execution latency, and model cost on every replay.
 5. Preserve capability composition and verification contracts as the only accepted extension mechanism inside the current surface.
 
 This phase is complete only when:
