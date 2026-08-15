@@ -230,3 +230,47 @@ safety while exposing candidate generation and evidence-aligned repair as the
 remaining bottleneck. Frozen oracle defects already documented for V3-005 and
 V3-006 remain unchanged. The immutable report SHA-256 is
 `472441EE52F89CBD1BFE6C44FAE1BD00DBECE99BA011E6101ACFC975F9FA9FDC`.
+
+## Post-fix replay 006 (hybrid)
+
+Run `31892238379` executed the unchanged sealed inputs after making candidate
+correction preserve the complete passing-file context, sharing anti-stub
+semantics between semantic preflight and adversarial validation, carrying typed
+requirement and symbol scope into repair, setting `PYTHONPATH=src` for src-layout
+test execution, and persisting validation-signature deltas after repair. Its
+report is preserved in `external_002/post_fix_replay_006_hybrid.json` with
+`execution_kind=post_fix_replay` and `baseline_verified=false`.
+
+The replay produced:
+
+- 9 of 12 cases passed the unadjusted external benchmark and terminal status
+  accuracy was 1.000;
+- all six expected feasible cases reached internal `verified` after repair;
+- external `Verified@1` remained 0.000 and success after repair was 0.500;
+- three of six executed independent oracles passed, for an oracle pass rate of
+  0.500;
+- the raw external false-verified rate was 0.500;
+- infeasibility detection remained 1.000;
+- 9 repairs were attempted across 30 model requests and 260,543 tokens;
+- median runtime was 49.74 seconds and P95 runtime was 91.85 seconds;
+- estimated model cost remained unavailable because pricing metadata was not set.
+
+The candidate-repair mechanism recovered all six feasible builds internally,
+while V3-007 through V3-009 failed closed and V3-010 through V3-012 remained
+correctly `infeasible_proven`. Three feasible artifacts passed their independent
+oracles without qualification. The other three failures do not provide clean
+implementation signals: V3-005 and V3-006 retain the frozen-oracle defects
+documented above, and V3-001 reveals another oracle contract error. The generated
+`dupfilter.main()` returns `1` for invalid UTF-8 and the executable entrypoint
+uses `sys.exit(main())`; direct subprocess execution returns status `1`. The
+oracle invokes `main()` directly, discards its return value, and records success
+unless the function raises.
+
+No frozen input or oracle was edited and no reported metric was adjusted. The
+raw false-verified rate therefore remains 0.500, and this replay cannot be used
+to claim external closure despite the manual oracle diagnosis. A separate
+general evidence-quality issue also remains: one generated test accepted any
+integer through a tautological assertion. It did not cause the oracle failure,
+but it shows that semantic preflight still needs logical-strength checks beyond
+surface assertion detection. The immutable report SHA-256 is
+`9688279A954BFB5EB72B49FC46363F5AA171E34821BE0BD0C47EBF568EBE7584`.
