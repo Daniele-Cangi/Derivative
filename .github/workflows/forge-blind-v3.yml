@@ -33,7 +33,7 @@ jobs:
         run: >
           python -c
           "from core.forge.blind_benchmark import load_blind_bundle;
-          bundle = load_blind_bundle('benchmarks/blind_v3/external_001/manifest.json');
+          bundle = load_blind_bundle('benchmarks/blind_v3/external_002/manifest.json');
           assert bundle.baseline_verified;
           assert len(bundle.cases) == 12;
           print('sealed_bundle_verified')"
@@ -41,7 +41,7 @@ jobs:
       - name: Execute frozen blind v3 once
         run: >
           python forge_blind_benchmark.py
-          --manifest benchmarks/blind_v3/external_001/manifest.json
+          --manifest benchmarks/blind_v3/external_002/manifest.json
           --mode local-only
           --execution-backend docker
           --sandbox-image derivative-forge-sandbox:py311

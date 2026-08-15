@@ -1,0 +1,167 @@
+[
+  {
+    "case_id": "V3-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Implement a CLI utility 'dupfilter' that reads lines from standard input and outputs only the first occurrence of each unique line, preserving input order, using only the Python standard library. The utility must handle arbitrarily large inputs without loading all lines into memory and exit with code zero on success. If input is not text UTF-8 encoded, the utility must exit with a non-zero status.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "library",
+      "input-output",
+      "streaming",
+      "deduplication"
+    ]
+  },
+  {
+    "case_id": "V3-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Provide a Python library function 'invert_dictionary' with signature 'def invert_dictionary(d: dict[str, str]) -> dict[str, list[str]]' that inverts a dictionary by mapping each value to a sorted list of keys having that value. Inputs must reject non-string keys or values raising TypeError. The output lists must be sorted ascending. If the input dictionary is empty, output must be an empty dictionary.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "dictionary",
+      "data-transformation"
+    ]
+  },
+  {
+    "case_id": "V3-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Create a service module exposing 'def hash_stream(stream: io.BufferedReader) -> str' to compute and return a hexadecimal SHA-256 hash digest of the entire binary stream input. The function must read the stream sequentially, must not close it, and raise ValueError on empty streams. The implementation must use only the Python standard library and handle arbitrarily large inputs efficiently.",
+    "tags": [
+      "blind-v3",
+      "service-module",
+      "hashing",
+      "streaming"
+    ]
+  },
+  {
+    "case_id": "V3-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Design a data pipeline component 'filter_by_predicate' accepting an iterator of arbitrary data items and a predicate function. It must yield only items for which the predicate returns True. If the predicate raises any exception for an item, that item must be skipped silently. The component must preserve the input order and tolerate infinite iterators.",
+    "tags": [
+      "blind-v3",
+      "data-pipeline",
+      "filtering",
+      "iterator",
+      "robustness"
+    ]
+  },
+  {
+    "case_id": "V3-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Develop a CLI tool 'jsoncompact' that reads a JSON array of objects from standard input, compacts it by removing all keys with null or empty string values from each object, preserving order, and writes the resulting JSON array to standard output. The tool must use only the Python standard library, and exit with code 0 on valid JSON input, otherwise exit non-zero.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "json",
+      "data-cleaning"
+    ]
+  },
+  {
+    "case_id": "V3-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V3-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "requirement": "Implement a function 'def parse_time_delta(s: str) -> datetime.timedelta' that parses a time duration string containing days (d), hours (h), minutes (m), and seconds (s) in any order, e.g. '1d2h30m15s', into a datetime.timedelta object. It must validate input strictly: invalid format or values produce a ValueError. Hours, minutes, seconds are optional but days must appear exactly once or not at all. Repeated units or unknown units are disallowed.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "parsing",
+      "time",
+      "validation"
+    ]
+  },
+  {
+    "case_id": "V3-007",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Define a CLI command 'random_walk' that accepts integer arguments 'steps' and 'seed', outputs to standard output a sequence of 'steps' integers representing a 1D random walk starting at zero, where each step is either +1 or -1 determined via a reproducible pseudo-random generator seeded by 'seed'. The output must be space-separated integers, including the starting position zero, and error on invalid inputs.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "random",
+      "reproducibility",
+      "numeric-sequences"
+    ]
+  },
+  {
+    "case_id": "V3-008",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Specify a function 'def merge_sorted_streams(*streams: Iterator[int]) -> Iterator[int]' that merges multiple infinite sorted integer streams increasing monotonically into a single infinite iterator of unique integers in ascending order. The function must use only the standard library. The behavioral equivalence of different merge strategies with infinite inputs is unprovable, hence the exact ordering semantics are inherently ambiguous for streams containing stair-step patterns.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "iterator",
+      "sorting",
+      "infinite-streams"
+    ]
+  },
+  {
+    "case_id": "V3-009",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Create a service method 'def asynchronously_process(data: bytes) -> bytes' that claims to process data asynchronously and return processed data, but the interface is synchronous and no mechanism for true asynchrony is defined, making the asynchronous semantics formally unprovable and ambiguous in the absence of concurrency primitives.",
+    "tags": [
+      "blind-v3",
+      "service-module",
+      "asynchronous",
+      "interface-spec",
+      "ambiguity"
+    ]
+  },
+  {
+    "case_id": "V3-010",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Implement a CLI tool 'palindrome_finder' that reads text lines and outputs only those lines that are palindromes ignoring spaces, punctuation, and case. The implementation demands to simultaneously ignore and enforce case sensitivity, producing a direct logical contradiction in specification and therefore must be infeasible to implement as stated.",
+    "tags": [
+      "blind-v3",
+      "cli",
+      "string-processing",
+      "contradiction"
+    ]
+  },
+  {
+    "case_id": "V3-011",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Write a library function 'def dict_plus_one(d: dict[int, int]) -> dict[int, int]' that returns a dictionary where each input key's value is incremented by one and the output keys must be all original keys plus the key zero, which must not exist in input. If zero key is in input, output must contain a contradictory state where zero key is both present and absent, rendering the requirement logically impossible.",
+    "tags": [
+      "blind-v3",
+      "library",
+      "dictionary",
+      "contradiction",
+      "validation"
+    ]
+  },
+  {
+    "case_id": "V3-012",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Develop a data pipeline comparator component that claims to deterministically and idempotently compare two infinite streams of real numbers with a delta tolerance of exactly zero and states that it can detect difference without consuming the streams entirely, creating a formal contradiction as no finite prefix can decide equality for infinite sequences exactly.",
+    "tags": [
+      "blind-v3",
+      "data-pipeline",
+      "comparison",
+      "infinite-stream",
+      "contradiction"
+    ]
+  }
+]
