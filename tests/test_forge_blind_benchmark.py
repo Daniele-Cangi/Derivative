@@ -73,6 +73,25 @@ def test_blind_bundle_loads_only_when_dataset_oracles_and_baseline_match(tmp_pat
     assert bundle.oracle_sha256["B001"]
 
 
+def test_forge_baseline_digest_is_independent_of_source_line_endings(tmp_path):
+    paths = [
+        tmp_path / "forge.py",
+        tmp_path / "core" / "execution_loop.py",
+        tmp_path / "core" / "kernel.py",
+        tmp_path / "core" / "obligation_compiler.py",
+        tmp_path / "core" / "forge" / "module.py",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"def value():\n    return 1\n")
+
+    lf_digest = compute_forge_baseline_digest(tmp_path)
+    for path in paths:
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+    assert compute_forge_baseline_digest(tmp_path) == lf_digest
+
+
 def test_bundled_blind_v2_is_frozen_and_complete():
     bundle = load_blind_bundle(
         bundled_blind_manifest_path(),
@@ -119,6 +138,17 @@ def test_blind_bundle_rejects_changed_forge_baseline(tmp_path):
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     with pytest.raises(ValueError, match="baseline digest mismatch"):
+        load_blind_bundle(str(manifest_path), repository_root=repository_root)
+
+
+def test_blind_bundle_rejects_unknown_baseline_digest_mode(tmp_path):
+    repository_root = Path(__file__).resolve().parents[1]
+    manifest_path = _write_bundle(tmp_path, repository_root)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["forge_baseline"]["digest_mode"] = "platform_bytes_v0"
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported Forge baseline digest mode"):
         load_blind_bundle(str(manifest_path), repository_root=repository_root)
 
 

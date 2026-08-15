@@ -5,8 +5,9 @@
     "sha256": "ae27c521afb6fc707152776e23e8a843cfc685dcf7d0816a75dabfe2215981ac"
   },
   "forge_baseline": {
+    "digest_mode": "canonical_lf_v1",
     "file_count": 54,
-    "sha256": "66b1bc7231c53b14aa12af974e871b932872b75f124c100ffcae3a69b9b67cd6"
+    "sha256": "b5a4de89094a16b2565f180c9b8b3ae319b4af24d4d7a50fb7acbba2df9223e4"
   },
   "frozen_at": "2026-08-15T09:08:34Z",
   "oracle_sha256": {

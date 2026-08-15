@@ -109,6 +109,7 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert manifest["provenance"]["independent_of_forge"] is True
     assert manifest["provenance"]["sealed_before_first_execution"] is True
     assert manifest["forge_baseline"]["sha256"] == bundle.baseline_sha256
+    assert manifest["forge_baseline"]["digest_mode"] == "canonical_lf_v1"
     assert set(manifest["oracle_sha256"]) == {"V3-001"}
 
 

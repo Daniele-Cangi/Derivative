@@ -21,6 +21,7 @@ from core.forge.heldout_benchmark import (
 
 BLIND_BENCHMARK_SCHEMA_VERSION = 2
 SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2})
+FORGE_BASELINE_DIGEST_MODE = "canonical_lf_v1"
 _EXCLUDED_BASELINE_FILES = {
     "core/forge/benchmark.py",
     "core/forge/blind_benchmark.py",
@@ -104,12 +105,17 @@ def compute_forge_baseline_digest(repository_root: str | Path) -> tuple[str, int
     digest = hashlib.sha256()
     for path in sorted(protected, key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix()
-        file_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        file_digest = hashlib.sha256(_canonical_source_bytes(path)).hexdigest()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(file_digest.encode("ascii"))
         digest.update(b"\n")
     return digest.hexdigest(), len(protected)
+
+
+def _canonical_source_bytes(path: Path) -> bytes:
+    content = path.read_bytes()
+    return content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
 def load_blind_bundle(
@@ -170,6 +176,12 @@ def load_blind_bundle(
         oracle_sha256[case_id] = actual_digest
 
     baseline_spec = _required_mapping(payload, "forge_baseline")
+    digest_mode = str(baseline_spec.get("digest_mode", "")).strip()
+    if digest_mode and digest_mode != FORGE_BASELINE_DIGEST_MODE:
+        raise ValueError(
+            "Unsupported Forge baseline digest mode: "
+            f"{digest_mode}; expected={FORGE_BASELINE_DIGEST_MODE}."
+        )
     expected_baseline_sha256 = _required_sha256(
         baseline_spec.get("sha256"),
         "forge baseline",

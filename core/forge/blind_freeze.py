@@ -7,6 +7,7 @@ from typing import List
 
 from core.forge.blind_benchmark import (
     BLIND_BENCHMARK_SCHEMA_VERSION,
+    FORGE_BASELINE_DIGEST_MODE,
     BlindBenchmarkBundle,
     compute_forge_baseline_digest,
     load_blind_bundle,
@@ -68,6 +69,7 @@ def freeze_blind_bundle(
         "forge_baseline": {
             "sha256": baseline_digest,
             "file_count": baseline_file_count,
+            "digest_mode": FORGE_BASELINE_DIGEST_MODE,
         },
         "oracle_sha256": dict(sorted(oracle_digests.items())),
         "source_urls": list(source_urls),
@@ -80,8 +82,9 @@ def freeze_blind_bundle(
             "declaration": provenance.declaration.strip(),
         },
     }
-    with manifest_path.open("x", encoding="utf-8") as manifest_file:
-        manifest_file.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    manifest_path.write_bytes(
+        (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    )
     return load_blind_bundle(
         str(manifest_path),
         repository_root=repository_root,
