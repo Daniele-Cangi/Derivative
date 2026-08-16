@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
-from core.forge.semantic_contracts import non_semantic_test_paths
+from core.forge.test_evidence import non_semantic_test_reasons, source_module_names
 from core.forge.validation.common import ValidationLayerBase
 
 
@@ -81,12 +81,29 @@ class AdversarialValidationLayer(ValidationLayerBase):
             self._append_unique(signatures, "missing_acceptance_coverage")
 
         declared_test_paths = set(code_artifact.test_paths)
-        non_semantic_tests = self._detect_non_semantic_tests(declared_test_paths, materialized)
+        non_semantic_tests, non_semantic_reasons = self._detect_non_semantic_tests(
+            declared_test_paths,
+            materialized,
+            plan,
+        )
         if non_semantic_tests:
             failures.append(f"Non-semantic tests detected: {non_semantic_tests}.")
             self._append_unique(signatures, "non_semantic_test")
             self._append_unique(signatures, "fake_acceptance_coverage")
+        observed_reasons = {
+            reason
+            for reasons in non_semantic_reasons.values()
+            for reason in reasons
+        }
+        for signature in (
+            "disconnected_assertion",
+            "missing_target_invocation",
+            "tautological_assertion",
+        ):
+            if signature in observed_reasons:
+                self._append_unique(signatures, signature)
         evidence["non_semantic_tests"] = non_semantic_tests
+        evidence["non_semantic_test_reasons"] = non_semantic_reasons
 
         semantic_requirement_failures, semantic_requirement_signatures, semantic_requirement_evidence = (
             self._validate_semantic_requirement_test_coverage(
@@ -267,13 +284,24 @@ class AdversarialValidationLayer(ValidationLayerBase):
         self,
         expected_test_paths: set[str],
         materialized: Dict[str, Path],
-    ) -> List[str]:
+        plan: FeasiblePlan,
+    ) -> Tuple[List[str], Dict[str, List[str]]]:
         contents = {
             path: target.read_text(encoding="utf-8")
             for path, target in materialized.items()
             if path in expected_test_paths and target.exists()
         }
-        return non_semantic_test_paths(expected_test_paths, contents)
+        reasons = non_semantic_test_reasons(
+            expected_test_paths,
+            contents,
+            target_names={
+                interface.name
+                for interface in plan.interfaces
+                if interface.name.isidentifier()
+            },
+            target_modules=source_module_names(materialized),
+        )
+        return sorted(reasons), reasons
 
     def _validate_semantic_requirement_test_coverage(
         self,

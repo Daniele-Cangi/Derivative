@@ -8,9 +8,9 @@ from core.forge.semantic_contracts import (
     has_expected_exception_assertion,
     has_json_lines_processing,
     interface_parameter_is_exercised,
-    non_semantic_test_paths,
     structurally_evidences,
 )
+from core.forge.test_evidence import non_semantic_test_reasons, source_module_names
 from core.forge.validation.obligations import ObligationValidationLayer
 
 
@@ -28,6 +28,7 @@ def run_semantic_preflight(
     test_failures.extend(
         _non_semantic_test_failures(
             candidate_files,
+            plan,
             contracts,
             failed_paths,
         )
@@ -145,12 +146,23 @@ def _test_contract_failures(
 
 def _non_semantic_test_failures(
     candidate_files: dict[str, str],
+    plan: FeasiblePlan,
     contracts: dict[str, Any],
     failed_paths: list[str],
 ) -> list[dict[str, Any]]:
     mapped_paths = [path for path in contracts if path.startswith("tests/")]
     failures: list[dict[str, Any]] = []
-    for path in non_semantic_test_paths(mapped_paths, candidate_files):
+    reasons_by_path = non_semantic_test_reasons(
+        mapped_paths,
+        candidate_files,
+        target_names={
+            interface.name
+            for interface in plan.interfaces
+            if interface.name.isidentifier()
+        },
+        target_modules=source_module_names(candidate_files),
+    )
+    for path, reasons in reasons_by_path.items():
         if path not in failed_paths:
             failed_paths.append(path)
         requirement_ids = [
@@ -163,6 +175,7 @@ def _non_semantic_test_failures(
                 "path": path,
                 "kind": "non_semantic_test",
                 "requirement_ids": requirement_ids,
+                "reasons": reasons,
             }
         )
     return failures
@@ -238,6 +251,20 @@ def correction_requirements(
         path = str(failure.get("path", ""))
         if failure.get("kind") == "non_semantic_test":
             requirement_ids = [str(item) for item in failure.get("requirement_ids", [])]
+            reasons = [str(item) for item in failure.get("reasons", [])]
+            if "disconnected_assertion" in reasons:
+                requirements.append(
+                    f"{path}: assertions must observe values returned by a declared public interface, "
+                    "arguments mutated by that interface, or file/stdout/database effects read after its "
+                    f"invocation for requirements {requirement_ids}."
+                )
+                continue
+            if "missing_target_invocation" in reasons:
+                requirements.append(
+                    f"{path}: invoke a declared generated public interface and assert an observable "
+                    f"behavioral result for requirements {requirement_ids}."
+                )
+                continue
             requirements.append(
                 f"{path}: replace callable/type/file-presence or placeholder checks with a test that invokes "
                 "a declared public interface using concrete input and asserts an observable behavioral result "

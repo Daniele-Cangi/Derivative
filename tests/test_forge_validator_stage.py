@@ -11,7 +11,6 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.semantic_contracts import (
     has_end_to_end_file_workflow_test,
-    non_semantic_test_paths,
     structurally_evidences,
 )
 from core.forge.validator_stage import ValidatorStage
@@ -66,43 +65,6 @@ SENSOR_PIPELINE_REQUIREMENT = (
     "and mean for each sensor, return 0 on success, produce deterministic keys, and include "
     "end-to-end tests."
 )
-
-
-@pytest.mark.parametrize(
-    "assertion",
-    [
-        "result == 0 or result != 0",
-        "result is None or result is not None",
-        "result in values or result not in values",
-        "result or not result",
-        "True",
-        "1",
-        "'always true'",
-    ],
-)
-def test_shared_anti_stub_contract_rejects_tautologies(assertion):
-    path = "tests/test_contract.py"
-    content = (
-        "def test_contract():\n"
-        "    target = lambda: 0\n"
-        "    result = target()\n"
-        "    values = {0}\n"
-        f"    assert {assertion}\n"
-    )
-
-    assert non_semantic_test_paths([path], {path: content}) == [path]
-
-
-def test_shared_anti_stub_contract_accepts_observable_equality():
-    path = "tests/test_contract.py"
-    content = (
-        "def test_contract():\n"
-        "    target = lambda: 0\n"
-        "    result = target()\n"
-        "    assert result == 0\n"
-    )
-
-    assert non_semantic_test_paths([path], {path: content}) == []
 
 
 def test_cli_entrypoint_is_structural_evidence_without_framework_tokens():
@@ -618,6 +580,35 @@ def test_tautological_assertion_does_not_count_as_acceptance_coverage(forge_pipe
     assert "non_semantic_test" in result.failure_signatures
     assert "fake_acceptance_coverage" in result.failure_signatures
     assert required_path in result.layer3_result.evidence["non_semantic_tests"]
+
+
+def test_disconnected_assertion_does_not_count_as_acceptance_coverage(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = forge_pipeline["build_spec"]
+    required_path = f"tests/{plan.required_tests[0].test_name}.py"
+    generated = _find_file(artifact, required_path)
+    assert generated is not None
+    generated.content = (
+        "import cli\n"
+        "\n"
+        "def test_disconnected_contract(monkeypatch):\n"
+        "    monkeypatch.setattr(cli, 'main', lambda argv: 0)\n"
+        "    cli.main([])\n"
+        "    unrelated = 2\n"
+        "    assert unrelated == 2\n"
+    )
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "non_semantic_test" in result.failure_signatures
+    assert "fake_acceptance_coverage" in result.failure_signatures
+    assert "disconnected_assertion" in result.failure_signatures
+    assert result.layer3_result.evidence["non_semantic_test_reasons"][required_path] == [
+        "disconnected_assertion"
+    ]
 
 
 def test_every_declared_test_path_is_attacked_for_semantic_content(forge_pipeline):

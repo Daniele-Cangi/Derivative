@@ -544,6 +544,49 @@ def test_semantic_preflight_rejects_tautological_acceptance_assertion(json_merge
     )
 
 
+def test_semantic_preflight_rejects_assertion_disconnected_from_target(json_merge_case):
+    _, plan, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/cli.py"] = _source()
+    test_paths = sorted(path for path in files if path.startswith("tests/"))
+    for path in test_paths:
+        files[path] = _test_source(path)
+    target_path = test_paths[0]
+    files[target_path] = '''import cli
+
+
+def test_disconnected_contract():
+    cli.main([])
+    unrelated = 2
+    assert unrelated == 2
+'''
+    contracts = build_test_generation_contracts(test_paths, plan, artifact)
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    failure = next(
+        item
+        for item in result["failures"]
+        if item.get("kind") == "non_semantic_test"
+        and item.get("path") == target_path
+    )
+    assert result["passed"] is False
+    assert failure["reasons"] == ["disconnected_assertion"]
+    assert any(
+        "assertions must observe values returned" in requirement
+        for requirement in result["correction_requirements"]
+    )
+
+
 def test_imported_source_expansion_resolves_nested_module_basename():
     files = {
         "src/library/core.py": "def merge_intervals(values):\n    return values\n",
