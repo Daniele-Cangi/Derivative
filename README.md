@@ -186,6 +186,14 @@ OPENAI_MODEL="gpt-4.1-mini"
 
 `local-only` does not require an API key.
 
+## Contributing and Certified Extensions
+
+Derivative welcomes contributions that expand the verified surface without weakening the meaning of `verified`. A new renderer, adapter, prompt, or passing generated test suite is not sufficient on its own: an extension must preserve typed requirement intent, capability declarations, independent validation, provenance, and appropriate evaluation evidence.
+
+Start with [`CONTRIBUTING.md`](CONTRIBUTING.md). If the contribution adds a new software domain, capability family, or verification primitive, also read the [`Certified Extension Contract`](docs/CERTIFIED_EXTENSION_CONTRACT.md).
+
+The preferred direction is **incremental certification**, not one universal adapter. Unsupported semantics should continue to fail closed until the project has a defensible verification contract for them. Historical blind reports and frozen benchmark inputs remain evidence; changes after an observed blind case are regression work and must not be presented as fresh blind results.
+
 ## License
 
 Derivative is released under the [MIT License](LICENSE).
