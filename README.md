@@ -204,7 +204,7 @@ Derivative is released under the [MIT License](LICENSE).
 The repository currently has the following verified baseline:
 
 - 346 repository tests in the CI suite. The latest local run passes 344 and skips 2 Docker-gated isolation tests on this workstation; GitHub Actions executes the complete set.
-- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. The current isolated run reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, median latency 1.49s, and P95 latency 2.39s.
+- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. CI run `31970466118` reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, average latency 1.20s, median latency 1.78s, and P95 latency 1.82s.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
 - A genuinely new blind-v3 bundle frozen before execution with 12 cases and six independent black-box oracles. Its first run is preserved unchanged and establishes a deliberately unfiltered baseline: 3/12 passed, status accuracy 0.333, external Verified@1 0.000, oracle pass rate 0.000, false-verified rate 1.000, and infeasibility detection 0.000.
