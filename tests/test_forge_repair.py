@@ -366,6 +366,131 @@ def test_semantic_content_mismatch_targets_mapped_sources_and_tests(repair_case)
     assert directive.evidence_refs == ["layer2.requirement_semantic_checks"]
 
 
+def test_requirement_assertion_failure_compiles_exact_test_repair(repair_case):
+    artifact = copy.deepcopy(repair_case["artifact"])
+    artifact.artifact_manifest["metadata"]["generator"] = "forge_candidate_compiler"
+    test_path = artifact.test_paths[0]
+    assertion_evidence = {
+        "mapped_test_paths": [test_path],
+        "existing_test_paths": [test_path],
+        "required_terms": ["csv", "contracts"],
+        "covered_terms": ["csv"],
+        "missing_terms": ["contracts"],
+        "causal_functions": [
+            {
+                "path": test_path,
+                "function": "test_reads_contracts_csv",
+                "matched_terms": ["csv"],
+            }
+        ],
+        "assertions": [
+            {
+                "path": test_path,
+                "function": "test_reads_contracts_csv",
+                "line": 18,
+                "kind": "assert",
+                "expression": "len(rows) == 1",
+                "evidence_terms": ["csv"],
+            }
+        ],
+        "passed": False,
+        "failure_reason": "missing_requirement_assertion_evidence",
+    }
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Requirement R001 lacks a contract-specific assertion."],
+        failure_signatures=[
+            "missing_requirement_assertion_evidence",
+            "fake_acceptance_coverage",
+        ],
+        evidence={
+            "layer2": {
+                "requirement_semantic_checks": {
+                    "requirement_assertion_mismatches": [
+                        {
+                            "requirement_id": "R001",
+                            "test_paths": [test_path],
+                            "assertion_evidence": assertion_evidence,
+                        }
+                    ]
+                }
+            },
+            "layer3": {
+                "semantic_requirement_test_coverage": {
+                    "missing_requirement_assertion_evidence": ["R001"],
+                    "requirements": {
+                        "R001": {
+                            "mapped_tests": [test_path],
+                            "assertion_evidence": assertion_evidence,
+                        }
+                    },
+                }
+            },
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert directive.operations == [
+        "repair_requirement_assertions",
+        "rerender_semantic_tests",
+    ]
+    assert directive.target_paths == [test_path]
+    assert "recompile_candidate_transaction" not in directive.operations
+    assert directive.requirement_ids == ["R001"]
+    assert directive.target_symbols == ["test_reads_contracts_csv"]
+    assert directive.evidence_targets["R001"]["missing_terms"] == ["contracts"]
+    assert directive.evidence_targets["R001"]["assertions"][0]["line"] == 18
+    assert directive.evidence_targets["R001"]["evidence_refs"] == [
+        "layer2.requirement_semantic_checks.requirements:R001.assertion_evidence",
+        "layer3.semantic_requirement_test_coverage.requirements:R001.assertion_evidence",
+    ]
+
+
+def test_real_validator_assertion_evidence_routes_to_exact_repair(repair_case):
+    artifact = copy.deepcopy(repair_case["artifact"])
+    plan = repair_case["plan"]
+    atom = next(
+        item
+        for item in repair_case["spec"].requirement_atoms
+        if "input_csv" in item.evidence_terms
+    )
+    test_name = plan.requirement_coverage[atom.requirement_id]["tests"][0]
+    test_path = f"tests/{test_name}.py"
+    _file(artifact, test_path).content = (
+        "import cli\n"
+        "\n"
+        "def test_input_csv_label_only():\n"
+        "    input_csv = 'fixture.csv'\n"
+        "    assert input_csv.endswith('.csv')\n"
+        "\n"
+        "def test_unrelated_cli_behavior(monkeypatch):\n"
+        "    monkeypatch.setattr(cli, 'main', lambda argv: 0)\n"
+        "    result = cli.main([])\n"
+        "    assert result == 0\n"
+    )
+    validation = repair_case["validator"].validate(
+        artifact,
+        plan,
+        repair_case["spec"],
+    )
+
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+
+    assert "missing_requirement_assertion_evidence" in validation.failure_signatures
+    assert directive.target_paths == [test_path]
+    assert directive.requirement_ids == [atom.requirement_id]
+    assert directive.target_symbols == ["test_unrelated_cli_behavior"]
+    assert directive.evidence_targets[atom.requirement_id]["missing_terms"] == [
+        "input_csv"
+    ]
+
+
 def test_repair_contract_is_domain_neutral():
     build_spec = BuildSpec(
         build_id="build-generic",

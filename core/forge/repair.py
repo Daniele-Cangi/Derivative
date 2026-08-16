@@ -1,4 +1,5 @@
 import hashlib
+import json
 from typing import Any, Dict, Iterable, List
 
 from core.forge.contracts import (
@@ -8,6 +9,7 @@ from core.forge.contracts import (
     RepairDirective,
     ValidationArtifact,
 )
+from core.forge.repair_evidence import compile_requirement_assertion_targets
 
 
 class RepairPolicy:
@@ -25,6 +27,7 @@ class RepairPolicy:
         "missing_obligation": "restore_obligation_provenance",
         "semantic_content_mismatch": "implement_missing_requirement_semantics",
         "missing_semantic_requirement_coverage": "rerender_semantic_tests",
+        "missing_requirement_assertion_evidence": "repair_requirement_assertions",
         "quality_contract_violation": "rerender_quality_contract_targets",
         "capability_contract_violation": "restore_capability_contract",
         "missing_capability": "restore_capability_modules",
@@ -45,13 +48,15 @@ class RepairPolicy:
             for signature in signatures
             if signature in self._OPERATIONS
         )
+        evidence_targets = compile_requirement_assertion_targets(validation)
         target_paths, evidence_refs = self._target_paths(
             validation,
             plan,
             artifact,
             signatures,
+            evidence_targets,
         )
-        requirement_ids = self._requirement_ids(validation)
+        requirement_ids = self._requirement_ids(validation, evidence_targets)
         metadata = (
             artifact.artifact_manifest.get("metadata", {})
             if isinstance(artifact.artifact_manifest, dict)
@@ -61,6 +66,7 @@ class RepairPolicy:
             operations
             and isinstance(metadata, dict)
             and metadata.get("generator") == "forge_candidate_compiler"
+            and not self._is_assertion_only_repair(operations)
         ):
             operations = self._dedupe([*operations, "recompile_candidate_transaction"])
             manifest_paths = {
@@ -75,7 +81,12 @@ class RepairPolicy:
             evidence_refs = self._dedupe(
                 [*evidence_refs, "artifact_manifest.metadata.candidate_compilation"]
             )
-        target_symbols = self._target_symbols(plan, target_paths, requirement_ids)
+        target_symbols = self._target_symbols(
+            plan,
+            target_paths,
+            requirement_ids,
+            evidence_targets,
+        )
         digest_source = "|".join(
             [
                 plan.plan_id,
@@ -85,6 +96,7 @@ class RepairPolicy:
                 *target_paths,
                 *requirement_ids,
                 *target_symbols,
+                json.dumps(evidence_targets, sort_keys=True),
             ]
         )
         repair_id = f"repair-{hashlib.sha256(digest_source.encode('utf-8')).hexdigest()[:12]}"
@@ -104,6 +116,7 @@ class RepairPolicy:
             evidence_refs=evidence_refs,
             requirement_ids=requirement_ids,
             target_symbols=target_symbols,
+            evidence_targets=evidence_targets,
             repairable=repairable,
             stop_reason=stop_reason,
         )
@@ -114,6 +127,7 @@ class RepairPolicy:
         plan: FeasiblePlan,
         artifact: CodeArtifact,
         signatures: List[str],
+        evidence_targets: Dict[str, Any],
     ) -> tuple[List[str], List[str]]:
         evidence = validation.evidence if isinstance(validation.evidence, dict) else {}
         paths: List[str] = []
@@ -176,6 +190,11 @@ class RepairPolicy:
             self._extend_strings(paths, layer3.get(key))
             if len(paths) > before:
                 refs.append(f"layer3.{key}")
+
+        if "missing_requirement_assertion_evidence" in signatures:
+            for item in evidence_targets.values():
+                self._extend_strings(paths, item.get("test_paths"))
+                self._extend_strings(refs, item.get("evidence_refs"))
 
         if "quality_contract_violation" in signatures:
             paths.extend(
@@ -241,11 +260,16 @@ class RepairPolicy:
 
         return self._dedupe(paths), self._dedupe(refs)
 
-    def _requirement_ids(self, validation: ValidationArtifact) -> List[str]:
+    def _requirement_ids(
+        self,
+        validation: ValidationArtifact,
+        evidence_targets: Dict[str, Any],
+    ) -> List[str]:
         evidence = validation.evidence if isinstance(validation.evidence, dict) else {}
         layer2 = self._mapping(evidence.get("layer2"))
         layer3 = self._mapping(evidence.get("layer3"))
         requirement_ids: List[str] = []
+        requirement_ids.extend(evidence_targets)
 
         semantic_checks = self._mapping(layer2.get("requirement_semantic_checks"))
         for mismatch in self._list(semantic_checks.get("semantic_content_mismatches")):
@@ -265,11 +289,24 @@ class RepairPolicy:
         )
         return self._dedupe(requirement_ids)
 
+    @staticmethod
+    def _is_assertion_only_repair(operations: List[str]) -> bool:
+        test_operations = {
+            "repair_requirement_assertions",
+            "rerender_semantic_tests",
+            "restore_acceptance_tests",
+        }
+        return (
+            "repair_requirement_assertions" in operations
+            and set(operations).issubset(test_operations)
+        )
+
     def _target_symbols(
         self,
         plan: FeasiblePlan,
         target_paths: List[str],
         requirement_ids: List[str],
+        evidence_targets: Dict[str, Any],
     ) -> List[str]:
         normalized_targets = {path.replace("\\", "/") for path in target_paths}
         symbols: List[str] = []
@@ -288,6 +325,14 @@ class RepairPolicy:
             if required and not (required & set(capability.requirement_ids)):
                 continue
             symbols.extend(capability.interfaces)
+        for target in evidence_targets.values():
+            for function in self._list(target.get("causal_functions")):
+                if not isinstance(function, dict):
+                    continue
+                path = str(function.get("path", "")).replace("\\", "/")
+                name = function.get("function")
+                if path in normalized_targets and isinstance(name, str):
+                    symbols.append(name)
         return self._dedupe(symbols)
 
     @staticmethod

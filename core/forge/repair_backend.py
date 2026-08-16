@@ -494,6 +494,7 @@ class SubstrateRepairBackend:
             "evidence_refs": list(directive.evidence_refs),
             "repair_requirement_ids": list(directive.requirement_ids),
             "repair_target_symbols": list(directive.target_symbols),
+            "repair_evidence_targets": dict(directive.evidence_targets),
         }
 
     @staticmethod

@@ -132,6 +132,9 @@ or mutating module constants after import, and must not use skip, pass, conditio
 checks. Generate the supplied test targets as one coherent suite and obey each test_generation_contract. Derive expected
 counts directly from the fixture records, and do not assert incidental behavior that is absent from the requirement and
 plan, even if a legacy source API exposes it. Obey forbidden_unrequested_behaviors in every test contract. If
+repair_evidence_targets is present, treat it as a mandatory path/function-level repair contract: preserve causal target
+invocation and add concrete assertions that cover every missing_terms entry for the corresponding requirement. Do not
+rewrite unrelated source files or substitute assertions for different requirements. If
 candidate_test_suite and preflight_test_execution are present during source revision, treat only assertions grounded in
 test_generation_contracts as executable specifications: fix source defects demonstrated by those assertions while
 preserving valid source behavior; do not implement incidental SQLite, database, audit, health, or polling behavior merely

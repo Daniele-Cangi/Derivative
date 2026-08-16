@@ -235,6 +235,7 @@ class RepairDirective:
     evidence_refs: List[str] = field(default_factory=list)
     requirement_ids: List[str] = field(default_factory=list)
     target_symbols: List[str] = field(default_factory=list)
+    evidence_targets: Dict[str, Any] = field(default_factory=dict)
     repairable: bool = True
     stop_reason: str = ""
 

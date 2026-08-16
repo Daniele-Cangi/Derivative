@@ -265,6 +265,23 @@ class _OmittingAtomicKernel:
         return {"status": "candidate", "files": {path: content + "\n# partial\n"}}
 
 
+class _AssertionEvidenceKernel:
+    use_live_model = True
+
+    def __init__(self):
+        self.context = None
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        self.context = repair_context
+        return {
+            "status": "candidate",
+            "files": {
+                path: f"{content}\n# requirement assertion revised\n"
+                for path, content in target_files.items()
+            },
+        }
+
+
 def test_substrate_backend_revises_each_grounded_target_separately():
     plan = _generic_plan()
     artifact = CoderStage().generate(plan)
@@ -300,6 +317,64 @@ def test_substrate_backend_revises_each_grounded_target_separately():
     assert source_call["related_sources"] == {}
     assert test_call["target_path"] == test_path
     assert "src/component.py" in test_call["related_sources"]
+
+
+def test_substrate_backend_receives_requirement_assertion_repair_contract():
+    plan = _generic_plan()
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+    assertion_evidence = {
+        "mapped_test_paths": [test_path],
+        "existing_test_paths": [test_path],
+        "required_terms": ["workflow"],
+        "covered_terms": [],
+        "missing_terms": ["workflow"],
+        "causal_functions": [
+            {
+                "path": test_path,
+                "function": "test_component",
+                "matched_terms": [],
+            }
+        ],
+        "assertions": [],
+        "passed": False,
+        "failure_reason": "missing_requirement_assertion_evidence",
+    }
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Requirement R001 lacks a causal assertion."],
+        failure_signatures=["missing_requirement_assertion_evidence"],
+        evidence={
+            "layer2": {
+                "requirement_semantic_checks": {
+                    "requirement_assertion_mismatches": [
+                        {
+                            "requirement_id": "R001",
+                            "test_paths": [test_path],
+                            "assertion_evidence": assertion_evidence,
+                        }
+                    ]
+                }
+            }
+        },
+    )
+    directive = RepairPolicy().compile(validation, plan, artifact, attempt=2)
+    kernel = _AssertionEvidenceKernel()
+    backend = SubstrateRepairBackend(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        test_preflight_runner=_passing_preflight,
+    )
+
+    candidate = backend.propose(plan, artifact, validation, directive)
+
+    assert list(candidate.files) == [test_path]
+    assert kernel.context["repair_requirement_ids"] == ["R001"]
+    assert kernel.context["repair_target_symbols"] == ["test_component"]
+    target = kernel.context["repair_evidence_targets"]["R001"]
+    assert target["test_paths"] == [test_path]
+    assert target["missing_terms"] == ["workflow"]
+    assert target["causal_functions"][0]["function"] == "test_component"
 
 
 def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_tests():

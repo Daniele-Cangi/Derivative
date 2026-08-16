@@ -131,7 +131,7 @@ A build is verified only if all 3 layers pass.
 
 ## Failure-Guided Repair
 
-Coder retries are grounded in `ValidationArtifact` failure signatures and evidence. Forge compiles a typed repair directive, records target files and operations, and accepts a revised `CodeArtifact` only when its source, tests, manifest, or provenance actually changes. A repair that is unsupported, not applicable, or byte-equivalent terminates as `validation_failed`; it cannot consume a synthetic retry or reach packaging.
+Coder retries are grounded in `ValidationArtifact` failure signatures and evidence. Forge compiles a typed repair directive, records target files and operations, and accepts a revised `CodeArtifact` only when its source, tests, manifest, or provenance actually changes. Requirement-assertion failures compile into path/function-level targets containing the exact requirement ids, causal test functions, existing assertions, and missing evidence terms; test-only failures do not trigger unrelated candidate regeneration. A repair that is unsupported, not applicable, or byte-equivalent terminates as `validation_failed`; it cannot consume a synthetic retry or reach packaging.
 
 In `hybrid` or `remote-only` mode, Forge may ask the existing cognitive substrate and reasoning kernel for complete replacements of validator-targeted files. These revisions are untrusted candidates: path allowlists prevent unplanned file or manifest changes, repair lineage is persisted, and all three validation layers must pass again before packaging. `local-only` remains deterministic and uses canonical plan regeneration without requiring a remote model.
 
@@ -203,7 +203,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 343 repository tests passing in GitHub Actions. The local run passes 341 and skips 2 Docker-gated isolation tests on this workstation.
+- 346 repository tests in the CI suite. The latest local run passes 344 and skips 2 Docker-gated isolation tests on this workstation; GitHub Actions executes the complete set.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. The current isolated run reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, median latency 1.49s, and P95 latency 2.39s.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.

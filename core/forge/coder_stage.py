@@ -246,6 +246,7 @@ class CoderStage:
             "evidence_refs": list(directive.evidence_refs),
             "requirement_ids": list(directive.requirement_ids),
             "target_symbols": list(directive.target_symbols),
+            "evidence_targets": dict(directive.evidence_targets),
             "changed_paths": list(changed_paths),
             "previous_artifact_id": previous_artifact.artifact_id,
             "previous_digest": previous_digest,
