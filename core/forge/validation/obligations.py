@@ -5,12 +5,15 @@ from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
 from core.forge.execution import ProcessExecutor, SandboxProcessRequest
+from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_json_lines_processing,
     interface_parameter_is_exercised,
+    semantic_term_present,
     structurally_evidences,
 )
+from core.forge.test_evidence import source_module_names
 from core.forge.validation.common import ValidationLayerBase
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 from core.forge.validation.capabilities import CapabilityContractChecker
@@ -334,9 +337,43 @@ class ObligationValidationLayer(ValidationLayerBase):
         files_by_path = {generated.path: generated for generated in code_artifact.files}
         mismatches: List[Dict[str, object]] = []
         checks: Dict[str, object] = {}
+        public_interface_names = {
+            interface.name
+            for interface in plan.interfaces
+            if interface.name.isidentifier()
+        }
+        requirement_terms = {
+            atom.requirement_id: list(atom.evidence_terms)
+            for atom in build_spec.requirement_atoms
+            if atom.category != "ambiguity"
+        }
+        requirement_test_paths = {
+            requirement_id: [
+                f"tests/{name}.py"
+                for name in plan.requirement_coverage.get(requirement_id, {}).get(
+                    "tests", []
+                )
+            ]
+            for requirement_id in requirement_terms
+        }
+        assertion_report = requirement_assertion_evidence(
+            requirement_terms,
+            requirement_test_paths,
+            {path: generated.content for path, generated in files_by_path.items()},
+            target_names=public_interface_names,
+            target_modules=source_module_names(files_by_path),
+            term_matcher=lambda term, function_source: (
+                semantic_term_present(term, function_source, is_test=True)
+                or behaviorally_evidences(
+                    term,
+                    function_source,
+                    public_interface_names,
+                )
+            ),
+        )
 
         for atom in build_spec.requirement_atoms:
-            if atom.category == "ambiguity" or not atom.evidence_terms:
+            if atom.category == "ambiguity":
                 continue
             coverage = plan.requirement_coverage.get(atom.requirement_id, {})
             source_paths = [
@@ -357,11 +394,6 @@ class ObligationValidationLayer(ValidationLayerBase):
             behavioral_test_corpus = "\n\n".join(
                 files_by_path[path].content for path in test_paths
             )
-            public_interface_names = {
-                interface.name
-                for interface in plan.interfaces
-                if interface.name.isidentifier()
-            }
             source_evidence_required = self._requires_source_semantic_evidence(atom)
             missing_source_terms = (
                 [
@@ -400,6 +432,15 @@ class ObligationValidationLayer(ValidationLayerBase):
                     public_interface_names,
                 )
             ]
+            assertion_evidence = assertion_report.get(
+                atom.requirement_id,
+                {
+                    "passed": False,
+                    "failure_reason": "missing_mapped_test",
+                    "missing_terms": list(atom.evidence_terms),
+                    "assertions": [],
+                },
+            )
             item = {
                 "text": atom.text,
                 "evidence_terms": list(atom.evidence_terms),
@@ -408,15 +449,25 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "source_evidence_required": source_evidence_required,
                 "missing_source_terms": missing_source_terms,
                 "missing_test_terms": missing_test_terms,
+                "assertion_evidence": assertion_evidence,
             }
             checks[atom.requirement_id] = item
-            if missing_source_terms or missing_test_terms:
+            if (
+                missing_source_terms
+                or missing_test_terms
+                or not assertion_evidence["passed"]
+            ):
                 mismatches.append({"requirement_id": atom.requirement_id, **item})
 
         failures: List[str] = []
         signatures: List[str] = []
         source_mismatches = [item for item in mismatches if item["missing_source_terms"]]
         test_mismatches = [item for item in mismatches if item["missing_test_terms"]]
+        assertion_mismatches = [
+            item
+            for item in mismatches
+            if not item["assertion_evidence"]["passed"]
+        ]
         if source_mismatches:
             failed_ids = [str(item["requirement_id"]) for item in source_mismatches]
             failures.append(
@@ -431,11 +482,25 @@ class ObligationValidationLayer(ValidationLayerBase):
                 f"{failed_ids}."
             )
             self._append_unique(signatures, "missing_semantic_requirement_coverage")
+        if assertion_mismatches:
+            failed_ids = [
+                str(item["requirement_id"])
+                for item in assertion_mismatches
+            ]
+            failures.append(
+                "Mapped tests do not contain requirement-specific causal assertions: "
+                f"{failed_ids}."
+            )
+            self._append_unique(
+                signatures,
+                "missing_requirement_assertion_evidence",
+            )
         return failures, signatures, {
             "requirements": checks,
             "semantic_content_mismatches": mismatches,
             "source_semantic_mismatches": source_mismatches,
             "test_semantic_mismatches": test_mismatches,
+            "requirement_assertion_mismatches": assertion_mismatches,
         }
 
     @staticmethod
@@ -452,71 +517,4 @@ class ObligationValidationLayer(ValidationLayerBase):
 
     @staticmethod
     def _semantic_term_present(term: str, corpus: str, is_test: bool = False) -> bool:
-        normalized = corpus.replace("-", "_").replace(" ", "_")
-        aliases = {
-            "cli_entrypoint": ("argparse", "typer", "click.command", "sys.argv"),
-            "cli_flow": ("argparse", "typer", "click.command", "sys.argv"),
-            "input_jsonl": ("json.loads", "json.load(", "jsonlines", "parse_jsonl"),
-            "jsonl": (".jsonl", "json_lines", "jsonl"),
-            "input_csv": ("csv.dictreader", "csv.reader", "read_csv"),
-            "summary_csv": ("csv.dictwriter", "csv.writer(", "write_summary"),
-            "malformed_records": ("jsondecodeerror", "malformed", "invalid_json"),
-            "duplicate_ids": ("duplicate_id", "duplicate_ids"),
-            "missing_fields": ("missing_field", "missing_fields"),
-            "invalid_timestamp": ("invalid_timestamp", "timestamp_error"),
-            "invalid_dates": ("invalid_date", "invalid_dates"),
-            "malformed_rows": ("malformed_row", "malformed_rows"),
-            "quarantine": ("quarantine", "quarantined"),
-            "minimum": ("min(", "minimum", "min_temperature", "['min']", '"min"'),
-            "maximum": ("max(", "maximum", "max_temperature", "['max']", '"max"'),
-            "average": ("average", "avg_temperature", "mean(", "['average']", "['avg']", '"average"'),
-            "aggregation": (
-                "aggregate",
-                "aggregation",
-                "groupby",
-                "group_by",
-                "compute_summary",
-                "device_temps",
-            ),
-            "per_device": ("device_id", "per_device"),
-            "per_customer": ("customer_id", "per_customer"),
-            "summary_json": ("json.dumps", "json.dump(", "summary_json", ".json"),
-            "idempotent_event": (
-                "insert_or_ignore",
-                "on_conflict",
-                "idempotent",
-                "event_id_text_primary_key",
-            ),
-            "totals": ("total", "totals"),
-            "counts": ("count", "counts"),
-            "recursive_json_merge": (
-                "recursive_json_merge",
-                "recursive_merge",
-                "deep_merge",
-            ),
-            "json_list_replacement": (
-                "json_list_replacement",
-                "replace_lists",
-                "replaces_json_lists",
-                "lists_are_replaced",
-                "list_replacement",
-                "lists_instead_of_concatenating",
-            ),
-            "json_object_root_validation": (
-                "json_object_root_validation",
-                "validate_object_root",
-                "non_object_root",
-                "rejects_non_object",
-                "root_must_be_an_object",
-                "json_root_must_be_an_object",
-                "root_element_must_be_an_object",
-            ),
-        }
-        candidates = aliases.get(term, (term,))
-        if is_test and term == "input_jsonl":
-            candidates = (*candidates, ".jsonl")
-        if is_test and term == "input_csv":
-            candidates = (*candidates, ".csv")
-        if is_test and term in {"cli_entrypoint", "cli_flow"}:
-            candidates = (*candidates, ".main(", "clirunner", "subprocess.run")
-        return any(candidate in corpus or candidate in normalized for candidate in candidates)
+        return semantic_term_present(term, corpus, is_test=is_test)

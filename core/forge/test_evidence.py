@@ -83,6 +83,47 @@ def non_semantic_test_reasons(
     return reasons_by_path
 
 
+def test_function_evidence(
+    content: str,
+    target_names: Iterable[str] = (),
+    target_modules: Iterable[str] = (),
+) -> list[dict[str, object]]:
+    expected_names = {name for name in target_names if name}
+    expected_modules = {name for name in target_modules if name}
+    target_contract_declared = bool(expected_names or expected_modules)
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return []
+    module_aliases, imported_target_names = _target_import_context(
+        tree,
+        expected_names,
+        expected_modules,
+    )
+    evidence: list[dict[str, object]] = []
+    for function in (
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    ):
+        state = _test_function_semantic_state(
+            function,
+            target_names=expected_names | imported_target_names,
+            target_module_aliases=module_aliases,
+            target_contract_declared=target_contract_declared,
+        )
+        evidence.append(
+            {
+                **state,
+                "function": function.name,
+                "source": ast.get_source_segment(content, function)
+                or ast.unparse(function),
+            }
+        )
+    return evidence
+
+
 def source_module_names(paths: Iterable[str]) -> set[str]:
     modules: set[str] = set()
     for path in paths:
@@ -104,9 +145,14 @@ def _test_function_semantic_state(
     target_names: set[str],
     target_module_aliases: set[str],
     target_contract_declared: bool,
-) -> dict[str, bool]:
+) -> dict[str, object]:
     if function.name in {"test_acceptance_requirement", "test_stub"}:
-        return {"semantic": False, "target_invoked": False, "has_assertion": False}
+        return {
+            "semantic": False,
+            "target_invoked": False,
+            "has_assertion": False,
+            "assertions": [],
+        }
     calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
     target_calls = [
         call
@@ -115,11 +161,6 @@ def _test_function_semantic_state(
     ]
     if not target_contract_declared:
         target_calls = calls
-    has_semantic_assertion = any(
-        _is_semantic_assertion(node)
-        for node in ast.walk(function)
-        if isinstance(node, ast.Assert)
-    )
     has_assertion = any(isinstance(node, ast.Assert) for node in ast.walk(function))
     target_invoked = bool(target_calls)
     if not target_invoked:
@@ -127,35 +168,48 @@ def _test_function_semantic_state(
             "semantic": False,
             "target_invoked": False,
             "has_assertion": has_assertion,
+            "assertions": [],
         }
-    if _has_target_exception_assertion(
+    exception_assertions = _target_exception_assertion_records(
         function,
         target_names,
         target_module_aliases,
         target_contract_declared,
-    ):
-        return {"semantic": True, "target_invoked": True, "has_assertion": True}
+    )
+    if exception_assertions:
+        return {
+            "semantic": True,
+            "target_invoked": True,
+            "has_assertion": True,
+            "assertions": exception_assertions,
+        }
     observable_names = _observable_names(
         function,
         target_calls,
         target_names,
         target_module_aliases,
     )
-    has_observable_assertion = any(
-        _assertion_observes_target(
+    observable_assertions = [
+        {
+            "line": getattr(node, "lineno", 0),
+            "kind": "assert",
+            "expression": ast.unparse(node.test),
+        }
+        for node in ast.walk(function)
+        if isinstance(node, ast.Assert) and _is_semantic_assertion(node)
+        and _assertion_observes_target(
             node,
             target_calls,
             observable_names,
             target_names,
             target_module_aliases,
         )
-        for node in ast.walk(function)
-        if isinstance(node, ast.Assert) and _is_semantic_assertion(node)
-    )
+    ]
     return {
-        "semantic": has_semantic_assertion and has_observable_assertion,
+        "semantic": bool(observable_assertions),
         "target_invoked": True,
         "has_assertion": has_assertion,
+        "assertions": observable_assertions,
     }
 
 
@@ -322,12 +376,13 @@ def _expression_references_target_module(
     )
 
 
-def _has_target_exception_assertion(
+def _target_exception_assertion_records(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     target_names: set[str],
     target_module_aliases: set[str],
     target_contract_declared: bool,
-) -> bool:
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
     for node in ast.walk(function):
         if isinstance(node, (ast.With, ast.AsyncWith)) and _is_pytest_raises_context(node):
             if _statements_contain_target_call(
@@ -336,7 +391,14 @@ def _has_target_exception_assertion(
                 target_module_aliases,
                 target_contract_declared,
             ):
-                return True
+                records.append(
+                    {
+                        "line": getattr(node, "lineno", 0),
+                        "kind": "expected_exception",
+                        "expression": ast.unparse(node.items[0].context_expr),
+                    }
+                )
+            continue
         if not isinstance(node, ast.Try):
             continue
         handled = {
@@ -354,8 +416,14 @@ def _has_target_exception_assertion(
         ):
             continue
         if _has_explicit_try_exception_assertion(function):
-            return True
-    return False
+            records.append(
+                {
+                    "line": getattr(node, "lineno", 0),
+                    "kind": "expected_exception",
+                    "expression": "try/except rejects invalid input",
+                }
+            )
+    return records
 
 
 def _statements_contain_target_call(

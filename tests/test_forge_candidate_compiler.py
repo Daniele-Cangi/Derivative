@@ -587,6 +587,59 @@ def test_disconnected_contract():
     )
 
 
+def test_semantic_preflight_requires_assertion_evidence_per_requirement(json_merge_case):
+    spec, plan, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    files["src/cli.py"] = _source()
+    test_paths = sorted(path for path in files if path.startswith("tests/"))
+    for path in test_paths:
+        files[path] = _test_source(path)
+    atom = next(
+        item
+        for item in spec.requirement_atoms
+        if "recursive_json_merge" in item.evidence_terms
+    )
+    target_path = f"tests/{plan.requirement_coverage[atom.requirement_id]['tests'][0]}.py"
+    files[target_path] = '''import cli
+
+
+def test_recursive_json_merge_label_only():
+    recursive_json_merge = "declared"
+    assert recursive_json_merge == "declared"
+
+
+def test_unrelated_generated_behavior():
+    result = cli.validate_object_root({})
+    assert result == {}
+'''
+    contracts = build_test_generation_contracts(test_paths, plan, artifact)
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    failure = next(
+        item
+        for item in result["failures"]
+        if item.get("kind") == "requirement_assertion_evidence_failure"
+        and item.get("requirement_id") == atom.requirement_id
+    )
+    assert result["passed"] is False
+    assert failure["failure_reason"] == "missing_requirement_assertion_evidence"
+    assert "recursive_json_merge" in failure["missing_evidence_terms"]
+    assert any(
+        "target-dependent assertion in the same test function" in requirement
+        for requirement in result["correction_requirements"]
+    )
+
+
 def test_imported_source_expansion_resolves_nested_module_basename():
     files = {
         "src/library/core.py": "def merge_intervals(values):\n    return values\n",

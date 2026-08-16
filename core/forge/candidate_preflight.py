@@ -2,15 +2,20 @@ import re
 from typing import Any
 
 from core.forge.contracts import FeasiblePlan
+from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_canonicalized_deduplication_assertion,
     has_expected_exception_assertion,
     has_json_lines_processing,
     interface_parameter_is_exercised,
+    semantic_term_present,
     structurally_evidences,
 )
-from core.forge.test_evidence import non_semantic_test_reasons, source_module_names
+from core.forge.test_evidence import (
+    non_semantic_test_reasons,
+    source_module_names,
+)
 from core.forge.validation.obligations import ObligationValidationLayer
 
 
@@ -141,6 +146,52 @@ def _test_contract_failures(
                         ),
                     }
                 )
+    requirement_terms: dict[str, list[str]] = {}
+    requirement_test_paths: dict[str, list[str]] = {}
+    for path, contract in contracts.items():
+        if path not in mapped_test_paths:
+            continue
+        for requirement in contract.get("requirements", []):
+            requirement_id = str(requirement.get("id", ""))
+            if not requirement_id:
+                continue
+            requirement_terms.setdefault(requirement_id, []).extend(
+                str(term) for term in requirement.get("evidence_terms", [])
+            )
+            requirement_test_paths.setdefault(requirement_id, []).append(path)
+
+    assertion_report = requirement_assertion_evidence(
+        requirement_terms,
+        requirement_test_paths,
+        candidate_files,
+        target_names=public_interface_names,
+        target_modules=source_module_names(candidate_files),
+        term_matcher=lambda term, function_source: (
+            semantic_term_present(term, function_source, is_test=True)
+            or behaviorally_evidences(
+                term,
+                function_source,
+                public_interface_names,
+            )
+        ),
+    )
+    for requirement_id, evidence in assertion_report.items():
+        if evidence["passed"]:
+            continue
+        paths = list(evidence["existing_test_paths"] or evidence["mapped_test_paths"])
+        for path in paths:
+            if path not in failed_paths:
+                failed_paths.append(path)
+        failures.append(
+            {
+                "path": paths[0] if paths else "",
+                "kind": "requirement_assertion_evidence_failure",
+                "requirement_id": requirement_id,
+                "missing_evidence_terms": list(evidence["missing_terms"]),
+                "failure_reason": evidence["failure_reason"],
+                "assertion_evidence": evidence,
+            }
+        )
     return failures, failed_paths, atoms_by_id
 
 
@@ -249,6 +300,18 @@ def correction_requirements(
     requirements: list[str] = []
     for failure in test_failures:
         path = str(failure.get("path", ""))
+        if failure.get("kind") == "requirement_assertion_evidence_failure":
+            requirement_id = str(failure.get("requirement_id", ""))
+            atom = atoms_by_id.get(requirement_id)
+            atom_text = atom.text if atom is not None else requirement_id
+            missing_terms = [
+                str(term) for term in failure.get("missing_evidence_terms", [])
+            ]
+            requirements.append(
+                f"{path}: add a target-dependent assertion in the same test function that exercises "
+                f"semantic evidence {missing_terms} for requirement {requirement_id}: {atom_text}"
+            )
+            continue
         if failure.get("kind") == "non_semantic_test":
             requirement_ids = [str(item) for item in failure.get("requirement_ids", [])]
             reasons = [str(item) for item in failure.get("reasons", [])]

@@ -4,7 +4,12 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
-from core.forge.test_evidence import non_semantic_test_reasons, source_module_names
+from core.forge.requirement_evidence import requirement_assertion_evidence
+from core.forge.semantic_contracts import behaviorally_evidences, semantic_term_present
+from core.forge.test_evidence import (
+    non_semantic_test_reasons,
+    source_module_names,
+)
 from core.forge.validation.common import ValidationLayerBase
 
 
@@ -111,6 +116,7 @@ class AdversarialValidationLayer(ValidationLayerBase):
                 plan=plan,
                 expected_test_paths=expected_test_paths,
                 non_semantic_tests=non_semantic_tests,
+                materialized=materialized,
             )
         )
         failures.extend(semantic_requirement_failures)
@@ -309,6 +315,7 @@ class AdversarialValidationLayer(ValidationLayerBase):
         plan: FeasiblePlan,
         expected_test_paths: set[str],
         non_semantic_tests: List[str],
+        materialized: Dict[str, Path],
     ) -> Tuple[List[str], List[str], Dict[str, object]]:
         failures: List[str] = []
         signatures: List[str] = []
@@ -316,10 +323,52 @@ class AdversarialValidationLayer(ValidationLayerBase):
         non_semantic_set = set(non_semantic_tests)
         requirement_evidence: Dict[str, Dict[str, object]] = {}
         missing_semantic_coverage: List[str] = []
+        hard_atoms = [
+            atom
+            for atom in build_spec.requirement_atoms
+            if atom.category != "ambiguity"
+            and atom.strength in {"hard", "universal"}
+        ]
+        file_contents = {
+            path: target.read_text(encoding="utf-8")
+            for path, target in materialized.items()
+            if path in expected_test_paths and target.exists()
+        }
+        public_interface_names = {
+            interface.name
+            for interface in plan.interfaces
+            if interface.name.isidentifier()
+        }
+        assertion_report = requirement_assertion_evidence(
+            {
+                atom.requirement_id: list(atom.evidence_terms)
+                for atom in hard_atoms
+            },
+            {
+                atom.requirement_id: [
+                    f"tests/{test_name}.py"
+                    for test_name in plan.requirement_coverage.get(
+                        atom.requirement_id,
+                        {},
+                    ).get("tests", [])
+                ]
+                for atom in hard_atoms
+            },
+            file_contents,
+            target_names=public_interface_names,
+            target_modules=source_module_names(materialized),
+            term_matcher=lambda term, function_source: (
+                semantic_term_present(term, function_source, is_test=True)
+                or behaviorally_evidences(
+                    term,
+                    function_source,
+                    public_interface_names,
+                )
+            ),
+        )
+        missing_assertion_evidence: List[str] = []
 
-        for atom in build_spec.requirement_atoms:
-            if atom.category == "ambiguity" or atom.strength not in {"hard", "universal"}:
-                continue
+        for atom in hard_atoms:
 
             coverage_entry = plan.requirement_coverage.get(
                 atom.requirement_id,
@@ -335,6 +384,14 @@ class AdversarialValidationLayer(ValidationLayerBase):
                 path for path in mapped_test_paths if path not in non_semantic_set
             ]
             has_semantic_test = bool(semantic_test_paths)
+            assertion_evidence = assertion_report.get(
+                atom.requirement_id,
+                {
+                    "passed": False,
+                    "failure_reason": "missing_mapped_test",
+                    "assertions": [],
+                },
+            )
 
             requirement_evidence[atom.requirement_id] = {
                 "strength": atom.strength,
@@ -344,10 +401,13 @@ class AdversarialValidationLayer(ValidationLayerBase):
                     path for path in mapped_test_paths if path in non_semantic_set
                 ],
                 "has_semantic_test": has_semantic_test,
+                "assertion_evidence": assertion_evidence,
             }
 
             if not has_semantic_test:
                 missing_semantic_coverage.append(atom.requirement_id)
+            if not assertion_evidence["passed"]:
+                missing_assertion_evidence.append(atom.requirement_id)
 
         if missing_semantic_coverage:
             failures.append(
@@ -355,9 +415,20 @@ class AdversarialValidationLayer(ValidationLayerBase):
                 f"{missing_semantic_coverage}."
             )
             self._append_unique(signatures, "missing_semantic_requirement_coverage")
+        if missing_assertion_evidence:
+            failures.append(
+                "Hard/universal requirements lack requirement-specific causal assertions: "
+                f"{missing_assertion_evidence}."
+            )
+            self._append_unique(
+                signatures,
+                "missing_requirement_assertion_evidence",
+            )
+            self._append_unique(signatures, "fake_acceptance_coverage")
 
         evidence = {
             "requirements": requirement_evidence,
             "missing_semantic_coverage": missing_semantic_coverage,
+            "missing_requirement_assertion_evidence": missing_assertion_evidence,
         }
         return failures, signatures, evidence

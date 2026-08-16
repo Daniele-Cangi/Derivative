@@ -118,6 +118,7 @@ Validation fails closed if:
 - a planned capability is absent or inconsistent (`missing_capability`, `capability_contract_violation`)
 - the selected domain adapter cannot implement the required behavior (`adapter_capability_mismatch`)
 - tests are superficial/non-semantic (`non_semantic_test`, `fake_acceptance_coverage`)
+- a mapped test lacks an assertion causally tied to the same requirement signals (`missing_requirement_assertion_evidence`)
 
 ## Validation Layers
 
@@ -134,7 +135,7 @@ Coder retries are grounded in `ValidationArtifact` failure signatures and eviden
 
 In `hybrid` or `remote-only` mode, Forge may ask the existing cognitive substrate and reasoning kernel for complete replacements of validator-targeted files. These revisions are untrusted candidates: path allowlists prevent unplanned file or manifest changes, repair lineage is persisted, and all three validation layers must pass again before packaging. `local-only` remains deterministic and uses canonical plan regeneration without requiring a remote model.
 
-For an uncovered capability, Forge uses the stricter complete Candidate Compiler transaction instead of a partial repair. Preflight executes all generated tests and checks mapped semantic evidence before the candidate reaches `ValidatorStage`; the validator remains the final authority and can still reject it. Repository-held acceptance oracles are used only by the held-out benchmark and are never exposed to generation.
+For an uncovered capability, Forge uses the stricter complete Candidate Compiler transaction instead of a partial repair. Preflight executes all generated tests and checks mapped semantic evidence before the candidate reaches `ValidatorStage`. Requirement evidence is tracked at test-function and assertion level, including the assertion line, expression, and semantic terms it covers; a term elsewhere in the file cannot certify an unrelated assertion. The validator remains the final authority and can still reject the candidate. Repository-held acceptance oracles are used only by the held-out benchmark and are never exposed to generation.
 
 ## CLI Usage
 
@@ -202,7 +203,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 The repository currently has the following verified baseline:
 
-- 338 repository tests passing in GitHub Actions. The local run passes 336 and skips 2 Docker-gated isolation tests on this workstation.
+- 343 repository tests passing in GitHub Actions. The local run passes 341 and skips 2 Docker-gated isolation tests on this workstation.
 - A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. The current isolated run reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, median latency 1.49s, and P95 latency 2.39s.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.

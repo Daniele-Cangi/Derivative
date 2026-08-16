@@ -1,6 +1,7 @@
 import pytest
 
 from core.forge.semantic_contracts import non_semantic_test_paths
+from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.test_evidence import non_semantic_test_reasons
 
 
@@ -101,3 +102,94 @@ def test_shared_anti_stub_contract_accepts_post_target_file_observation():
     )
 
     assert reasons == {}
+
+
+def test_requirement_evidence_rejects_term_and_assertion_in_different_functions():
+    path = "tests/test_contract.py"
+    content = (
+        "import cli\n"
+        "\n"
+        "def test_invalid_date_fixture_only():\n"
+        "    invalid_date = 'not-a-date'\n"
+        "    assert invalid_date == 'not-a-date'\n"
+        "\n"
+        "def test_exit_code_only():\n"
+        "    result = cli.main([])\n"
+        "    assert result == 0\n"
+    )
+
+    report = requirement_assertion_evidence(
+        {"R001": ["invalid_dates"]},
+        {"R001": [path]},
+        {path: content},
+        target_names={"main"},
+        target_modules={"cli"},
+    )
+
+    assert report["R001"]["passed"] is False
+    assert report["R001"]["missing_terms"] == ["invalid_dates"]
+    assert report["R001"]["failure_reason"] == "missing_requirement_assertion_evidence"
+
+
+def test_requirement_evidence_records_causal_assertion_location():
+    path = "tests/test_contract.py"
+    content = (
+        "import cli\n"
+        "\n"
+        "def test_invalid_dates_are_rejected():\n"
+        "    parsed = cli.parse_date('invalid-date')\n"
+        "    assert parsed is None\n"
+    )
+
+    report = requirement_assertion_evidence(
+        {"R001": ["invalid_dates"]},
+        {"R001": [path]},
+        {path: content},
+        target_names={"parse_date"},
+        target_modules={"cli"},
+    )
+
+    assert report["R001"]["passed"] is True
+    assert report["R001"]["covered_terms"] == ["invalid_dates"]
+    assert report["R001"]["assertions"] == [
+        {
+            "path": path,
+            "function": "test_invalid_dates_are_rejected",
+            "line": 5,
+            "kind": "assert",
+            "expression": "parsed is None",
+            "evidence_terms": ["invalid_dates"],
+        }
+    ]
+
+
+def test_requirement_evidence_keeps_assertions_separate_per_requirement():
+    path = "tests/test_summary.py"
+    content = (
+        "import summary\n"
+        "\n"
+        "def test_totals():\n"
+        "    totals = summary.compute([1, 2])\n"
+        "    assert totals['total'] == 3\n"
+        "\n"
+        "def test_counts():\n"
+        "    counts = summary.compute([1, 2])\n"
+        "    assert counts['count'] == 2\n"
+    )
+
+    report = requirement_assertion_evidence(
+        {"R001": ["totals"], "R002": ["counts"]},
+        {"R001": [path], "R002": [path]},
+        {path: content},
+        target_names={"compute"},
+        target_modules={"summary"},
+    )
+
+    assert report["R001"]["passed"] is True
+    assert {item["function"] for item in report["R001"]["assertions"]} == {
+        "test_totals"
+    }
+    assert report["R002"]["passed"] is True
+    assert {item["function"] for item in report["R002"]["assertions"]} == {
+        "test_counts"
+    }

@@ -611,6 +611,46 @@ def test_disconnected_assertion_does_not_count_as_acceptance_coverage(forge_pipe
     ]
 
 
+def test_requirement_term_must_share_function_with_causal_assertion(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = forge_pipeline["build_spec"]
+    atom = next(
+        item
+        for item in build_spec.requirement_atoms
+        if "input_csv" in item.evidence_terms
+    )
+    required_path = f"tests/{plan.requirement_coverage[atom.requirement_id]['tests'][0]}.py"
+    generated = _find_file(artifact, required_path)
+    assert generated is not None
+    generated.content = (
+        "import cli\n"
+        "\n"
+        "def test_input_csv_label_only():\n"
+        "    input_csv = 'fixture.csv'\n"
+        "    assert input_csv.endswith('.csv')\n"
+        "\n"
+        "def test_unrelated_cli_behavior(monkeypatch):\n"
+        "    monkeypatch.setattr(cli, 'main', lambda argv: 0)\n"
+        "    result = cli.main([])\n"
+        "    assert result == 0\n"
+    )
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "missing_requirement_assertion_evidence" in result.failure_signatures
+    assert "fake_acceptance_coverage" in result.failure_signatures
+    layer2 = result.layer2_result.evidence["requirement_semantic_checks"]
+    assertion_evidence = layer2["requirements"][atom.requirement_id][
+        "assertion_evidence"
+    ]
+    assert assertion_evidence["passed"] is False
+    assert assertion_evidence["missing_terms"] == ["input_csv"]
+    assert assertion_evidence["failure_reason"] == "missing_requirement_assertion_evidence"
+
+
 def test_every_declared_test_path_is_attacked_for_semantic_content(forge_pipeline):
     validator: ValidatorStage = forge_pipeline["validator"]
     artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
