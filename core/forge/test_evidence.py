@@ -83,7 +83,7 @@ def non_semantic_test_reasons(
     return reasons_by_path
 
 
-def test_function_evidence(
+def analyze_test_functions(
     content: str,
     target_names: Iterable[str] = (),
     target_modules: Iterable[str] = (),

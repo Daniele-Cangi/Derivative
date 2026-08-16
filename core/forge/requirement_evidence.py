@@ -1,6 +1,6 @@
 from typing import Callable, Iterable, Mapping
 
-from core.forge.test_evidence import test_function_evidence
+from core.forge.test_evidence import analyze_test_functions
 
 
 def requirement_assertion_evidence(
@@ -25,7 +25,7 @@ def requirement_assertion_evidence(
         causal_functions: list[dict[str, object]] = []
 
         for path in existing_paths:
-            for function in test_function_evidence(
+            for function in analyze_test_functions(
                 file_contents[path],
                 target_names=expected_target_names,
                 target_modules=expected_target_modules,
