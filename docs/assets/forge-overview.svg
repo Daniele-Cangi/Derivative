@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Derivative Forge execution flow</title>
+  <desc id="desc">A natural-language requirement becomes typed contracts, a plan, generated code, execution evidence, and one of three terminal results.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08151b"/>
+      <stop offset="0.55" stop-color="#102832"/>
+      <stop offset="1" stop-color="#0b1c24"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#55d6be"/>
+      <stop offset="1" stop-color="#d8f06a"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#02090c" flood-opacity="0.45"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#83a7b3"/>
+    </marker>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#b8d8df" stroke-opacity="0.045"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" rx="28" fill="url(#background)"/>
+  <rect width="1200" height="630" rx="28" fill="url(#grid)"/>
+  <circle cx="1040" cy="84" r="190" fill="#55d6be" opacity="0.055"/>
+  <circle cx="115" cy="600" r="230" fill="#d8f06a" opacity="0.035"/>
+
+  <g font-family="'IBM Plex Sans', 'Segoe UI', sans-serif">
+    <text x="64" y="78" fill="#f3faf8" font-size="38" font-weight="700" letter-spacing="-0.8">Derivative / Forge</text>
+    <text x="64" y="111" fill="#9fc0c9" font-size="18">Requirement in. Execution evidence out. Verification is earned, never declared.</text>
+
+    <g filter="url(#shadow)">
+      <rect x="64" y="170" width="220" height="176" rx="20" fill="#132f39" stroke="#3b6975"/>
+      <rect x="88" y="193" width="62" height="28" rx="14" fill="#244b56"/>
+      <text x="119" y="213" text-anchor="middle" fill="#b9d8df" font-size="12" font-weight="700" letter-spacing="1.2">INPUT</text>
+      <text x="88" y="258" fill="#f3faf8" font-size="22" font-weight="700">Natural language</text>
+      <text x="88" y="287" fill="#f3faf8" font-size="22" font-weight="700">requirement</text>
+      <text x="88" y="320" fill="#90b1bb" font-size="14">Goals, constraints, quality,</text>
+      <text x="88" y="341" fill="#90b1bb" font-size="14">tests and universal claims</text>
+    </g>
+
+    <path d="M 284 258 L 331 258" stroke="#83a7b3" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <g filter="url(#shadow)">
+      <rect x="338" y="151" width="252" height="214" rx="20" fill="#14333c" stroke="#458190"/>
+      <rect x="362" y="175" width="104" height="28" rx="14" fill="#1c4b55"/>
+      <text x="414" y="195" text-anchor="middle" fill="#90f0da" font-size="12" font-weight="700" letter-spacing="1.1">COMPILATION</text>
+      <text x="362" y="239" fill="#f3faf8" font-size="21" font-weight="700">Typed intent</text>
+      <g fill="#a9c8cf" font-size="14">
+        <text x="362" y="273">BuildSpec + requirement atoms</text>
+        <text x="362" y="300">Acceptance + obligation contracts</text>
+        <text x="362" y="327">QualityContract + ambiguity flags</text>
+      </g>
+      <circle cx="374" cy="270" r="3.5" fill="#55d6be"/>
+      <circle cx="374" cy="297" r="3.5" fill="#55d6be"/>
+      <circle cx="374" cy="324" r="3.5" fill="#55d6be"/>
+    </g>
+
+    <path d="M 590 258 L 637 258" stroke="#83a7b3" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <g filter="url(#shadow)">
+      <rect x="644" y="151" width="222" height="214" rx="20" fill="#17343a" stroke="#4c7e84"/>
+      <rect x="668" y="175" width="84" height="28" rx="14" fill="#284d50"/>
+      <text x="710" y="195" text-anchor="middle" fill="#d8f06a" font-size="12" font-weight="700" letter-spacing="1.1">SYNTHESIS</text>
+      <text x="668" y="239" fill="#f3faf8" font-size="21" font-weight="700">Plan to code</text>
+      <g fill="#aec8cb" font-size="14">
+        <text x="668" y="273">FeasiblePlan</text>
+        <text x="668" y="300">Code + tests + provenance</text>
+        <text x="668" y="327">Bounded repair candidates</text>
+      </g>
+      <circle cx="680" cy="270" r="3.5" fill="#d8f06a"/>
+      <circle cx="680" cy="297" r="3.5" fill="#d8f06a"/>
+      <circle cx="680" cy="324" r="3.5" fill="#d8f06a"/>
+    </g>
+
+    <path d="M 866 258 L 913 258" stroke="#83a7b3" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <g filter="url(#shadow)">
+      <rect x="920" y="151" width="216" height="214" rx="20" fill="#183039" stroke="#4b737e"/>
+      <rect x="944" y="175" width="96" height="28" rx="14" fill="#254650"/>
+      <text x="992" y="195" text-anchor="middle" fill="#b9d8df" font-size="12" font-weight="700" letter-spacing="1.1">EVIDENCE</text>
+      <text x="944" y="239" fill="#f3faf8" font-size="21" font-weight="700">Three hard gates</text>
+      <g fill="#a9c2c9" font-size="14">
+        <text x="944" y="273">1. Syntax / import / run</text>
+        <text x="944" y="300">2. Obligations / acceptance</text>
+        <text x="944" y="327">3. Adversarial validation</text>
+      </g>
+    </g>
+
+    <path d="M 1028 365 L 1028 416" stroke="#83a7b3" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M 755 365 L 755 401 C 755 418 770 428 786 428 L 925 428" fill="none" stroke="#c7d861" stroke-width="2" stroke-dasharray="7 7" marker-end="url(#arrow)"/>
+    <text x="774" y="397" fill="#cbdc78" font-size="12">targeted repair</text>
+
+    <g>
+      <rect x="140" y="458" width="270" height="112" rx="18" fill="#102a29" stroke="#3a8f79"/>
+      <circle cx="174" cy="493" r="12" fill="#55d6be"/>
+      <path d="M 168 493 L 172 497 181 487" fill="none" stroke="#08211d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="200" y="500" fill="#effcf8" font-size="20" font-weight="700">verified</text>
+      <text x="166" y="534" fill="#9bc8bc" font-size="14">Package emitted with evidence</text>
+      <text x="166" y="555" fill="#9bc8bc" font-size="14">and verification metadata.</text>
+
+      <rect x="465" y="458" width="270" height="112" rx="18" fill="#302b1b" stroke="#9c8438"/>
+      <circle cx="499" cy="493" r="12" fill="#e3c35c"/>
+      <path d="M 499 486 L 499 496 M 499 501 L 499 502" stroke="#2c2512" stroke-width="3" stroke-linecap="round"/>
+      <text x="525" y="500" fill="#fff9e8" font-size="20" font-weight="700">validation_failed</text>
+      <text x="491" y="534" fill="#d1c499" font-size="14">Evidence is preserved; no package</text>
+      <text x="491" y="555" fill="#d1c499" font-size="14">is presented as verified.</text>
+
+      <rect x="790" y="458" width="270" height="112" rx="18" fill="#302225" stroke="#9b5861"/>
+      <circle cx="824" cy="493" r="12" fill="#e58b96"/>
+      <path d="M 819 488 L 829 498 M 829 488 L 819 498" stroke="#321419" stroke-width="3" stroke-linecap="round"/>
+      <text x="850" y="500" fill="#fff1f3" font-size="20" font-weight="700">infeasible_proven</text>
+      <text x="816" y="534" fill="#d9aeb4" font-size="14">Contradictions terminate planning</text>
+      <text x="816" y="555" fill="#d9aeb4" font-size="14">with an execution-grounded proof.</text>
+    </g>
+
+    <rect x="64" y="596" width="1072" height="2" rx="1" fill="url(#accent)" opacity="0.75"/>
+  </g>
+</svg>

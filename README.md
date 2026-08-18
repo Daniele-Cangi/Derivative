@@ -1,16 +1,101 @@
+<div align="center">
+
 # Derivative
 
-**Derivative turns software requirements into verified artifacts — or explicit failure evidence.**
+**Turn software requirements into verified Python artifacts, or explicit failure evidence.**
 
-Derivative is an execution-grounded software synthesis engine. Its **Forge** pipeline compiles natural-language requirements into typed obligations and plans, produces candidate software, executes and validates that software, repairs against concrete failure evidence, and packages a result only when the declared validation gates pass.
+[![Forge CI](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml/badge.svg)](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
+![Tests](https://img.shields.io/badge/tests-346%20passing-2f855a)
+![Quality gate](https://img.shields.io/badge/benchmark-30%2F30-d39e2f)
+![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
-The terminal outcomes are deliberately simple:
+</div>
 
-- `verified` — the artifact passed the required execution and validation gates and can be packaged;
-- `infeasible_proven` — the requested requirements conflict or cannot be satisfied inside the declared model;
-- `validation_failed` — a candidate was produced, but the evidence is not strong enough to call it verified.
+<p align="center">
+  <img src="docs/assets/forge-overview.svg" alt="Derivative Forge requirement-to-verification flow" width="100%" />
+</p>
 
-The older Derivative reasoning substrate still provides framing, constraint, causal, symbolic, and execution-grounded reasoning. Forge is the product-facing software synthesis path built on top of that substrate.
+Derivative is an execution-grounded reasoning and software-synthesis project. Its product-facing **Forge** pipeline compiles a natural-language build requirement into typed contracts, plans and generates code, executes it inside a constrained environment, validates independent evidence, and packages only artifacts that pass every gate.
+
+> [!IMPORTANT]
+> Forge does not treat model confidence or generated test presence as proof. `verified` means the artifact satisfied the compiled requirement, quality, execution and adversarial contracts. It does not claim that an underspecified requirement is complete or that unrequested production properties were proven.
+
+**Navigate:** [Quick start](#quick-start) · [How Forge works](#how-forge-works) · [Validation](#validation-layers) · [Isolation](#execution-isolation) · [Supported surface](#scope-and-maturity) · [Evidence](#current-verification-status) · [Contributing](#contributing-and-certified-extensions)
+
+## At a Glance
+
+| Entry point | Use it for | Result |
+| --- | --- | --- |
+| `python forge.py "..."` | Building a new Python CLI, service, pipeline or library from a software requirement | Verified package, validation evidence, or infeasibility certificate |
+| `python derivative.py "..."` | Symbolic, probabilistic, topological, causal and constraint-grounded reasoning | Executed reasoning result plus audit artifacts |
+
+**Current Forge surface:** `Python 3.11` · `greenfield` · `CLI` · `REST service` · `data pipeline` · `library` · `Docker-isolated validation`
+
+**Explicitly deferred:** existing-repository modification, additional languages, frontend generation, wheel/container distribution, SBOMs and supply-chain attestations.
+
+Forge has three terminal outcomes:
+
+- **`verified`**: all runtime, contract and adversarial gates passed; packaging is allowed.
+- **`validation_failed`**: a candidate exists, but the evidence is insufficient; packaging is blocked.
+- **`infeasible_proven`**: planning found contradictory constraints and emitted an execution-grounded certificate.
+
+## Quick Start
+
+Prerequisites: Python 3.11 and Docker. Docker is mandatory for production verification of generated code.
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+python -m pip install -r requirements.txt
+docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+```
+
+Run the deterministic, no-API path:
+
+```bash
+python forge.py "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
+```
+
+Forge reports one terminal status and the evidence location:
+
+```text
+Forge
+Status: verified
+
+Requirement compiled, generated, executed and validated across all three layers.
+
+Packaged artifact: generated_artifacts/forge_packages/pkg-...
+Execution time: ...s
+```
+
+For model-backed candidate compilation and repair, copy `.env.example` to `.env`, set `OPENAI_API_KEY`, then use `--mode hybrid`. Secrets are used by the host orchestrator and are not inherited by generated-code sandboxes.
+
+```bash
+python forge.py "Build a Python REST service with tests." --mode hybrid
+```
+
+## How Forge Works
+
+```mermaid
+flowchart LR
+    R["Natural-language requirement"] --> RC["RequirementCompiler"]
+    RC --> B["BuildSpec: atoms + contracts"]
+    B --> P["PlannerStage"]
+    P -->|contradiction| I["InfeasibilityCertificate"]
+    P -->|feasible| C["CoderStage"]
+    C --> A["CodeArtifact + provenance"]
+    A --> V["ValidatorStage"]
+    V -->|implementation failure| RP["Targeted repair"]
+    RP --> A
+    V -->|all gates pass| PKG["PackagingStage"]
+    V -->|evidence insufficient| F["validation_failed"]
+    PKG --> OK["verified"]
+```
+
+The critical separation is deliberate: the planner cannot decide truth, generated code cannot self-certify, and the validator cannot redesign the build. Validator evidence alone controls retry, rejection and packaging.
 
 ## Core Modules
 
@@ -30,6 +115,9 @@ The older Derivative reasoning substrate still provides framing, constraint, cau
 - `core/forge/coder_stage.py`: thin plan-to-artifact facade.
 - `core/forge/candidate_compiler.py`: OpenAI-backed complete-candidate fallback for uncovered plan capabilities.
 - `core/forge/candidate_preflight.py`: executable and semantic preflight for complete candidate transactions.
+- `core/forge/semantic_contracts.py`, `test_evidence.py`, `requirement_evidence.py`: requirement-specific behavioral and assertion evidence.
+- `core/forge/repair.py`, `repair_evidence.py`, `repair_backend.py`: validator-grounded repair targeting and bounded revision.
+- `core/forge/execution.py`: typed local/Docker process boundary and resource policy.
 - `core/forge/domains/`: deterministic CLI, service, and pipeline code-generation adapters plus registry.
 - `core/forge/capabilities/`: composable capability renderers used by domain adapters.
 - `core/forge/validator_stage.py`: thin validation orchestration facade.
@@ -46,17 +134,10 @@ The substrate and CLI rely on these packages:
 - `z3-solver`: satisfiability and constraint proving.
 - `pgmpy`, `dowhy`: probabilistic/causal reasoning support.
 - `scipy`, `pint`: scientific computation and unit-aware calculations.
+- `openai`: model-backed complete candidate compilation and targeted repair in non-local modes.
 - `typer`, `rich`: command-line interface and structured console output.
 - `python-dotenv`: runtime environment loading.
-
-## Forge Execution Flow
-
-`RequirementCompiler -> PlannerStage -> (InfeasibilityCertificate | CoderStage -> ValidatorStage -> (validation_failed | PackagingStage))`
-
-Terminal statuses are normalized:
-- `verified`
-- `infeasible_proven`
-- `validation_failed`
+- `pytest`, `bcrypt`: generated acceptance execution and the certified sandbox service surface.
 
 ## Requirement Preservation and Coverage Gate
 
@@ -123,6 +204,11 @@ Validation fails closed if:
 ## Validation Layers
 
 `ValidatorStage` composes independent runtime, obligation, quality, and adversarial components and enforces 3 layers:
+
+<p align="center">
+  <img src="docs/assets/verification-gates.svg" alt="The three independent Forge verification gates" width="100%" />
+</p>
+
 1. syntax/import/build/run checks
 2. obligations/tests/acceptance checks
 3. adversarial checks (manifest/provenance/entrypoint/superficiality)
@@ -137,10 +223,11 @@ In `hybrid` or `remote-only` mode, Forge may ask the existing cognitive substrat
 
 For an uncovered capability, Forge uses the stricter complete Candidate Compiler transaction instead of a partial repair. Preflight executes all generated tests and checks mapped semantic evidence before the candidate reaches `ValidatorStage`. Requirement evidence is tracked at test-function and assertion level, including the assertion line, expression, and semantic terms it covers; a term elsewhere in the file cannot certify an unrelated assertion. The validator remains the final authority and can still reject the candidate. Repository-held acceptance oracles are used only by the held-out benchmark and are never exposed to generation.
 
-## CLI Usage
+## CLI Reference
 
 ### Derivative CLI
 ```bash
+python derivative.py --help
 python derivative.py "Given a problem statement..."
 python derivative.py --audit
 python derivative.py --memory
@@ -149,8 +236,11 @@ python derivative.py --lenses
 
 ### Forge CLI
 ```bash
+python forge.py --help
 python forge.py "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
 ```
+
+Forge defaults to `--mode local-only` for deterministic compilation and to `--execution-backend docker` for isolated verification. `hybrid` enables model-backed fallback after deterministic capability routing; `remote-only` forces model-backed reasoning where the substrate supports it. Production orchestration refuses a non-isolated verification backend.
 
 Expected output style is prose and always includes:
 - terminal `Status`
@@ -160,23 +250,27 @@ Expected output style is prose and always includes:
 
 ## Generated Artifacts
 
-- Forge run artifacts: `generated_artifacts/forge_runs/`
-  - `build_spec.json`
-  - `feasible_plan.json` or `infeasibility_certificate.json`
-  - `code_artifact.json` (if feasible)
-  - `validation_artifact.json` (if coded)
-  - `packaged_artifact.json` (if verified)
+Every run preserves its typed evidence, including failed and infeasible runs. Only verified builds appear under `forge_packages`.
 
-- Verified packages: `generated_artifacts/forge_packages/`
-  - source/test files
-  - `forge_package_manifest.json`
-  - validation evidence snapshots
-
-## Setup
-
-```bash
-python -m pip install -r requirements.txt
+```text
+generated_artifacts/
+├── forge_runs/<timestamp>_<build-id>_<status>/
+│   ├── build_spec.json
+│   ├── feasible_plan.json | infeasibility_certificate.json
+│   ├── code_artifact.json
+│   ├── validation_artifact.json
+│   └── packaged_artifact.json
+└── forge_packages/<package-id>/
+    ├── src/
+    ├── tests/
+    ├── validation_evidence.json
+    ├── code_artifact_manifest_dump.json
+    └── forge_package_manifest.json
 ```
+
+## Configuration
+
+Installation and sandbox build commands are in [Quick Start](#quick-start).
 
 Live `hybrid` and `remote-only` reasoning use the OpenAI Responses API. Configure:
 
@@ -186,6 +280,14 @@ OPENAI_MODEL="gpt-4.1-mini"
 ```
 
 `local-only` does not require an API key.
+
+## Documentation Map
+
+- [Contributing guide](CONTRIBUTING.md): development workflow and acceptance expectations.
+- [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md): requirements for adding capabilities without weakening `verified`.
+- [Blind-v3 protocol](benchmarks/blind_v3/README.md): freeze, provenance and replay rules for independent evaluation.
+- [Forge CI workflow](.github/workflows/forge-ci.yml): the Linux/Docker test and benchmark gate executed on every push and pull request.
+- [MIT License](LICENSE): usage and redistribution terms.
 
 ## Contributing and Certified Extensions
 
@@ -204,10 +306,13 @@ Derivative is released under the [MIT License](LICENSE).
 The repository currently has the following verified baseline:
 
 - 346 repository tests in the CI suite. The latest local run passes 344 and skips 2 Docker-gated isolation tests on this workstation; GitHub Actions executes the complete set.
-- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. CI run `31970466118` reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, average latency 1.20s, median latency 1.78s, and P95 latency 1.82s.
+- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. CI run [`31970466118`](https://github.com/Daniele-Cangi/Derivative/actions/runs/31970466118) reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, average latency 1.20s, median latency 1.78s, and P95 latency 1.82s.
 - A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
 - A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
 - A genuinely new blind-v3 bundle frozen before execution with 12 cases and six independent black-box oracles. Its first run is preserved unchanged and establishes a deliberately unfiltered baseline: 3/12 passed, status accuracy 0.333, external Verified@1 0.000, oracle pass rate 0.000, false-verified rate 1.000, and infeasibility detection 0.000.
+
+<details>
+<summary><strong>Benchmark history and blind replay ledger</strong> (run IDs, raw metrics, known oracle defects)</summary>
 
 The original sealed blind-v2 run is preserved unchanged and scored 6/10 with an external false-verified rate of 0.0. Later post-fix replays and targeted oracle runs are regression evidence, not new blind evidence, because those requirements are now known to the development process. The latest targeted rerun of the three previously failing feasible cases (`B001`, `B004`, and `B005`) passed 3/3 with all external oracles, but this must not be reported as a fresh blind 10/10 result.
 
@@ -228,6 +333,8 @@ Model-backed replay `31892238379` evaluated the same frozen bundle after groundi
 The three external failures require explicit oracle adjudication rather than silent metric adjustment. V3-005 and V3-006 retain the previously documented frozen-oracle contradictions. V3-001 also has an oracle defect: the generated `dupfilter.main()` returns `1` for invalid UTF-8 and its executable entrypoint calls `sys.exit(main())`; direct subprocess execution returns status `1`. The oracle calls `main()` directly but discards that return value and records success unless `main()` raises. The raw report and false-verified rate remain unchanged for auditability, so this replay is regression evidence, not proof that the external closure criterion has been met. One generated acceptance test also contained a tautological integer assertion, exposing a remaining general anti-stub/evidence-quality gap even though it was not the cause of the V3-001 oracle failure. The immutable report is stored at `benchmarks/blind_v3/external_002/post_fix_replay_006_hybrid.json` with SHA-256 `9688279A954BFB5EB72B49FC46363F5AA171E34821BE0BD0C47EBF568EBE7584`.
 
 The blind manifest keeps the original expected Forge baseline digest and file count. Reports expose both expected and currently observed baseline metadata; any implementation change keeps `baseline_verified=false` unless the exact sealed implementation is used. The baseline is never silently resealed.
+
+</details>
 
 ## Scope and Maturity
 
@@ -293,7 +400,7 @@ docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py31
 
 The image contains only Python, pytest, and bcrypt needed by the currently certified Forge surface. It is a validation runtime, not a distribution container for generated software. `forge.py`, the benchmark runner, held-out runner, and blind runner select this Docker backend by default. If Docker or the image is unavailable, validation fails closed with `sandbox_unavailable`; Forge does not fall back to local execution. Passing `--execution-backend local` to the production orchestrator is also refused with `sandbox_policy_violation`.
 
-GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case quality gate through the Docker backend. Workflow run `31823089797` confirms the current documented isolated and instrumented baseline for this policy.
+GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case quality gate through the Docker backend. Workflow run [`31970706108`](https://github.com/Daniele-Cangi/Derivative/actions/runs/31970706108) confirms the current isolated and instrumented baseline for this policy.
 
 ## Benchmark Telemetry
 
