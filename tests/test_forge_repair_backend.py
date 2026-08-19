@@ -1111,6 +1111,9 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert "must not use skip" in " ".join(responses.request["instructions"].split())
     assert "source_api_contracts" in responses.request["instructions"]
     assert "preflight_test_execution" in responses.request["instructions"]
+    assert "Path.read_text() performs universal-newline translation" in responses.request[
+        "instructions"
+    ]
 
 
 def test_reasoning_kernel_preserves_sanitized_live_revision_error_detail():

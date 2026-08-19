@@ -83,6 +83,9 @@ def _test_contract_failures(
         for interface in plan.interfaces
         if interface.name.isidentifier()
     }
+    plan_requires_byte_exact_observation = requires_byte_exact_observation(
+        plan.build_spec.normalized_requirement
+    )
     for path, contract in contracts.items():
         if path not in mapped_test_paths:
             continue
@@ -90,6 +93,38 @@ def _test_contract_failures(
         for requirement in contract.get("requirements", []):
             requirement_id = str(requirement.get("id", ""))
             atom = atoms_by_id.get(requirement_id)
+            evidence_terms = [
+                str(term) for term in requirement.get("evidence_terms", [])
+            ]
+            local_requirement_text = " ".join(
+                [getattr(atom, "text", ""), *evidence_terms]
+            )
+            byte_exact_required = requires_byte_exact_observation(
+                local_requirement_text
+            ) or (
+                plan_requires_byte_exact_observation
+                and has_line_boundary_signal(local_requirement_text)
+            )
+            if byte_exact_required and not has_byte_exact_test_observation(content):
+                if path not in failed_paths:
+                    failed_paths.append(path)
+                failures.append(
+                    {
+                        "path": path,
+                        "kind": (
+                            "lossy_observation_api"
+                            if ".read_text(" in content
+                            else "missing_byte_exact_observation"
+                        ),
+                        "requirement_id": requirement_id,
+                        "observation_api": (
+                            "Path.read_text"
+                            if ".read_text(" in content
+                            else "none"
+                        ),
+                        "required_observation": "byte_exact",
+                    }
+                )
             coverage = plan.requirement_coverage.get(requirement_id, {})
             source_content = "\n\n".join(
                 candidate_files[source_path]
@@ -300,6 +335,18 @@ def correction_requirements(
     requirements: list[str] = []
     for failure in test_failures:
         path = str(failure.get("path", ""))
+        if failure.get("kind") in {
+            "lossy_observation_api",
+            "missing_byte_exact_observation",
+        }:
+            requirement_id = str(failure.get("requirement_id", ""))
+            requirements.append(
+                f"{path}: observe exact output bytes for requirement {requirement_id} with "
+                "Path.read_bytes(), binary mode, or Path.open(encoding='utf-8', newline=''); "
+                "Path.read_text() performs universal-newline translation and cannot prove preservation "
+                "of CRLF, LF, or CR sequences."
+            )
+            continue
         if failure.get("kind") == "requirement_assertion_evidence_failure":
             requirement_id = str(failure.get("requirement_id", ""))
             atom = atoms_by_id.get(requirement_id)
@@ -398,4 +445,43 @@ def requires_canonicalized_deduplication(atom: Any) -> bool:
         "deduplic" in normalized
         and "canonical" in normalized
         and "first seen order" in normalized
+    )
+
+
+def has_line_boundary_signal(text: str) -> bool:
+    normalized = " ".join(str(text).lower().replace("-", " ").split())
+    return any(
+        signal in normalized
+        for signal in (
+            "line ending",
+            "mixed line",
+            "newline",
+            "crlf",
+            "carriage return",
+        )
+    )
+
+
+def requires_byte_exact_observation(text: str) -> bool:
+    normalized = " ".join(str(text).lower().replace("-", " ").split())
+    exactness = any(
+        signal in normalized
+        for signal in (
+            "preserv",
+            "unchanged",
+            "exact byte",
+            "byte exact",
+        )
+    )
+    return exactness and has_line_boundary_signal(normalized)
+
+
+def has_byte_exact_test_observation(content: str) -> bool:
+    if ".read_bytes(" in content:
+        return True
+    if re.search(r"(?:\.|\b)open\([^\n)]*['\"]rb['\"]", content):
+        return True
+    return bool(
+        re.search(r"(?:\.|\b)open\([^\n)]*newline\s*=\s*['\"]['\"]", content)
+        and re.search(r"\.read\(", content)
     )

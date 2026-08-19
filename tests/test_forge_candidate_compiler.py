@@ -501,6 +501,29 @@ def test_candidate_correction_receives_structured_pytest_failure(json_merge_case
     assert any("assert [1, 2, 3] == [3]" in item for item in requirements)
 
 
+def test_candidate_correction_targets_lossy_newline_observation():
+    requirements = SubstrateCandidateCompiler._correction_requirements(
+        {
+            "phase": "tests",
+            "passed": False,
+            "failed_paths": ["tests/test_cli_flow.py"],
+            "stdout": (
+                "out = output_path.read_text(encoding='utf-8')\n"
+                "assert out.endswith('\\r\\n')\n"
+            ),
+            "stderr": "",
+        }
+    )
+
+    exact_observation = next(
+        requirement
+        for requirement in requirements
+        if "read_bytes" in requirement
+    )
+    assert "tests/test_cli_flow.py" in exact_observation
+    assert "normalizes CRLF" in exact_observation
+
+
 def test_semantic_preflight_uses_validator_anti_stub_contract(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {
@@ -1002,3 +1025,62 @@ def read_document(path):
 
     assert has_json_lines_processing(jsonl_source)
     assert not has_json_lines_processing(document_source)
+
+
+def test_semantic_preflight_rejects_lossy_line_ending_observation(json_merge_case):
+    _, original_plan, _, _ = json_merge_case
+    plan = copy.deepcopy(original_plan)
+    plan.build_spec.normalized_requirement = (
+        "Write transformed text with original line endings preserved, including CRLF, LF, or CR."
+    )
+    mapped_test = plan.required_tests[0]
+    requirement_id = mapped_test.requirement_ids[0]
+    atom = next(
+        item
+        for item in plan.build_spec.requirement_atoms
+        if item.requirement_id == requirement_id
+    )
+    atom.text = "Preserve original line endings including CRLF, LF, or CR."
+    atom.evidence_terms = ["line endings"]
+    test_path = f"tests/{mapped_test.test_name}.py"
+    files = {
+        "src/cli.py": "def main(argv=None):\n    return 0\n",
+        test_path: '''import cli
+
+
+def test_preserves_line_endings(tmp_path):
+    output = tmp_path / "out.txt"
+    assert cli.main(["input.txt", str(output)]) == 0
+    observed = output.read_text(encoding="utf-8")
+    assert observed.endswith("\\r\\n")
+''',
+    }
+    contracts = {
+        test_path: {
+            "requirements": [
+                {
+                    "id": requirement_id,
+                    "evidence_terms": ["line endings"],
+                }
+            ]
+        }
+    }
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests"},
+    )
+
+    exact_failure = next(
+        failure
+        for failure in result["failures"]
+        if failure.get("kind") == "lossy_observation_api"
+    )
+    assert exact_failure["requirement_id"] == requirement_id
+    assert exact_failure["required_observation"] == "byte_exact"
+    assert any(
+        "Path.read_bytes()" in requirement
+        for requirement in result["correction_requirements"]
+    )

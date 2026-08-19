@@ -117,6 +117,9 @@ class SubstrateCandidateCompiler:
                     "Every mapped test must exercise every evidence term in its test_generation_contract.",
                     "Requirement atoms and declared public interfaces override incompatible semantics in stale target files.",
                     "Derive numeric test expectations by tracing every fixture record through the normalized requirement.",
+                    "When a requirement preserves exact bytes or CRLF/LF/CR line endings, observe output "
+                    "with read_bytes(), binary mode, or open(..., newline=''); Path.read_text() normalizes "
+                    "newlines and is not valid evidence.",
                     "Invalid-input rejection tests must assert ValueError, TypeError, or SystemExit unless the requirement explicitly defines a return-code contract.",
                     "Do not author manifests, provenance, capability declarations, or validation claims.",
                     "Use requirement evidence terms as implementation or test identifiers where practical.",
@@ -391,5 +394,20 @@ class SubstrateCandidateCompiler:
                 f"{node_id}: resolve the observed failure '{message}' against the normalized requirement; "
                 "preserve every previously passing test and do not change an expected value unless its fixture "
                 "trace proves that the expectation contradicts the requirement."
+            )
+        execution_output = "\n".join(
+            str(preflight.get(field, ""))
+            for field in ("stdout", "stderr")
+        ).lower()
+        if "read_text" in execution_output and any(
+            signal in execution_output
+            for signal in ("newline", "\\r\\n", "crlf", "line ending")
+        ):
+            failed_paths = preflight_failed_paths(preflight, prefix="tests/")
+            path_label = ", ".join(failed_paths) or "failing newline-preservation tests"
+            requirements.append(
+                f"{path_label}: replace Path.read_text() output observation with Path.read_bytes(), "
+                "binary mode, or Path.open(encoding='utf-8', newline=''); read_text() normalizes CRLF, "
+                "LF, and CR and therefore cannot verify exact line-ending preservation."
             )
         return list(dict.fromkeys(requirements))
