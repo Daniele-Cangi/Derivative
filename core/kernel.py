@@ -145,7 +145,9 @@ fixture path or use subprocess input. Treat decorated Click or Typer commands as
 functions: invoke them with CliRunner or subprocess and pass Windows paths as complete argument-list items. Never call a
 click.Command directly with positional business arguments. Use CliRunner only when source_api_contracts shows Click or
 Typer decorators on that exact function. If decorators is empty and main accepts argv, invoke main([...]) directly and
-never pass it to CliRunner. When a requirement demands exact byte or CRLF/LF/CR preservation, tests must inspect output
+never pass it to CliRunner. For deterministic transformations, compute expected output from the exact fixture with a
+test-local source-independent reference operation; do not manually transcribe transformed literals or call generated
+target code to obtain the expectation. When a requirement demands exact byte or CRLF/LF/CR preservation, tests must inspect output
 with read_bytes(), binary mode, or open(..., newline=''); Path.read_text() performs universal-newline translation and
 cannot provide valid evidence for that requirement. Python string literals already contain decoded Unicode characters;
 never construct fixtures or expectations by chaining encode('utf-8').decode('unicode_escape'), because that corrupts

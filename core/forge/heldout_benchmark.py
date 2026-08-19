@@ -20,6 +20,7 @@ from core.forge.execution import (
     ProcessExecutor,
     SandboxProcessRequest,
 )
+from core.forge.fixture_oracle import fixture_oracle_mismatches
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class HeldoutBenchmarkCase:
 class OracleResult:
     executed: bool
     passed: bool
+    valid: bool = True
     exit_code: int | None = None
     stdout: str = ""
     stderr: str = ""
@@ -49,6 +51,7 @@ class OracleResult:
     backend: str = ""
     timed_out: bool = False
     isolation: dict[str, object] = field(default_factory=dict)
+    sanity_failures: List[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
@@ -100,6 +103,8 @@ class HeldoutBenchmarkSummary:
     total_model_tokens: int
     total_estimated_model_cost_usd: float | None
     model_cost_coverage_rate: float
+    adjudicated_cases: int = 0
+    invalid_oracle_cases: int = 0
     case_results: List[HeldoutCaseResult] = field(default_factory=list)
 
 
@@ -268,6 +273,25 @@ def _copy_package_for_oracle(source: Path, destination: Path) -> None:
     shutil.copytree(source, destination)
 
 
+def inspect_oracle_sanity(case: HeldoutBenchmarkCase) -> OracleResult | None:
+    if case.oracle is None:
+        return None
+    try:
+        source = Path(case.oracle.path).read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    mismatches = fixture_oracle_mismatches(source, case.requirement)
+    if not mismatches:
+        return None
+    return OracleResult(
+        executed=False,
+        passed=False,
+        valid=False,
+        error="oracle_invalid: fixture expectations contradict the requirement",
+        sanity_failures=[mismatch.to_evidence() for mismatch in mismatches],
+    )
+
+
 def run_heldout_cases(
     cases: List[HeldoutBenchmarkCase],
     run_case: Callable[[str], ForgeResult],
@@ -280,7 +304,23 @@ def run_heldout_cases(
     results: List[HeldoutCaseResult] = []
     for case in cases:
         case_started = time.perf_counter()
-        oracle_result: OracleResult | None = None
+        oracle_result = inspect_oracle_sanity(case)
+        if oracle_result is not None and not oracle_result.valid:
+            results.append(
+                HeldoutCaseResult(
+                    case_id=case.case_id,
+                    expected_terminal_status=case.expected_terminal_status,
+                    observed_terminal_status="oracle_invalid",
+                    status_matched=False,
+                    passed=False,
+                    execution_time_seconds=time.perf_counter() - case_started,
+                    artifact_path="",
+                    oracle_result=oracle_result,
+                    error=oracle_result.error,
+                    model_cost_pricing_source="not_executed_invalid_oracle",
+                )
+            )
+            continue
         try:
             forge_result = run_case(case.requirement)
             observed = forge_result.terminal_status
@@ -365,7 +405,21 @@ def _summarize_results(
     total_runtime: float,
 ) -> HeldoutBenchmarkSummary:
     total_cases = len(results)
-    expected_verified = [item for item in results if item.expected_terminal_status == TERMINAL_VERIFIED]
+    invalid_oracle = [
+        item
+        for item in results
+        if item.oracle_result is not None and not item.oracle_result.valid
+    ]
+    adjudicable = [
+        item
+        for item in results
+        if item.oracle_result is None or item.oracle_result.valid
+    ]
+    expected_verified = [
+        item
+        for item in adjudicable
+        if item.expected_terminal_status == TERMINAL_VERIFIED
+    ]
     oracle_executed = [
         item for item in results if item.oracle_result is not None and item.oracle_result.executed
     ]
@@ -376,7 +430,11 @@ def _summarize_results(
         and item.oracle_result is not None
         and item.oracle_result.passed
     ]
-    observed_verified = [item for item in results if item.observed_terminal_status == TERMINAL_VERIFIED]
+    observed_verified = [
+        item
+        for item in adjudicable
+        if item.observed_terminal_status == TERMINAL_VERIFIED
+    ]
     false_verified = [
         item
         for item in observed_verified
@@ -386,7 +444,7 @@ def _summarize_results(
     ]
     expected_infeasible = [
         item
-        for item in results
+        for item in adjudicable
         if item.expected_terminal_status == TERMINAL_INFEASIBLE_PROVEN
     ]
     correct_infeasible = [
@@ -414,7 +472,11 @@ def _summarize_results(
         total_cases=total_cases,
         passed_cases=passed_cases,
         failed_cases=total_cases - passed_cases,
-        status_accuracy=sum(1 for item in results if item.status_matched) / total_cases,
+        status_accuracy=(
+            sum(1 for item in adjudicable if item.status_matched) / len(adjudicable)
+            if adjudicable
+            else 0.0
+        ),
         external_verified_at_1=(
             len(externally_verified) / len(expected_verified) if expected_verified else 0.0
         ),
@@ -453,6 +515,8 @@ def _summarize_results(
             else None
         ),
         model_cost_coverage_rate=len(costed_results) / total_cases,
+        adjudicated_cases=len(adjudicable),
+        invalid_oracle_cases=len(invalid_oracle),
         case_results=results,
     )
 
@@ -462,6 +526,10 @@ def evaluate_heldout_thresholds(
     thresholds: HeldoutThresholds,
 ) -> List[str]:
     failures: List[str] = []
+    if summary.invalid_oracle_cases:
+        failures.append(
+            f"invalid_oracle_cases: actual={summary.invalid_oracle_cases} required=0"
+        )
     if summary.status_accuracy < thresholds.min_status_accuracy:
         failures.append(
             "status_accuracy_below_threshold:"
@@ -502,6 +570,7 @@ def render_heldout_summary(summary: HeldoutBenchmarkSummary, output_path: str) -
             "Forge Held-out Benchmark",
             f"Benchmark id: {summary.benchmark_id}",
             f"Cases: {summary.total_cases}",
+            f"Adjudicated cases: {summary.adjudicated_cases}",
             f"Passed: {summary.passed_cases}",
             f"Failed: {summary.failed_cases}",
             f"Status accuracy: {summary.status_accuracy:.3f}",
@@ -509,6 +578,7 @@ def render_heldout_summary(summary: HeldoutBenchmarkSummary, output_path: str) -
             "External success after repair: "
             + _format_optional_rate(summary.success_after_repair_rate),
             f"Oracle pass rate: {summary.oracle_pass_rate:.3f}",
+            f"Invalid oracle cases: {summary.invalid_oracle_cases}",
             f"External false-verified rate: {summary.external_false_verified_rate:.3f}",
             f"Infeasible detection rate: {summary.infeasible_detection_rate:.3f}",
             f"Repairs: {summary.total_repairs} total, {summary.avg_repairs_per_case:.2f} per case",

@@ -10,7 +10,10 @@ from core.forge.contracts import (
     ValidationArtifact,
 )
 from core.forge.execution import ProcessExecutor
-from core.forge.candidate_preflight import run_semantic_preflight
+from core.forge.candidate_preflight import (
+    run_fixture_oracle_preflight,
+    run_semantic_preflight,
+)
 from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.repair_support import (
     preflight_failed_paths,
@@ -118,6 +121,8 @@ class SubstrateCandidateCompiler:
                     "Every mapped test must exercise every evidence term in its test_generation_contract.",
                     "Requirement atoms and declared public interfaces override incompatible semantics in stale target files.",
                     "Derive numeric test expectations by tracing every fixture record through the normalized requirement.",
+                    "For deterministic transformations, derive expected output from the exact fixture with a "
+                    "source-independent reference operation instead of manually transcribing transformed literals.",
                     "When a requirement preserves exact bytes or CRLF/LF/CR line endings, observe output "
                     "with read_bytes(), binary mode, or open(..., newline=''); Path.read_text() normalizes "
                     "newlines and is not valid evidence.",
@@ -148,17 +153,34 @@ class SubstrateCandidateCompiler:
             attempt_context["current_target_paths"] = list(active_paths)
             attempt_context["candidate_transaction_correction"] = bool(attempts)
             preserved_paths = sorted(set(target_paths) - set(active_paths))
-            attempt_context["preserve_passing_paths"] = preserved_paths
+            previous_phase = (
+                str(attempts[-1]["preflight"].get("phase", ""))
+                if attempts
+                else ""
+            )
+            attempt_context["preserve_passing_paths"] = (
+                [] if previous_phase == "fixture_oracle" else preserved_paths
+            )
+            attempt_context["preserve_unvalidated_paths"] = (
+                preserved_paths if previous_phase == "fixture_oracle" else []
+            )
             if candidate_files and preserved_paths:
                 attempt_context["preserved_candidate_files"] = {
                     path: candidate_files[path]
                     for path in preserved_paths
                     if path in candidate_files
                 }
-                attempt_context["preservation_contract"] = (
-                    "These files passed the previous preflight and are immutable context. "
-                    "The revision must remain compatible with their imports, fixtures, and assertions."
-                )
+                if previous_phase == "fixture_oracle":
+                    attempt_context["preservation_contract"] = (
+                        "These files were not implicated by static fixture-oracle sanity but remain "
+                        "behaviorally unvalidated. Keep them unchanged for this targeted oracle correction; "
+                        "a later executable preflight may make them revisable."
+                    )
+                else:
+                    attempt_context["preservation_contract"] = (
+                        "These files passed the previous preflight and are immutable context. "
+                        "The revision must remain compatible with their imports, fixtures, and assertions."
+                    )
             if attempts:
                 previous_preflight = attempts[-1]["preflight"]
                 attempt_context["preflight_test_execution"] = previous_preflight
@@ -250,7 +272,13 @@ class SubstrateCandidateCompiler:
                 }
                 continue
 
-            preflight = self.test_preflight_runner(merged_candidate, test_paths)
+            preflight = run_fixture_oracle_preflight(
+                merged_candidate,
+                plan,
+                context["test_generation_contracts"],
+            )
+            if preflight.get("passed", False):
+                preflight = self.test_preflight_runner(merged_candidate, test_paths)
             if preflight.get("passed", False):
                 preflight = run_semantic_preflight(
                     merged_candidate,
@@ -273,7 +301,10 @@ class SubstrateCandidateCompiler:
                 )
                 preflight["impact_expanded_paths"] = impact_expanded_paths
                 failed = list(dict.fromkeys([*failed, *impact_expanded_paths]))
-            if preflight.get("phase") not in {"tests", "semantic_contract"}:
+            if preflight.get("phase") == "fixture_oracle":
+                preflight["behaviorally_unvalidated_paths"] = list(target_paths)
+                active_paths = [path for path in failed if path in target_paths]
+            elif preflight.get("phase") not in {"tests", "semantic_contract"}:
                 preflight["behaviorally_unvalidated_paths"] = list(target_paths)
                 active_paths = list(target_paths)
             else:

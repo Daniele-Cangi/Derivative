@@ -328,6 +328,7 @@ def render_blind_report(report: BlindBenchmarkReport, output_path: str) -> str:
             f"Baseline SHA-256: {report.baseline_sha256}",
             f"Baseline files: expected={report.baseline_file_count}, observed={report.observed_baseline_file_count}",
             f"Cases: {summary.total_cases}",
+            f"Adjudicated cases: {summary.adjudicated_cases}",
             f"Passed: {summary.passed_cases}",
             f"Failed: {summary.failed_cases}",
             f"Status accuracy: {summary.status_accuracy:.3f}",
@@ -339,6 +340,7 @@ def render_blind_report(report: BlindBenchmarkReport, output_path: str) -> str:
                 else f"{summary.success_after_repair_rate:.3f}"
             ),
             f"Oracle pass rate: {summary.oracle_pass_rate:.3f}",
+            f"Invalid oracle cases: {summary.invalid_oracle_cases}",
             f"External false-verified rate: {summary.external_false_verified_rate:.3f}",
             f"Infeasible detection rate: {summary.infeasible_detection_rate:.3f}",
             f"Repairs: {summary.total_repairs} total, {summary.avg_repairs_per_case:.2f} per case",

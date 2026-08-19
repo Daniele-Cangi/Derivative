@@ -18,6 +18,7 @@ from core.forge.heldout_benchmark import (
     bundled_heldout_dataset_path,
     evaluate_heldout_thresholds,
     execute_pytest_oracle,
+    inspect_oracle_sanity,
     load_heldout_cases,
     persist_heldout_summary,
     render_heldout_summary,
@@ -257,6 +258,109 @@ def test_oracle_failure_turns_matching_verified_status_into_failed_case():
     assert summary.status_accuracy == 1.0
     assert summary.external_verified_at_1 == 0.0
     assert summary.external_false_verified_rate == 1.0
+
+
+def test_oracle_sanity_detects_word_boundary_contradiction(tmp_path):
+    oracle_path = tmp_path / "oracle.py"
+    oracle_path.write_text(
+        "def test_stdin_to_file():\n"
+        "    input_content = 'x yz\\n'\n"
+        "    expected = 'x z y\\n'\n"
+        "    assert expected\n",
+        encoding="utf-8",
+    )
+    case = HeldoutBenchmarkCase(
+        "V4-001",
+        (
+            "Reverse every word defined as a sequence of non-whitespace characters "
+            "separated by ASCII whitespace, with word order preserved."
+        ),
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(oracle_path)),
+    )
+
+    result = inspect_oracle_sanity(case)
+
+    assert result is not None
+    assert result.valid is False
+    assert result.executed is False
+    assert result.error == "oracle_invalid: fixture expectations contradict the requirement"
+    assert result.sanity_failures == [
+        {
+            "capability_id": "reverse_ascii_whitespace_tokens",
+            "function": "test_stdin_to_file",
+            "input_name": "input_content",
+            "expected_name": "expected",
+            "input_line": 2,
+            "expected_line": 3,
+            "declared_expected": "'x z y\\n'",
+            "derived_expected": "'x zy\\n'",
+        }
+    ]
+
+
+def test_invalid_oracle_stops_case_before_forge_and_is_excluded_from_metrics(tmp_path):
+    invalid_oracle = tmp_path / "invalid_oracle.py"
+    invalid_oracle.write_text(
+        "def test_external():\n"
+        "    input_content = 'x yz\\n'\n"
+        "    expected = 'x z y\\n'\n",
+        encoding="utf-8",
+    )
+    valid_oracle = tmp_path / "valid_oracle.py"
+    valid_oracle.write_text(
+        "def test_external():\n"
+        "    input_content = 'blank barΔ yuΔΣ\\n'\n"
+        "    expected = 'knalb Δrab ΣΔuy\\n'\n",
+        encoding="utf-8",
+    )
+    requirement = (
+        "Reverse every word defined as a sequence of non-whitespace characters "
+        "separated by ASCII whitespace, with word order preserved."
+    )
+    cases = [
+        HeldoutBenchmarkCase(
+            "invalid",
+            requirement,
+            TERMINAL_VERIFIED,
+            oracle=OracleSpec(path=str(invalid_oracle)),
+        ),
+        HeldoutBenchmarkCase(
+            "valid",
+            requirement + " Include a second case.",
+            TERMINAL_VERIFIED,
+            oracle=OracleSpec(path=str(valid_oracle)),
+        ),
+    ]
+    forge_calls: list[str] = []
+    oracle_calls: list[str] = []
+
+    summary = run_heldout_cases(
+        cases,
+        run_case=lambda current_requirement: (
+            forge_calls.append(current_requirement)
+            or _forge_result(TERMINAL_VERIFIED, "pkg")
+        ),
+        run_oracle=lambda spec, package: (
+            oracle_calls.append(spec.path)
+            or OracleResult(executed=True, passed=True, exit_code=0)
+        ),
+    )
+
+    assert forge_calls == [cases[1].requirement]
+    assert oracle_calls == [str(valid_oracle)]
+    assert summary.invalid_oracle_cases == 1
+    assert summary.adjudicated_cases == 1
+    assert summary.passed_cases == 1
+    assert summary.failed_cases == 1
+    assert summary.status_accuracy == 1.0
+    assert summary.external_verified_at_1 == 1.0
+    assert summary.external_false_verified_rate == 0.0
+    assert summary.case_results[0].observed_terminal_status == "oracle_invalid"
+    assert summary.case_results[0].model_request_count == 0
+    assert evaluate_heldout_thresholds(summary, HeldoutThresholds()) == [
+        "invalid_oracle_cases: actual=1 required=0"
+    ]
 
 
 def test_heldout_metrics_distinguish_repaired_external_success():

@@ -2,6 +2,10 @@ import re
 from typing import Any
 
 from core.forge.contracts import FeasiblePlan
+from core.forge.fixture_oracle import (
+    fixture_oracle_capability,
+    fixture_oracle_mismatches,
+)
 from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
@@ -17,6 +21,60 @@ from core.forge.test_evidence import (
     source_module_names,
 )
 from core.forge.validation.obligations import ObligationValidationLayer
+
+
+def run_fixture_oracle_preflight(
+    candidate_files: dict[str, str],
+    plan: FeasiblePlan,
+    contracts: dict[str, Any],
+) -> dict[str, Any]:
+    requirement = plan.build_spec.normalized_requirement
+    capability_id = fixture_oracle_capability(requirement)
+    if capability_id is None:
+        return {"phase": "fixture_oracle", "passed": True, "failures": []}
+
+    requirement_id = next(
+        (
+            atom.requirement_id
+            for atom in plan.build_spec.requirement_atoms
+            if fixture_oracle_capability(atom.text) == capability_id
+        ),
+        "",
+    )
+    failures: list[dict[str, Any]] = []
+    for path in sorted(contracts):
+        if not path.startswith("tests/") or path not in candidate_files:
+            continue
+        for mismatch in fixture_oracle_mismatches(candidate_files[path], requirement):
+            failures.append(
+                {
+                    "path": path,
+                    "kind": "fixture_oracle_mismatch",
+                    "requirement_id": requirement_id,
+                    **mismatch.to_evidence(),
+                }
+            )
+    if not failures:
+        return {"phase": "fixture_oracle", "passed": True, "failures": []}
+    failed_paths = list(dict.fromkeys(str(item["path"]) for item in failures))
+    return {
+        "phase": "fixture_oracle",
+        "ran": False,
+        "passed": False,
+        "failed_paths": failed_paths,
+        "source_failed_paths": [],
+        "test_failed_paths": failed_paths,
+        "failures": failures,
+        "correction_requirements": [
+            (
+                f"{failure['path']}:{failure['function']}: replace the manually transcribed "
+                f"{failure['expected_name']} oracle with the source-independent {capability_id} "
+                f"result {failure['derived_expected']} derived from {failure['input_name']}; do not "
+                "call generated target code to compute the expectation."
+            )
+            for failure in failures
+        ],
+    }
 
 
 def run_semantic_preflight(
