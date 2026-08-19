@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from core.forge.coder_stage import CoderStage
@@ -375,6 +376,49 @@ def test_substrate_backend_receives_requirement_assertion_repair_contract():
     assert target["test_paths"] == [test_path]
     assert target["missing_terms"] == ["workflow"]
     assert target["causal_functions"][0]["function"] == "test_component"
+
+
+def test_repair_context_compacts_validator_evidence_without_losing_execution_signals():
+    oversized_output = "failure detail " * 2000
+    evidence = {
+        "layer_status": {"layer1": False, "layer2": False, "layer3": False},
+        "validated_entrypoints": {"src/cli.py": False},
+        "manifest_provenance_checks": {"passed": True},
+        "layer1": {
+            "failure_signatures": ["import_failure"],
+            "import_results": {"cli": {"stderr": oversized_output}},
+            "entrypoint_results": {"src/cli.py": {"stderr": oversized_output}},
+        },
+        "layer2": {
+            "failure_signatures": ["test_execution_failure"],
+            "test_execution": {
+                "returncode": 1,
+                "stdout": oversized_output,
+                "stderr": oversized_output,
+            },
+            "requirement_semantic_checks": {"duplicated": oversized_output},
+        },
+        "layer3": {
+            "failure_signatures": ["non_semantic_test"],
+            "non_semantic_test_reasons": {
+                "tests/test_cli.py": ["missing_target_invocation"]
+            },
+            "semantic_requirement_test_coverage": {"duplicated": oversized_output},
+        },
+        "obligation_acceptance_checks": {"duplicated": oversized_output},
+    }
+
+    compact = SubstrateRepairBackend._compact_validator_evidence(evidence)
+    serialized = json.dumps(compact, sort_keys=True)
+
+    assert len(serialized) < 12_000
+    assert compact["layer2"]["test_execution"]["returncode"] == 1
+    assert compact["layer3"]["non_semantic_test_reasons"] == {
+        "tests/test_cli.py": ["missing_target_invocation"]
+    }
+    assert "requirement_semantic_checks" not in compact["layer2"]
+    assert "semantic_requirement_test_coverage" not in compact["layer3"]
+    assert "obligation_acceptance_checks" not in compact
 
 
 def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_tests():

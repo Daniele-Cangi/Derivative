@@ -489,13 +489,117 @@ class SubstrateRepairBackend:
             "required_obligations": list(plan.required_obligations),
             "failure_signatures": list(validation.failure_signatures),
             "failures": list(validation.failures),
-            "validator_evidence": validation.evidence,
+            "validator_evidence_summary": SubstrateRepairBackend._compact_validator_evidence(
+                validation.evidence
+            ),
             "repair_operations": list(directive.operations),
             "evidence_refs": list(directive.evidence_refs),
             "repair_requirement_ids": list(directive.requirement_ids),
             "repair_target_symbols": list(directive.target_symbols),
             "repair_evidence_targets": dict(directive.evidence_targets),
         }
+
+    @staticmethod
+    def _compact_validator_evidence(evidence: Any) -> dict[str, Any]:
+        if not isinstance(evidence, dict):
+            return {}
+        layer1 = SubstrateRepairBackend._mapping(evidence.get("layer1"))
+        layer2 = SubstrateRepairBackend._mapping(evidence.get("layer2"))
+        layer3 = SubstrateRepairBackend._mapping(evidence.get("layer3"))
+        summary = {
+            "layer_status": evidence.get("layer_status", {}),
+            "validated_entrypoints": evidence.get("validated_entrypoints", {}),
+            "manifest_provenance_checks": evidence.get(
+                "manifest_provenance_checks",
+                {},
+            ),
+            "layer1": {
+                key: layer1.get(key)
+                for key in (
+                    "failure_signatures",
+                    "parse_errors",
+                    "import_results",
+                    "entrypoint_results",
+                )
+                if key in layer1
+            },
+            "layer2": {
+                key: layer2.get(key)
+                for key in (
+                    "failure_signatures",
+                    "missing_required_files",
+                    "missing_required_tests",
+                    "missing_acceptance_coverage",
+                    "missing_manifest_obligations",
+                    "missing_provenance_obligations",
+                    "quality_contract_checks",
+                    "adapter_capability_checks",
+                    "capability_contract_checks",
+                    "test_execution",
+                )
+                if key in layer2
+            },
+            "layer3": {
+                key: layer3.get(key)
+                for key in (
+                    "failure_signatures",
+                    "manifest_missing_files",
+                    "missing_entrypoint_interfaces",
+                    "interface_contract_mismatches",
+                    "non_semantic_test_reasons",
+                    "provenance_mismatches",
+                    "superficial_interfaces",
+                    "traceability_extras",
+                )
+                if key in layer3
+            },
+        }
+        return SubstrateRepairBackend._bounded_evidence_value(summary)
+
+    @staticmethod
+    def _bounded_evidence_value(
+        value: Any,
+        *,
+        depth: int = 0,
+        max_depth: int = 6,
+        max_items: int = 40,
+        max_text_chars: int = 2000,
+    ) -> Any:
+        if depth >= max_depth:
+            return "<truncated>"
+        if isinstance(value, str):
+            if len(value) <= max_text_chars:
+                return value
+            return value[:max_text_chars] + "<truncated>"
+        if isinstance(value, dict):
+            return {
+                str(key): SubstrateRepairBackend._bounded_evidence_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                    max_text_chars=max_text_chars,
+                )
+                for key, item in list(value.items())[:max_items]
+            }
+        if isinstance(value, (list, tuple)):
+            return [
+                SubstrateRepairBackend._bounded_evidence_value(
+                    item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    max_items=max_items,
+                    max_text_chars=max_text_chars,
+                )
+                for item in list(value)[:max_items]
+            ]
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        return str(value)[:max_text_chars]
+
+    @staticmethod
+    def _mapping(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
 
     @staticmethod
     def _coerce_files(value: Any) -> dict[str, str]:
