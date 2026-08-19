@@ -1,0 +1,297 @@
+[
+  {
+    "case_id": "V5-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V5-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Implement a verified CLI utility named 'pycolmask' that reads a required, UTF-8 encoded, comma-separated values (CSV) file from a path provided via a required positional argument. It writes to stdout a copy of the file where only columns whose zero-based indices are NOT listed in a required, comma-separated --mask argument (no whitespace allowed) are included. The --mask argument must be a non-empty list of unique, valid column indices as non-negative integers; if any index in --mask is invalid (negative or beyond the header's last column), exit 1 and output an error message to stderr. The output includes the header and data rows unmodified, just omitting masked columns; if all columns are masked, output a single '\\n' and exit 0. Extra whitespace in the CSV is treated as part of the field value (do not trim). The utility must not crash on malformed CSV: if any row has a different column count than the header, exit 1 and output an error message to stderr. On success, output must match that of a hand-edited version of the file with appropriate columns removed, preserving original delimiter locations. The main(argv: list[str] | None = None) -> int contract must be importable and allow in-process output capture via sys.stdout or io.StringIO for verification.\n\nEdge cases to handle:\n- If the input file is empty (length zero), output '\\n' and exit 0.\n- If the header line exists but all columns are masked, output '\\n' and exit 0.\n- If --mask is syntactically invalid (e.g., non-integer or blank elements), exit 1 and print an error message.\n- No rows but a header are allowed; output will be just the header line with columns removed if applicable.\n- If --mask is missing, exit 1 and print an error message.\n- If the input file path is missing or cannot be opened (not found, permissions), exit 1 and print an error message.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "cli",
+      "data-pipeline",
+      "csv",
+      "column masking",
+      "argument parsing",
+      "verified"
+    ]
+  },
+  {
+    "case_id": "V5-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V5-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Implement a verified Python library module named 'pyuniqseq' with a single public function unique_sequences(iterable: Iterable[Sequence[Any]], min_length: int = 1) -> list[tuple]. This function yields a list of unique subsequences, where each output is a tuple representing a contiguous part of an input sequence, of length at least min_length, and not equal to any prior yielded subsequence. The function treats each incoming sequence in the iterable in order, extracting all contiguous subsequences of length \u2265 min_length and yields each distinct subsequence only once, in the order first encountered over all input. The input iterable and its elements may be any valid Python iterables and sequences, including empty, and may contain repeated, nested, or non-hashable contents. The returned value is a list of tuples, even if the original sequences are of a different type (e.g., strings, lists). Edge cases: if min_length is less than 1, raise ValueError('min_length must be at least 1'). If the input iterable or any sequence is empty, no subsequences are yielded. If sequences contain unhashable items, the function still works (uses tuple comparison). Deterministic behavior: order of output always matches order of first occurrence across all input sequences. Tests must cover: empty iterable, sequences with repeated elements, various sequence types, and non-hashable members.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "library",
+      "python",
+      "verified",
+      "sequences",
+      "deduplication",
+      "deterministic-order"
+    ]
+  },
+  {
+    "case_id": "V5-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V5-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Implement a verified Python service-module named 'pyutfinvert' with a callable function invert_case_preserve_nonletters(text: str) -> str. The function returns a new string of the same length as input, where each Unicode letter has its case inverted (uppercase to lowercase, lowercase to uppercase), and all other characters (digits, punctuation, symbols, whitespace, etc.) are left unchanged. Use str.isupper(), str.islower(), and str.isalpha() to determine a character's status. The returned string must preserve the original code point order. Deterministic failure: if input is not of type str, raise TypeError with an informative message. Edge cases: an empty string returns an empty string; a string with no Unicode letters returns the original string unchanged; input with only upper/lower/other mixed Unicode letters must show correct case inversion for each. Unicode normalization is not performed; the function operates on each character as-is in codepoint order. Public interface: only invert_case_preserve_nonletters is exposed. Tests must verify correct inversion with ASCII and non-ASCII Unicode letters, preservation of non-letter characters, empty strings, and strict type enforcement on input.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "service-module",
+      "string-transformation",
+      "unicode",
+      "verified",
+      "python-stdlib-only"
+    ]
+  },
+  {
+    "case_id": "V5-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V5-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Implement a verified Python CLI utility named 'pyenvlines' that accepts a single required positional argument: a path to a UTF-8 encoded text file. The utility outputs to stdout only those lines in the file that refer to a valid environment variable assignment. A line is a valid environment variable assignment if it matches the pattern 'NAME=VALUE', with NAME consisting only of uppercase ASCII letters (A-Z), digits (0-9), and underscores (_), starting with a letter or underscore, and containing at least one character. Whitespace before or after the assignment is not allowed; the line must match the regex: '^[A-Z_][A-Z0-9_]*=[^\\n]*$'. Any line not exactly matching this pattern is omitted from the output. The order of matching lines must be preserved. If the file does not exist or cannot be opened, the utility exits with code 1 and prints an error to stderr. If no valid environment assignment lines exist, output must be empty and exit 0. If the input file is empty, output must be empty and exit 0. The CLI must define main(argv: list[str] | None = None) -> int as its importable entry point, permitting in-process output capture for verification. No network, socket, or subprocess usage is allowed in the contract. All output must be strictly line-by-line as in the original, without added or removed trailing newlines. Behavioral tests must cover: all valid and invalid assignment patterns, empty files, files with only invalid lines, files with mixed lines, and error handling for missing/unreadable files.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "cli",
+      "verified",
+      "deterministic",
+      "std-library-only",
+      "environment-variable-filter",
+      "strict-pattern-match"
+    ]
+  },
+  {
+    "case_id": "V5-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V5-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Implement a verified Python library function called 'groupby_runs' in a module 'pygroupbyrun'. The public function is groupby_runs(iterable: Iterable[Any], *, key: Callable[[Any], Any] = lambda x: x) -> list[tuple]: it returns a list of (group_key, run) tuples, where group_key is the result of key(element), and run is a list of consecutive elements from the iterable such that each element in a run has the same group_key, and a new run starts whenever key(element) changes value (not merely when the previous value is repeated later). The order of output is preserved by first occurrence and consecutive grouping. If the iterable is empty, return an empty list. Edge cases: handles any iterable (including generators); if key is not callable, raise TypeError; if elements are unhashable or key returns mutable/unhashable values, still group by equality (not by hashing). Input is never modified. Failure is deterministic: if iterable is not iterable, raise TypeError. Tests must verify correct grouping for empty input, repeated keys, all unique keys, unhashable values, and custom key functions. Only groupby_runs is exposed.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "library",
+      "verified",
+      "grouping",
+      "consecutive",
+      "edge-case-tested",
+      "no-hashing-required"
+    ]
+  },
+  {
+    "case_id": "V5-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V5-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Implement a verified Python data-pipeline module called 'pyrotatefields' exposing a single function rotate_fields(rows: Iterable[dict], field_order: list[str], shift: int = 1) -> list[dict]. The function returns a list of dictionaries, where each dict represents a row transformed such that its key-value pairs are 'rotated' in the order specified by field_order: for each row, the value associated with each field in field_order is moved to the field position shift places ahead, wrapping around to the start as needed (like a circular shift). All other keys not in field_order remain unchanged in each output row. If field_order is empty, every row is returned unmodified. If shift is zero or a multiple of len(field_order), field values are unchanged. For any row, if a field in field_order is missing, its rotated value becomes None. If rows is empty, return an empty list. Deterministic failure: if field_order is not a list of str, raise TypeError; if shift is not an int, raise TypeError; if any element of rows is not a dict, raise TypeError. Tests must verify correct circular rotation for positive and negative shift values, missing fields, unmodified extra fields, empty input, field_order or shift edge cases, and error types for invalid arguments. Only rotate_fields is public, module has no CLI or service interface.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "data-pipeline",
+      "dict transformation",
+      "field rotation",
+      "circular shift",
+      "input/output contract",
+      "error handling verified"
+    ]
+  },
+  {
+    "case_id": "V5-007",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Implement a verified Python service-module named 'pyroundhalf' providing a single callable function round_half_even_string(numstr: str, decimals: int = 0) -> str. This function converts numstr, a string representation of a decimal number, to a string representing the value rounded to the given number of decimal places, using 'bankers' (round-half-to-even) rounding. The returned string must always include a decimal point if decimals > 0, even if the fractional part is all zeroes; if decimals == 0, the output must exclude any decimal point or fractional zeroes. If numstr does not represent a finite, well-formed decimal value, raise ValueError. If decimals is negative, raise ValueError. Edge cases: whitespace or sign characters before/after the main number are allowed and must be parsed. Scientific notation ('e'/'E') is permitted in numstr and must be rounded accurately. Deterministic failure: passing decimals=None, a non-int, or numstr=None must raise TypeError. This requirement is validation_failed because exact behavior is ambiguous when numstr is a valid string representation of special floating-point values (e.g. 'NaN', 'inf', '-Infinity'), and it asserts\u2014without limitation\u2014that banker's rounding must always match the output of Python's round() for all possible string representations, which is not universally certifiable due to platform and implementation differences in float rounding and string-to-float conversion. Tests must cover typical decimal and scientific notation inputs, right- and left-side rounding edge cases, wrong types, and invalid numstr arguments.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "service-module",
+      "validation_failed",
+      "rounding",
+      "ambiguous universal claim",
+      "edge-case ambiguity"
+    ]
+  },
+  {
+    "case_id": "V5-008",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Implement a verified Python CLI tool named 'pyflattenkv' that reads a required positional argument which is the path to a UTF-8 text file containing lines formatted as key-value pairs, one per line, separated by a colon ':' (e.g., 'foo:bar'). The CLI outputs to stdout a single flattened string made by concatenating all the keys and values from the file in the order they appear, with no intervening whitespace or delimiters\u2014only the raw concatenated text. The utility must exit 1 and print a non-empty error message to stderr if any line does not contain exactly one colon or either key or value is empty (e.g., ':bar', 'foo:', ':'). Output is empty and exit code 0 if file is empty. Handles arbitrary file size by processing line-by-line, and must not read the whole file into memory at once. The main(argv: list[str] | None = None) -> int entry point must be importable and all output must be capturable in-process via sys.stdout or io.StringIO for testing. This requirement is validation_failed because it contains a universal claim that lines with colons beyond the first (e.g., 'foo:bar:baz') must be rejected on the grounds of 'more than one colon,' but does not formally specify whether additional colons in the value after the first are always disallowed, ambiguous for values, or permitted if the first colon divides key from value regardless of remaining colons; this prevents objective certification. Behavioral tests must include: empty files; lines with exactly one colon and non-empty key and value; lines with missing or extra colons; very large files; and lines with whitespace in key or value. If file does not exist or cannot be opened, exit 1 with an error.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "cli",
+      "flattening",
+      "key-value-parsing",
+      "file-processing",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V5-009",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Implement a Python library module named 'pystrspan' with a single public function find_spanning_substring(text: str, charset: set[str], *, normalize: bool = False) -> tuple[int, int]. This function returns the start and end indices (as a tuple) of the shortest substring of 'text' (inclusive start, exclusive end) that contains every character in 'charset' at least once. If multiple such substrings exist of the shortest length, the first found in left-to-right order is returned. If no such substring exists, return (-1, -1). If 'charset' is empty, always return (0, 0). If 'normalize' is True, search is performed after applying case-folding and decomposing all Unicode characters in both 'text' and 'charset' (but returned indices must map to original, unnormalized text). If 'normalize' is False, search is performed exactly as in the input. If 'text' is empty, return (-1, -1) unless 'charset' is empty. Deterministic failure: if 'text' is not a str or 'charset' is not a set of str, raise TypeError. If any element of 'charset' is not a single-character string, raise ValueError. The required interface is only find_spanning_substring. Behavioral tests must cover: empty text, empty charset, case/Unicode normalization behavior, substrings at each edge, and type errors. This requirement is validation_failed due to an ambiguity: when 'normalize' is True and a normalization expands a single codepoint in 'text' to multiple codepoints in the normalized form, it is unclear how to map the index pair of the shortest normalized substring back to the correct character indices of the original, potentially causing indeterminate output in those situations.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "library",
+      "validation_failed",
+      "substring",
+      "charset",
+      "unicode",
+      "normalization"
+    ]
+  },
+  {
+    "case_id": "V5-010",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Implement a verified Python CLI utility called 'pyinvperm' which accepts a required positional argument: a path to a UTF-8 encoded text file. The file must consist of a single line containing a comma-separated list of unique non-negative integers (no whitespace allowed), representing a permutation P of length n >= 1. The utility outputs to stdout a single line: the inverse permutation I, as a comma-separated list of n unique non-negative integers such that I[P[i]]=i for each i in 0..n-1. The utility must exit 1 and print an error to stderr for any of the following: (a) the file does not exist or cannot be opened, (b) input line is empty or contains whitespace, (c) any non-integer present, (d) repeated integers, (e) any integer outside the range 0..n-1, or (f) the list is not a valid permutation of n elements. If the file is empty, output is empty and exit 0. Required main(argv: list[str] | None = None) -> int contract, all output must be capturable in-process. \n\nInfeasibility: Additionally, require that for any input permutation P, the output I must also be a derangement (i.e., I[j] \u2260 j for all j), even if P has a fixed point. It is mathematically impossible to guarantee that both I[P[i]]=i for all i and I[j]\u2260j for all j for every permutation P (since, if P is the identity permutation, I equals P, thereby violating the derangement condition). This makes the requirement infeasible.\n\nTests must include: identity permutation, permutations with one or more fixed points, a valid derangement, handling of invalid files, and invalid element types. Exit codes and output must be deterministic and match exact requirements. Only main() is public, CLI must never crash on valid or invalid input, and must not require subprocess or network execution.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "cli",
+      "permutation",
+      "combinatorics",
+      "finite contradiction",
+      "infeasible_proven"
+    ]
+  },
+  {
+    "case_id": "V5-011",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Implement a verified Python library module named 'pyduperange' with a single public function duperange(start: int, stop: int, step: int) -> list[int]. This function is specified as follows: it must return a list of all integers x such that x == x + step for exactly one value of step in the given closed range from start to stop (inclusive), and the total number of unique such x in the output must equal (stop - start + 2). Edge cases: If start > stop, return an empty list. If step == 0, raise ValueError('step must not be zero'). If any argument is not an int, raise TypeError. Output order must be ascending. Deterministic failure: if the constraint cannot be satisfied, the function must raise RuntimeError with a clear message. Behavioral tests must cover: normal ranges, step>0 and step<0, empty range (start>stop), step=0, and non-integer argument types.\n\nThis is infeasible: there exists no possible list of x for arbitrary integer start, stop, step such that for each x, x == x + step (which implies step == 0 forbidden by contract), and yet for all such x, the list length equals (stop - start + 2) for any valid (start, stop). The constraint is self-contradictory independently of implementation or environment.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "library",
+      "infeasible_proven",
+      "math-contradiction",
+      "duperange",
+      "function-spec"
+    ]
+  },
+  {
+    "case_id": "V5-012",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Implement a verified Python data-pipeline module named 'pyuniqueinterleave' that provides a single public function interleaved_uniques(*iterables: list[list[int]]) -> list[int]. The function must return a list that interleaves the provided iterables round-robin (taking one element from each in order, skipping exhausted sublists) and omits any integer that has already occurred at any previous position in the result. Each argument must be a list of integers; any non-list or non-int elements must cause a TypeError. If a value appears in more than one input, it can only appear at the first position at which it would have been yielded in normal round-robin interleaving. If inputs are empty, return an empty list. Edge cases: if no arguments are provided, return []. If any sublist is empty, simply skip it. Input lists are not mutated. Deterministic failure: require that, for every possible collection of input lists of total N elements with at least two identical integers at different positions in their respective sublists, the output must be of length exactly N, with each input element occurring in the same relative round-robin position as in non-unique interleaving. But this contradicts the uniqueness constraint (since duplicates must be omitted for uniqueness, yet still be present for the original length and position constraint), making such a function impossible for all inputs containing duplicates. Tests must include: empty input, all inputs disjoint, overlapping integers, arguments of wrong types, and long input lists with interleaved duplicates.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v5",
+      "data-pipeline",
+      "infeasible_proven",
+      "round-robin",
+      "uniqueness",
+      "finite contradiction",
+      "Python standard library only"
+    ]
+  }
+]
