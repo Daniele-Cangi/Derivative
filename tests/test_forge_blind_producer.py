@@ -5,7 +5,10 @@ import pytest
 from typer.testing import CliRunner
 
 import forge_blind_produce
-from core.forge.blind_oracle import oracle_preflight_error
+from core.forge.blind_oracle import (
+    oracle_preflight_error,
+    oracle_preflight_failure_class,
+)
 from core.forge.blind_producer import BlindProducerConfig, produce_and_freeze_blind_bundle
 
 
@@ -306,7 +309,10 @@ def test_blind_producer_rejects_invalid_version_identifier():
 
 def test_producer_cli_reports_failure_without_traceback_or_locals(monkeypatch, tmp_path):
     def fail_production(**_kwargs):
-        raise ValueError("review rejected the candidate")
+        raise ValueError(
+            "Oracle producer failed validation; "
+            "rejection_classes=causal_assertion,independent_review"
+        )
 
     monkeypatch.setattr(
         forge_blind_produce,
@@ -319,11 +325,21 @@ def test_producer_cli_reports_failure_without_traceback_or_locals(monkeypatch, t
     )
 
     assert result.exit_code == 1
-    assert "Blind production failed: production_failed" in result.output
+    assert "Blind production failed: oracle_preflight_failed" in result.output
     assert "No bundle was published" in result.output
-    assert "review rejected the candidate" not in result.output
+    assert "Rejection classes: causal_assertion,independent_review" in result.output
+    assert "Oracle producer failed validation" not in result.output
     assert "Traceback" not in result.output
     assert "raw_cases" not in result.output
+
+
+def test_oracle_preflight_failure_classes_do_not_expose_source():
+    assert (
+        oracle_preflight_failure_class(
+            "oracle test test_output has no causal behavioral assertion"
+        )
+        == "causal_assertion"
+    )
 
 
 def test_frozen_bundle_transport_disables_git_text_normalization():

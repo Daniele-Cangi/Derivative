@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 from pathlib import Path
 
 import typer
@@ -26,6 +27,12 @@ def main(
     verified_cases: int = typer.Option(6, "--verified-cases", min=1),
     validation_failed_cases: int = typer.Option(3, "--validation-failed-cases", min=1),
     infeasible_cases: int = typer.Option(3, "--infeasible-cases", min=1),
+    max_generation_attempts: int = typer.Option(
+        5,
+        "--max-generation-attempts",
+        min=1,
+        max=12,
+    ),
     repository_root: str = typer.Option(".", "--repository-root"),
     input_cost_per_1m: float | None = typer.Option(
         None,
@@ -55,6 +62,7 @@ def main(
                     verified_cases=verified_cases,
                     validation_failed_cases=validation_failed_cases,
                     infeasible_cases=infeasible_cases,
+                    max_generation_attempts=max_generation_attempts,
                 ),
                 model=model,
             )
@@ -63,6 +71,7 @@ def main(
         failure_id = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:12]
         typer.echo(
             f"Blind production failed: {category}. No bundle was published. "
+            f"Rejection classes: {_safe_rejection_classes(exc)}. "
             f"Failure id: {failure_id}",
             err=True,
         )
@@ -96,6 +105,11 @@ def _safe_failure_category(exc: Exception) -> str:
     if isinstance(exc, RuntimeError):
         return "provider_unavailable"
     return "production_failed"
+
+
+def _safe_rejection_classes(exc: Exception) -> str:
+    match = re.search(r"rejection_classes=([a-z_,]+)", str(exc))
+    return match.group(1) if match else "unclassified"
 
 
 if __name__ == "__main__":

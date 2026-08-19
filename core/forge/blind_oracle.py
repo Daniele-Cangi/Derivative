@@ -88,6 +88,35 @@ def oracle_review_error(review: dict[str, Any]) -> str | None:
     )
 
 
+def oracle_preflight_failure_class(error: str) -> str:
+    classifications = (
+        ("source is empty", "empty_source"),
+        ("syntax error", "syntax"),
+        ("at least three independent", "insufficient_tests"),
+        ("trivial assert True", "trivial_assertion"),
+        ("semantic assertions", "insufficient_assertions"),
+        ("contains pass", "placeholder"),
+        ("forbidden module", "forbidden_import"),
+        ("import the public target", "missing_target_import"),
+        ("could not be analyzed", "evidence_analysis"),
+        ("does not directly invoke", "missing_target_invocation"),
+        ("no causal behavioral assertion", "causal_assertion"),
+        ("discards the return value", "discarded_entrypoint_result"),
+    )
+    return next(
+        (code for fragment, code in classifications if fragment in error),
+        "static_preflight",
+    )
+
+
+def oracle_review_failure_class(error: str) -> str:
+    if "internally inconsistent" in error:
+        return "inconsistent_review"
+    if "invalid findings" in error or "omitted a boolean" in error:
+        return "invalid_review"
+    return "independent_review"
+
+
 def oracle_producer_instructions() -> str:
     return """You are an independent black-box acceptance-test producer. You receive one frozen natural-language requirement and no
 Forge source code or generated implementation. Return a complete pytest module testing only the public contract. The package under

@@ -15,8 +15,10 @@ from core.forge.blind_benchmark import BlindBenchmarkBundle, load_blind_bundle
 from core.forge.blind_freeze import BlindFreezeProvenance, freeze_blind_bundle
 from core.forge.blind_oracle import (
     oracle_preflight_error,
+    oracle_preflight_failure_class,
     oracle_producer_instructions,
     oracle_review_error,
+    oracle_review_failure_class,
     oracle_reviewer_instructions,
 )
 from core.forge.blind_requirement import (
@@ -202,6 +204,7 @@ def _generate_requirement_cases(
         "additionalProperties": False,
     }
     feedback = ""
+    rejection_classes: list[str] = []
     for _ in range(config.max_generation_attempts):
         response = generator(
             model=model,
@@ -232,9 +235,16 @@ def _generate_requirement_cases(
                     "review_model": model,
                     "findings": [],
                 }
+            rejection_classes.append("independent_review")
             error = review_error
+        else:
+            rejection_classes.append("static_case_set")
         feedback = f"\nThe previous response was rejected: {error}. Return a complete replacement."
-    raise ValueError(f"Requirement producer failed validation: {feedback.strip()}")
+    classes = ",".join(sorted(set(rejection_classes))) or "unknown"
+    raise ValueError(
+        "Requirement producer failed validation; "
+        f"rejection_classes={classes}"
+    )
 
 
 def _review_requirement_cases(
@@ -338,6 +348,7 @@ def _generate_oracle(
         "additionalProperties": False,
     }
     feedback = ""
+    rejection_classes: list[str] = []
     for _ in range(max_attempts):
         response = generator(
             model=model,
@@ -371,9 +382,16 @@ def _generate_oracle(
                     "review_model": model,
                     "findings": [],
                 }
+            rejection_classes.append(oracle_review_failure_class(review_error))
             error = review_error
+        else:
+            rejection_classes.append(oracle_preflight_failure_class(error))
         feedback = f"\nThe previous oracle was rejected: {error}. Return a complete replacement."
-    raise ValueError(f"Oracle producer failed validation for {case_id}: {feedback.strip()}")
+    classes = ",".join(sorted(set(rejection_classes))) or "unknown"
+    raise ValueError(
+        f"Oracle producer failed validation for {case_id}; "
+        f"rejection_classes={classes}"
+    )
 
 
 def _review_oracle(
