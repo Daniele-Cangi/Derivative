@@ -403,7 +403,7 @@ def _generate_oracle(
         )
         payload = _parse_json_object(response, f"oracle producer {case_id}")
         source = str(payload.get("oracle_py", ""))
-        error = oracle_preflight_error(source)
+        error = oracle_preflight_error(source, requirement)
         if error is None:
             review = _review_oracle(
                 generator=generator,

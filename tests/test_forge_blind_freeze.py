@@ -233,3 +233,42 @@ def test_freeze_refuses_dataset_outside_bundle(tmp_path):
             repository_root=repository_root,
             dataset_path="../cases.json",
         )
+
+
+def test_freeze_refuses_external_oracle_with_fixture_contradiction(tmp_path):
+    bundle_root = tmp_path / "invalid-oracle-bundle"
+    oracle_root = bundle_root / "oracles" / "V5-001"
+    oracle_root.mkdir(parents=True)
+    (oracle_root / "oracle.py").write_text(
+        "def test_stdin_to_file():\n"
+        "    input_content = 'x yz\\n'\n"
+        "    expected = 'x z y\\n'\n",
+        encoding="utf-8",
+    )
+    (bundle_root / "cases.json").write_text(
+        json.dumps(
+            [
+                {
+                    "case_id": "V5-001",
+                    "requirement": (
+                        "Reverse every word defined as a sequence of non-whitespace "
+                        "characters separated by ASCII whitespace, with word order preserved."
+                    ),
+                    "expected_terminal_status": "verified",
+                    "tags": ["blind-v5", "text-processing"],
+                    "oracle": {
+                        "path": "oracles/V5-001/oracle.py",
+                        "timeout_seconds": 20,
+                    },
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    repository_root = _write_baseline(tmp_path / "repository")
+
+    with pytest.raises(ValueError, match="rejection_classes=fixture_oracle_mismatch"):
+        _freeze(bundle_root, repository_root)
+
+    assert (bundle_root / "manifest.json").exists() is False

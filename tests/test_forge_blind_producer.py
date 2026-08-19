@@ -9,7 +9,11 @@ from core.forge.blind_oracle import (
     oracle_preflight_error,
     oracle_preflight_failure_class,
 )
-from core.forge.blind_producer import BlindProducerConfig, produce_and_freeze_blind_bundle
+from core.forge.blind_producer import (
+    BlindProducerConfig,
+    _generate_oracle,
+    produce_and_freeze_blind_bundle,
+)
 
 
 def _case_payload() -> dict:
@@ -343,6 +347,96 @@ def test_oracle_preflight_rejects_discarded_entrypoint_return_value():
     assert oracle_preflight_error(source) == (
         "oracle discards the return value of public entrypoint main; "
         "assert the returned exit code explicitly"
+    )
+
+
+def test_oracle_preflight_rejects_deterministic_fixture_contradiction():
+    requirement = (
+        "Reverse every word defined as a sequence of non-whitespace characters separated "
+        "by ASCII whitespace, with word order preserved."
+    )
+    source = _reverse_words_oracle(
+        blank="nkalb",
+        bar_delta="rabΔ",
+        yu_delta_sigma="uyΔΣ",
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is not None
+    assert "fixture expectation contradicts the requirement" in error
+    assert "expected declares 'nkalb'" in error
+    assert "independently derived value is 'knalb'" in error
+    assert oracle_preflight_failure_class(error) == "fixture_oracle_mismatch"
+
+
+def test_oracle_producer_regenerates_before_review_on_fixture_contradiction():
+    requirement = (
+        "Reverse every word defined as a sequence of non-whitespace characters separated "
+        "by ASCII whitespace, with word order preserved."
+    )
+    sources = [
+        _reverse_words_oracle(
+            blank="nkalb",
+            bar_delta="rabΔ",
+            yu_delta_sigma="uyΔΣ",
+        ),
+        _reverse_words_oracle(
+            blank="knalb",
+            bar_delta="Δrab",
+            yu_delta_sigma="ΣΔuy",
+        ),
+    ]
+    calls: list[dict] = []
+
+    def generator(**kwargs):
+        calls.append(kwargs)
+        if kwargs["output_schema_name"].endswith("_oracle_review"):
+            return json.dumps({"approved": True, "findings": []})
+        return json.dumps({"oracle_py": sources.pop(0)})
+
+    source, validation = _generate_oracle(
+        generator=generator,
+        model="external-test-model",
+        case_id="V5-001",
+        requirement=requirement,
+        max_attempts=2,
+        schema_namespace="forge_blind_v5",
+    )
+
+    assert "expected = 'ΣΔuy'" in source
+    assert validation["static_checks_passed"] is True
+    assert [call["output_schema_name"] for call in calls] == [
+        "forge_blind_v5_oracle",
+        "forge_blind_v5_oracle",
+        "forge_blind_v5_oracle_review",
+    ]
+    assert "independently derived value is 'knalb'" in calls[1]["input_text"]
+
+
+def _reverse_words_oracle(
+    *,
+    blank: str,
+    bar_delta: str,
+    yu_delta_sigma: str,
+) -> str:
+    return (
+        "from revwords import reverse_words\n\n"
+        "def test_blank():\n"
+        "    input_content = 'blank'\n"
+        f"    expected = {blank!r}\n"
+        "    result = reverse_words(input_content)\n"
+        "    assert result == expected\n\n"
+        "def test_bar_delta():\n"
+        "    input_content = 'barΔ'\n"
+        f"    expected = {bar_delta!r}\n"
+        "    result = reverse_words(input_content)\n"
+        "    assert result == expected\n\n"
+        "def test_yu_delta_sigma():\n"
+        "    input_content = 'yuΔΣ'\n"
+        f"    expected = {yu_delta_sigma!r}\n"
+        "    result = reverse_words(input_content)\n"
+        "    assert result == expected\n"
     )
 
 

@@ -2,10 +2,11 @@ import ast
 import sys
 from typing import Any
 
+from core.forge.fixture_oracle import fixture_oracle_mismatches
 from core.forge.test_evidence import analyze_test_functions
 
 
-def oracle_preflight_error(source: str) -> str | None:
+def oracle_preflight_error(source: str, requirement: str = "") -> str | None:
     if not source.strip():
         return "oracle source is empty"
     try:
@@ -66,7 +67,23 @@ def oracle_preflight_error(source: str) -> str | None:
             return f"oracle test {function} does not directly invoke the public target"
         if not item.get("semantic"):
             return f"oracle test {function} has no causal behavioral assertion"
-    return _discarded_entrypoint_call(tree, target_names, target_modules)
+    discarded_call = _discarded_entrypoint_call(tree, target_names, target_modules)
+    if discarded_call is not None:
+        return discarded_call
+    return oracle_fixture_sanity_error(source, requirement)
+
+
+def oracle_fixture_sanity_error(source: str, requirement: str) -> str | None:
+    mismatches = fixture_oracle_mismatches(source, requirement)
+    if not mismatches:
+        return None
+    mismatch = mismatches[0]
+    return (
+        "oracle fixture expectation contradicts the requirement in "
+        f"{mismatch.function}: {mismatch.expected_name} declares "
+        f"{mismatch.declared_expected}, independently derived value is "
+        f"{mismatch.derived_expected}"
+    )
 
 
 def oracle_review_error(review: dict[str, Any]) -> str | None:
@@ -102,6 +119,7 @@ def oracle_preflight_failure_class(error: str) -> str:
         ("does not directly invoke", "missing_target_invocation"),
         ("no causal behavioral assertion", "causal_assertion"),
         ("discards the return value", "discarded_entrypoint_result"),
+        ("fixture expectation contradicts", "fixture_oracle_mismatch"),
     )
     return next(
         (code for fragment, code in classifications if fragment in error),
@@ -127,7 +145,9 @@ for pytest. Do not use subprocesses, sockets, HTTP clients, timing assumptions, 
 inspection, Forge modules, generated tests, or implementation-private names. Every test must invoke the imported public target itself.
 The target call must appear lexically inside each test function: do not place it in a local helper, fixture, wrapper, or setup hook.
 For an in-process CLI entrypoint, capture and assert its returned exit code; never infer success from absence of an exception or discard
-the return value. Use exception assertions only when the requirement explicitly defines an exception contract. Return only the requested
+the return value. For deterministic transformations, derive every expected fixture result with a source-independent reference operation;
+do not manually transcribe transformed literals and never call the target under test to compute an expectation. Use exception assertions
+only when the requirement explicitly defines an exception contract. Return only the requested
 structured object."""
 
 
@@ -138,7 +158,8 @@ requirement through its public interface, invokes the target causally, and makes
 exit code, or side effect. Reject contradictory expectations, over-specified behavior, discarded entrypoint return values, fixtures that
 manufacture success independently of the target, tests that cannot capture the claimed output, and assumptions absent from the requirement.
 Also reject nondeterministic, platform-specific, networked, private-implementation, or vacuous checks. Findings must be concise and empty
-when approved. Return only the requested structured object."""
+when approved. For deterministic transformations, independently recompute every literal fixture expectation rather than trusting its
+transcription. Return only the requested structured object."""
 
 
 def _public_target_context(tree: ast.Module) -> tuple[set[str], set[str]]:

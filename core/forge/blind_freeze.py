@@ -12,7 +12,8 @@ from core.forge.blind_benchmark import (
     compute_forge_baseline_digest,
     load_blind_bundle,
 )
-from core.forge.heldout_benchmark import load_heldout_cases
+from core.forge.blind_oracle import oracle_fixture_sanity_error
+from core.forge.heldout_benchmark import HeldoutBenchmarkCase, load_heldout_cases
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ def freeze_blind_bundle(
         )
     dataset = _resolve_input_file(root, dataset_path, "dataset")
     cases = load_heldout_cases(str(dataset))
+    _validate_oracle_fixture_sanity(cases)
 
     oracle_digests = {
         case.case_id: _sha256_file(Path(case.oracle.path))
@@ -90,6 +92,24 @@ def freeze_blind_bundle(
         repository_root=repository_root,
         verify_baseline=True,
     )
+
+
+def _validate_oracle_fixture_sanity(cases: List[HeldoutBenchmarkCase]) -> None:
+    for case in cases:
+        if case.oracle is None:
+            continue
+        try:
+            source = Path(case.oracle.path).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(
+                f"Blind benchmark oracle for {case.case_id} is not readable as UTF-8."
+            ) from exc
+        error = oracle_fixture_sanity_error(source, case.requirement)
+        if error is not None:
+            raise ValueError(
+                f"Blind benchmark oracle for {case.case_id} failed semantic sanity; "
+                f"rejection_classes=fixture_oracle_mismatch; {error}"
+            )
 
 
 def _validate_provenance(provenance: BlindFreezeProvenance) -> None:
