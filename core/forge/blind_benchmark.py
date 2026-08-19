@@ -3,7 +3,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Sequence
 
 from core.forge.contracts import ForgeResult
 from core.forge.heldout_benchmark import (
@@ -241,13 +241,15 @@ def run_blind_bundle(
     run_case: Callable[[str], ForgeResult],
     run_oracle: Callable[[OracleSpec, str], OracleResult] = execute_pytest_oracle,
     post_fix_replay: bool = False,
+    case_ids: Sequence[str] | None = None,
 ) -> BlindBenchmarkReport:
     if not bundle.baseline_verified and not post_fix_replay:
         raise ValueError(
             "Blind benchmark execution requires the exact sealed Forge baseline."
         )
+    selected_cases = _select_blind_cases(bundle.cases, case_ids)
     summary = run_heldout_cases(
-        bundle.cases,
+        selected_cases,
         run_case=run_case,
         run_oracle=run_oracle,
     )
@@ -274,6 +276,22 @@ def run_blind_bundle(
             else BLIND_EXECUTION_KIND_BASELINE
         ),
     )
+
+
+def _select_blind_cases(
+    cases: Sequence[HeldoutBenchmarkCase],
+    case_ids: Sequence[str] | None,
+) -> List[HeldoutBenchmarkCase]:
+    requested = [case_id.strip() for case_id in (case_ids or []) if case_id.strip()]
+    if not requested:
+        return list(cases)
+    if len(requested) != len(set(requested)):
+        raise ValueError("Blind benchmark case selection contains duplicate ids.")
+    by_id = {case.case_id: case for case in cases}
+    unknown = sorted(set(requested) - set(by_id))
+    if unknown:
+        raise ValueError(f"Unknown blind benchmark case ids: {', '.join(unknown)}.")
+    return [by_id[case_id] for case_id in requested]
 
 
 def evaluate_blind_thresholds(

@@ -232,3 +232,56 @@ def test_post_fix_replay_is_explicit_and_cannot_be_reported_as_sealed_baseline(t
     rendered = render_blind_report(report, "report.json")
     assert "Execution kind: post_fix_replay" in rendered
     assert "Baseline verified: false" in rendered
+
+
+def test_post_fix_replay_can_select_frozen_cases_without_mutating_bundle(tmp_path):
+    repository_root = Path(__file__).resolve().parents[1]
+    manifest_path = _write_bundle(tmp_path, repository_root)
+    sealed = load_blind_bundle(str(manifest_path), repository_root=repository_root)
+    second = replace(
+        sealed.cases[0],
+        case_id="B002",
+        requirement="Build a second deterministic component.",
+        expected_terminal_status="validation_failed",
+        oracle=None,
+    )
+    changed = replace(
+        sealed,
+        baseline_verified=False,
+        observed_baseline_sha256="0" * 64,
+        cases=[sealed.cases[0], second],
+    )
+    observed = []
+
+    report = run_blind_bundle(
+        changed,
+        run_case=lambda requirement: (
+            observed.append(requirement)
+            or ForgeResult(
+                route=ForgeRoute.TERMINAL_VALIDATION_FAILED,
+                terminal_status="validation_failed",
+                summary="validation failed",
+                artifact_path="artifact",
+            )
+        ),
+        post_fix_replay=True,
+        case_ids=["B002"],
+    )
+
+    assert observed == [second.requirement]
+    assert report.summary.total_cases == 1
+    assert report.summary.case_results[0].case_id == "B002"
+    assert [case.case_id for case in changed.cases] == ["B001", "B002"]
+
+
+def test_blind_case_selection_rejects_unknown_ids(tmp_path):
+    repository_root = Path(__file__).resolve().parents[1]
+    manifest_path = _write_bundle(tmp_path, repository_root)
+    bundle = load_blind_bundle(str(manifest_path), repository_root=repository_root)
+
+    with pytest.raises(ValueError, match="Unknown blind benchmark case ids: B999"):
+        run_blind_bundle(
+            bundle,
+            run_case=lambda requirement: None,
+            case_ids=["B999"],
+        )

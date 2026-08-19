@@ -54,6 +54,11 @@ def main(
         "--post-fix-replay",
         help="Run sealed inputs against a changed Forge baseline and label the report as regression evidence.",
     ),
+    case_id: list[str] = typer.Option(
+        [],
+        "--case-id",
+        help="Run only the selected frozen case id. Repeat for multiple cases.",
+    ),
 ) -> None:
     process_executor = create_process_executor(
         execution_backend,
@@ -81,6 +86,7 @@ def main(
             executor=process_executor,
         ),
         post_fix_replay=post_fix_replay,
+        case_ids=case_id,
     )
     report_path = persist_blind_report(report, benchmark_output_root)
     typer.echo(render_blind_report(report, report_path))
