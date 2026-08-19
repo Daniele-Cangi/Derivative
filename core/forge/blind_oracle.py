@@ -125,6 +125,7 @@ by the requirement. Define at least three tests with non-trivial fixtures, direc
 edge cases, and required exception checks. Tests must be deterministic, cross-platform, offline, and standard-library-only except
 for pytest. Do not use subprocesses, sockets, HTTP clients, timing assumptions, skip/xfail, assert True, source inspection, manifest
 inspection, Forge modules, generated tests, or implementation-private names. Every test must invoke the imported public target itself.
+The target call must appear lexically inside each test function: do not place it in a local helper, fixture, wrapper, or setup hook.
 For an in-process CLI entrypoint, capture and assert its returned exit code; never infer success from absence of an exception or discard
 the return value. Use exception assertions only when the requirement explicitly defines an exception contract. Return only the requested
 structured object."""

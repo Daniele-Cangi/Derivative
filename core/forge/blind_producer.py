@@ -480,6 +480,9 @@ Use only the Python standard library in required implementations. Every verified
 input and output behavior, edge cases, deterministic failure behavior, and behavioral tests. Avoid familiar benchmark tasks involving
 semantic versions, JSON Pointer, RFC 3339 parsing, interval merging, generic record sorting, email canonicalization, largest-remainder
 allocation, sensor aggregation, or idempotent event creation. Prefer less common but production-plausible transformations and policies.
+Every verified CLI must also declare an importable main(argv: list[str] | None = None) -> int contract whose output is capturable in-process;
+do not define a verified contract that requires subprocess, network, socket, or HTTP-client execution for acceptance. Service-module cases
+must expose callable module interfaces rather than requiring a live server.
 Create exactly {config.verified_cases} feasible verified cases, {config.validation_failed_cases} cases whose claims are materially
 ambiguous or universally unprovable while remaining logically satisfiable in principle, and {config.infeasible_cases} cases with precise
 mathematical or finite constraint contradictions independent of platform behavior, unavailable dependencies, or implementation difficulty.

@@ -131,10 +131,14 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert "remaining logically satisfiable in principle" in generator.calls[0][
         "instructions"
     ]
+    assert "importable main(argv: list[str] | None = None) -> int" in generator.calls[
+        0
+    ]["instructions"]
     oracle_request = generator.calls[2]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in oracle_request
     assert "core/forge" not in oracle_request
     assert "candidate implementation" not in oracle_request.lower()
+    assert "lexically inside each test function" in generator.calls[2]["instructions"]
     review_request = generator.calls[3]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in review_request
     assert _oracle_payload()["oracle_py"] in review_request

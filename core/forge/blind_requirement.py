@@ -30,7 +30,9 @@ precise mathematical or finite constraint contradiction independent of platform 
 Reject incorrect terminal labels, overlapping or repeated tasks, hidden implementation hints, underspecified verified contracts, and
 requirements whose stated examples conflict with their rules. Do not reject a correctly labeled ambiguous or contradictory case merely
 because it has the intended property, and never include confirming observations as findings. Findings must identify only actual defects,
-must identify the candidate index, and must remain empty when approved. Return only the requested structured object."""
+must identify the candidate index, and must remain empty when approved. Reject any verified CLI without an importable
+main(argv: list[str] | None = None) -> int interface that can be tested in-process, and reject any verified service contract that requires
+a live server, socket, subprocess, or HTTP client instead of a callable module interface. Return only the requested structured object."""
 
 
 def _bounded_finding(value: str) -> str:
