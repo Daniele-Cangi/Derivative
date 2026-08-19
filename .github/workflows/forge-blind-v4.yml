@@ -1,0 +1,65 @@
+name: Forge Blind v4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-blind-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout frozen repository state
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build Forge sandbox image
+        run: docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+
+      - name: Verify frozen blind bundle and baseline
+        run: >
+          python -c
+          "from core.forge.blind_benchmark import load_blind_bundle;
+          bundle = load_blind_bundle('benchmarks/blind_v4/external_007/manifest.json', verify_baseline=True);
+          assert len(bundle.cases) == 12;
+          assert bundle.baseline_verified;
+          print(f'sealed_inputs_verified baseline={bundle.baseline_sha256}')"
+
+      - name: Execute first and only blind v4 baseline
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1
+          OPENAI_INPUT_COST_PER_1M_TOKENS: "2.00"
+          OPENAI_OUTPUT_COST_PER_1M_TOKENS: "8.00"
+        run: >
+          python forge_blind_benchmark.py
+          --manifest benchmarks/blind_v4/external_007/manifest.json
+          --mode hybrid
+          --execution-backend docker
+          --sandbox-image derivative-forge-sandbox:py311
+          --no-enforce-thresholds
+
+      - name: Upload complete blind evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-blind-v4-first-run
+          path: |
+            generated_artifacts/forge_blind_benchmarks/
+            generated_artifacts/forge_blind_runs/
+            generated_artifacts/forge_blind_packages/
+          if-no-files-found: warn
+          retention-days: 90
