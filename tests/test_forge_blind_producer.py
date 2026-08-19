@@ -81,12 +81,38 @@ class _RecordingGenerator:
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
         if kwargs["output_schema_name"].endswith("_requirements_review"):
-            payload = self.requirement_review_payloads.pop(0)
+            payload = (
+                self.requirement_review_payloads.pop(0)
+                if self.requirement_review_payloads
+                else {"approved": True, "findings": []}
+            )
             return json.dumps(payload)
         if kwargs["output_schema_name"].endswith("_requirements"):
-            return json.dumps(_case_payload())
+            expected_status = next(
+                item["expected_terminal_status"]
+                for item in _case_payload()["cases"]
+                if f"Required terminal status: {item['expected_terminal_status']}"
+                in kwargs["input_text"]
+            )
+            item = next(
+                case
+                for case in _case_payload()["cases"]
+                if case["expected_terminal_status"] == expected_status
+            )
+            return json.dumps(
+                {
+                    "case": {
+                        "requirement": item["requirement"],
+                        "tags": item["tags"],
+                    }
+                }
+            )
         if kwargs["output_schema_name"].endswith("_oracle_review"):
-            payload = self.review_payloads.pop(0)
+            payload = (
+                self.review_payloads.pop(0)
+                if self.review_payloads
+                else {"approved": True, "findings": []}
+            )
             return json.dumps(payload)
         return json.dumps(self.oracle_payload)
 
@@ -120,6 +146,10 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert [call["output_schema_name"] for call in generator.calls] == [
         "forge_blind_v4_requirements",
         "forge_blind_v4_requirements_review",
+        "forge_blind_v4_requirements",
+        "forge_blind_v4_requirements_review",
+        "forge_blind_v4_requirements",
+        "forge_blind_v4_requirements_review",
         "forge_blind_v4_oracle",
         "forge_blind_v4_oracle_review",
     ]
@@ -128,18 +158,18 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert "never include confirming observations as findings" in generator.calls[1][
         "instructions"
     ]
-    assert "remaining logically satisfiable in principle" in generator.calls[0][
+    assert "logically satisfiable in principle" in generator.calls[2][
         "instructions"
     ]
     assert "importable main(argv: list[str] | None = None) -> int" in generator.calls[
         0
     ]["instructions"]
-    oracle_request = generator.calls[2]["input_text"]
+    oracle_request = generator.calls[6]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in oracle_request
     assert "core/forge" not in oracle_request
     assert "candidate implementation" not in oracle_request.lower()
-    assert "lexically inside each test function" in generator.calls[2]["instructions"]
-    review_request = generator.calls[3]["input_text"]
+    assert "lexically inside each test function" in generator.calls[6]["instructions"]
+    review_request = generator.calls[7]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in review_request
     assert _oracle_payload()["oracle_py"] in review_request
 
@@ -250,7 +280,12 @@ def test_one_shot_producer_regenerates_oracle_rejected_by_independent_review(tmp
     schemas = [call["output_schema_name"] for call in generator.calls]
     assert schemas.count("forge_blind_v4_oracle") == 2
     assert schemas.count("forge_blind_v4_oracle_review") == 2
-    assert "independent oracle review rejected" in generator.calls[4]["input_text"]
+    oracle_calls = [
+        call
+        for call in generator.calls
+        if call["output_schema_name"] == "forge_blind_v4_oracle"
+    ]
+    assert "independent oracle review rejected" in oracle_calls[1]["input_text"]
 
 
 def test_one_shot_producer_regenerates_case_set_rejected_by_requirement_review(tmp_path):
@@ -281,9 +316,14 @@ def test_one_shot_producer_regenerates_case_set_rejected_by_requirement_review(t
 
     assert len(bundle.cases) == 3
     schemas = [call["output_schema_name"] for call in generator.calls]
-    assert schemas.count("forge_blind_v4_requirements") == 2
-    assert schemas.count("forge_blind_v4_requirements_review") == 2
-    assert "independent requirement review rejected" in generator.calls[2]["input_text"]
+    assert schemas.count("forge_blind_v4_requirements") == 4
+    assert schemas.count("forge_blind_v4_requirements_review") == 4
+    requirement_calls = [
+        call
+        for call in generator.calls
+        if call["output_schema_name"] == "forge_blind_v4_requirements"
+    ]
+    assert "independent requirement review rejected" in requirement_calls[1]["input_text"]
 
 
 def test_oracle_preflight_rejects_discarded_entrypoint_return_value():

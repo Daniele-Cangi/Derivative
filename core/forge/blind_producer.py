@@ -101,7 +101,7 @@ def produce_and_freeze_blind_bundle(
         )
     )
     try:
-        raw_cases, requirement_validation = _generate_requirement_cases(
+        raw_cases = _generate_requirement_cases(
             generator,
             resolved_model,
             config,
@@ -112,7 +112,6 @@ def produce_and_freeze_blind_bundle(
             staging=staging,
             raw_cases=raw_cases,
             config=config,
-            requirement_validation=requirement_validation,
         )
         (staging / "cases.json").write_bytes(
             (json.dumps(dataset, indent=2, sort_keys=True) + "\n").encode("utf-8")
@@ -123,8 +122,9 @@ def produce_and_freeze_blind_bundle(
             provenance=BlindFreezeProvenance(
                 producer=f"OpenAI Responses API isolated producer ({resolved_model})",
                 requirements_origin=(
-                    "Fresh one-shot generation from a domain-neutral benchmark brief; "
-                    "no Forge source, generated artifact, or prior blind case was supplied."
+                    "Separate stateless generation and review requests per requirement "
+                    "from a domain-neutral benchmark brief; no Forge source, generated "
+                    "artifact, or prior blind case was supplied."
                 ),
                 oracle_origin=(
                     "Separate stateless generation and review requests per verified "
@@ -168,90 +168,131 @@ def _generate_requirement_cases(
     generator: TextGenerator,
     model: str,
     config: BlindProducerConfig,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> list[dict[str, Any]]:
+    statuses = [
+        *([TERMINAL_VERIFIED] * config.verified_cases),
+        *([TERMINAL_VALIDATION_FAILED] * config.validation_failed_cases),
+        *([TERMINAL_INFEASIBLE_PROVEN] * config.infeasible_cases),
+    ]
+    cases: list[dict[str, Any]] = []
+    for index, status in enumerate(statuses, start=1):
+        cases.append(
+            _generate_requirement_case(
+                generator=generator,
+                model=model,
+                config=config,
+                index=index,
+                expected_status=status,
+                accepted_cases=cases,
+            )
+        )
+    error = _case_set_error(cases, config)
+    if error is not None:
+        raise ValueError(
+            "Requirement producer assembled an invalid case set; "
+            "rejection_classes=assembled_case_set"
+        )
+    return cases
+
+
+def _generate_requirement_case(
+    *,
+    generator: TextGenerator,
+    model: str,
+    config: BlindProducerConfig,
+    index: int,
+    expected_status: str,
+    accepted_cases: list[dict[str, Any]],
+) -> dict[str, Any]:
     schema = {
         "type": "object",
         "properties": {
-            "cases": {
-                "type": "array",
-                "minItems": config.total_cases,
-                "maxItems": config.total_cases,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "requirement": {"type": "string"},
-                        "expected_terminal_status": {
-                            "type": "string",
-                            "enum": [
-                                TERMINAL_VERIFIED,
-                                TERMINAL_VALIDATION_FAILED,
-                                TERMINAL_INFEASIBLE_PROVEN,
-                            ],
-                        },
-                        "tags": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "minItems": 2,
-                            "maxItems": 6,
-                        },
+            "case": {
+                "type": "object",
+                "properties": {
+                    "requirement": {"type": "string"},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                        "maxItems": 6,
                     },
-                    "required": ["requirement", "expected_terminal_status", "tags"],
-                    "additionalProperties": False,
                 },
+                "required": ["requirement", "tags"],
+                "additionalProperties": False,
             }
         },
-        "required": ["cases"],
+        "required": ["case"],
         "additionalProperties": False,
     }
     feedback = ""
     rejection_classes: list[str] = []
     for _ in range(config.max_generation_attempts):
+        previous_requirements = [
+            str(item["requirement"])
+            for item in accepted_cases
+        ]
         response = generator(
             model=model,
-            max_output_tokens=7000,
-            instructions=_requirement_producer_instructions(config),
+            max_output_tokens=1800,
+            instructions=_requirement_producer_instructions(
+                config,
+                expected_status,
+                index,
+            ),
             input_text=(
-                "Create the frozen benchmark case definitions now. Do not include oracle code."
+                f"Create benchmark slot {index} of {config.total_cases}.\n"
+                f"Required terminal status: {expected_status}.\n"
+                "Previously accepted requirements that must not be repeated:\n"
+                + json.dumps(previous_requirements, indent=2)
+                + "\nDo not include oracle code."
                 + feedback
             ),
             output_schema=schema,
             output_schema_name=f"{config.schema_namespace}_requirements",
         )
-        payload = _parse_json_object(response, "requirement producer")
-        cases = payload.get("cases")
-        error = _case_set_error(cases, config)
+        payload = _parse_json_object(response, f"requirement producer slot {index}")
+        raw_case = payload.get("case")
+        error = _single_case_error(raw_case, accepted_cases)
         if error is None:
-            review = _review_requirement_cases(
+            candidate = {
+                **dict(raw_case),
+                "expected_terminal_status": expected_status,
+            }
+            review = _review_requirement_case(
                 generator=generator,
                 model=model,
-                cases=list(cases),
+                case=candidate,
+                index=index,
                 schema_namespace=config.schema_namespace,
             )
             review_error = requirement_review_error(review)
             if review_error is None:
-                return list(cases), {
+                candidate["_requirement_validation"] = {
                     "static_checks_passed": True,
                     "independent_review_passed": True,
                     "review_model": model,
                     "findings": [],
                 }
+                return candidate
             rejection_classes.append("independent_review")
             error = review_error
         else:
-            rejection_classes.append("static_case_set")
-        feedback = f"\nThe previous response was rejected: {error}. Return a complete replacement."
+            rejection_classes.append("static_case")
+        feedback = f"\nThe previous response was rejected: {error}. Return a replacement."
     classes = ",".join(sorted(set(rejection_classes))) or "unknown"
     raise ValueError(
-        "Requirement producer failed validation; "
+        f"Requirement producer failed validation for slot {index}; "
         f"rejection_classes={classes}"
     )
 
 
-def _review_requirement_cases(
+def _review_requirement_case(
     *,
     generator: TextGenerator,
     model: str,
-    cases: list[dict[str, Any]],
+    case: dict[str, Any],
+    index: int,
     schema_namespace: str,
 ) -> dict[str, Any]:
     schema = {
@@ -267,17 +308,13 @@ def _review_requirement_cases(
         "required": ["approved", "findings"],
         "additionalProperties": False,
     }
-    indexed_cases = [
-        {"index": index, **case}
-        for index, case in enumerate(cases, start=1)
-    ]
     response = generator(
         model=model,
-        max_output_tokens=2400,
+        max_output_tokens=1200,
         instructions=requirement_reviewer_instructions(),
         input_text=(
-            "Review this complete candidate set before any oracle is authored:\n"
-            + json.dumps(indexed_cases, indent=2, sort_keys=True)
+            "Review this candidate before any oracle is authored:\n"
+            + json.dumps({"index": index, **case}, indent=2, sort_keys=True)
         ),
         output_schema=schema,
         output_schema_name=f"{schema_namespace}_requirements_review",
@@ -292,12 +329,14 @@ def _materialize_cases_and_oracles(
     staging: Path,
     raw_cases: list[dict[str, Any]],
     config: BlindProducerConfig,
-    requirement_validation: dict[str, Any],
 ) -> list[dict[str, Any]]:
     dataset: list[dict[str, Any]] = []
     for index, item in enumerate(raw_cases, start=1):
         case_id = f"{config.case_prefix}-{index:03d}"
         status = str(item["expected_terminal_status"])
+        requirement_validation = item.get("_requirement_validation")
+        if not isinstance(requirement_validation, dict):
+            raise ValueError(f"Requirement validation evidence missing for {case_id}.")
         item_tags = [
             str(tag).strip()
             for tag in item["tags"]
@@ -308,7 +347,7 @@ def _materialize_cases_and_oracles(
             "requirement": str(item["requirement"]).strip(),
             "expected_terminal_status": status,
             "tags": [config.benchmark_tag, *item_tags],
-            "requirement_validation": requirement_validation,
+            "requirement_validation": dict(requirement_validation),
         }
         if status == TERMINAL_VERIFIED:
             relative_oracle = Path("oracles") / case_id / "oracle.py"
@@ -463,6 +502,28 @@ def _case_set_error(cases: object, config: BlindProducerConfig) -> str | None:
     return None
 
 
+def _single_case_error(
+    case: object,
+    accepted_cases: list[dict[str, Any]],
+) -> str | None:
+    if not isinstance(case, dict):
+        return "case must be an object"
+    requirement = str(case.get("requirement", "")).strip()
+    if len(requirement) < 80:
+        return "requirement must be explicit and at least 80 characters"
+    normalized = " ".join(requirement.lower().split())
+    accepted = {
+        " ".join(str(item["requirement"]).lower().split())
+        for item in accepted_cases
+    }
+    if normalized in accepted:
+        return "requirement duplicates a previously accepted case"
+    tags = case.get("tags")
+    if not isinstance(tags, list) or len(tags) < 2:
+        return "case requires at least two tags"
+    return None
+
+
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(raw)
@@ -473,9 +534,28 @@ def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     return payload
 
 
-def _requirement_producer_instructions(config: BlindProducerConfig) -> str:
+def _requirement_producer_instructions(
+    config: BlindProducerConfig,
+    expected_status: str,
+    index: int,
+) -> str:
+    status_guidance = {
+        TERMINAL_VERIFIED: (
+            "The requirement must be objectively feasible and fully specified for independent "
+            "black-box verification."
+        ),
+        TERMINAL_VALIDATION_FAILED: (
+            "The requirement must remain logically satisfiable in principle but contain a "
+            "material ambiguity or universal claim that prevents objective certification."
+        ),
+        TERMINAL_INFEASIBLE_PROVEN: (
+            "The requirement must contain a precise mathematical or finite constraint "
+            "contradiction independent of platform or implementation difficulty."
+        ),
+    }[expected_status]
     return f"""You are an independent software benchmark producer operating without access to Forge source code.
-Create exactly {config.total_cases} new greenfield Python requirements within CLI, library, service-module, and data-pipeline surfaces.
+Create exactly one new greenfield Python requirement for slot {index} of {config.total_cases} within CLI, library, service-module, or
+data-pipeline surfaces. Its required terminal status is {expected_status}. {status_guidance}
 Use only the Python standard library in required implementations. Every verified requirement must declare exact public interfaces,
 input and output behavior, edge cases, deterministic failure behavior, and behavioral tests. Avoid familiar benchmark tasks involving
 semantic versions, JSON Pointer, RFC 3339 parsing, interval merging, generic record sorting, email canonicalization, largest-remainder
@@ -483,9 +563,6 @@ allocation, sensor aggregation, or idempotent event creation. Prefer less common
 Every verified CLI must also declare an importable main(argv: list[str] | None = None) -> int contract whose output is capturable in-process;
 do not define a verified contract that requires subprocess, network, socket, or HTTP-client execution for acceptance. Service-module cases
 must expose callable module interfaces rather than requiring a live server.
-Create exactly {config.verified_cases} feasible verified cases, {config.validation_failed_cases} cases whose claims are materially
-ambiguous or universally unprovable while remaining logically satisfiable in principle, and {config.infeasible_cases} cases with precise
-mathematical or finite constraint contradictions independent of platform behavior, unavailable dependencies, or implementation difficulty.
 Do not label an environmental limitation as formal infeasibility and do not weaken impossible constraints. Do not include solutions,
 implementation hints, test code, oracle details, Markdown, or references to Forge internals.
 Return only the requested structured object."""
