@@ -360,6 +360,11 @@ class RequirementCompiler:
         explicit_callable = bool(
             re.search(r"\bdef\s+[a-z_][a-z0-9_]*\s*\(", lowered)
             or re.search(
+                r"\b(?:function|callable)\s+(?:(?:called|named)\s+)?"
+                r"['\"]?[a-z_][a-z0-9_]*['\"]?\s*\(",
+                lowered,
+            )
+            or re.search(
                 r"\b(?:implement|create|provide|define|write|develop)\b.{0,80}\bfunction\b",
                 lowered,
             )
@@ -393,6 +398,8 @@ class RequirementCompiler:
     ) -> str:
         explicit_module_patterns = (
             r"\bmodule\s+(?:named|called)\s+['\"]?([a-z_][a-z0-9_]*)['\"]?",
+            r"\bin\s+(?:an?\s+)?module\s+(?:(?:named|called)\s+)?"
+            r"['\"]?([a-z_][a-z0-9_]*)['\"]?",
             r"\b(?:create|implement|provide|define|write|develop)\s+(?:an?\s+)?"
             r"(?:python\s+)?['\"]?([a-z_][a-z0-9_]*)['\"]?\s+module\b",
         )
@@ -407,7 +414,7 @@ class RequirementCompiler:
         if target_artifact_type == ArtifactTargetType.CLI:
             cli_match = re.search(
                 r"\b(?:cli|command[- ]line)\s+(?:utility|tool|command)\s+"
-                r"['\"]([a-z_][a-z0-9_]*)['\"]",
+                r"(?:(?:named|called)\s+)?['\"]?([a-z_][a-z0-9_]*)['\"]?",
                 requirement,
                 re.IGNORECASE,
             )

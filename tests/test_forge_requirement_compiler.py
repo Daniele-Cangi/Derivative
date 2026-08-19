@@ -1,3 +1,5 @@
+import pytest
+
 from core.forge.contracts import ArtifactTargetType
 from core.forge.requirement_compiler import RequirementCompiler
 
@@ -256,3 +258,36 @@ def test_universal_proof_scope_distinguishes_open_guarantees_from_properties():
         for atom in exact_cardinality.requirement_atoms
         if "exactly once" in atom.text.lower()
     )
+
+
+@pytest.mark.parametrize(
+    ("requirement", "expected_type", "expected_module"),
+    [
+        (
+            "Implement a verified CLI utility named 'pycolmask' that reads a required CSV file.",
+            ArtifactTargetType.CLI,
+            "pycolmask",
+        ),
+        (
+            "Implement a verified Python library function called 'groupby_runs' in a module "
+            "'pygroupbyrun'. The public function is groupby_runs(iterable) -> list[tuple].",
+            ArtifactTargetType.LIBRARY,
+            "pygroupbyrun",
+        ),
+        (
+            "Implement a verified Python data-pipeline module called 'pyrotatefields' exposing a "
+            "single function rotate_fields(rows, field_order, shift=1) -> list[dict].",
+            ArtifactTargetType.LIBRARY,
+            "pyrotatefields",
+        ),
+    ],
+)
+def test_blind_v5_public_artifact_shapes_are_preserved(
+    requirement,
+    expected_type,
+    expected_module,
+):
+    spec = RequirementCompiler().compile(requirement)
+
+    assert spec.target_artifact_type == expected_type
+    assert spec.public_module == expected_module

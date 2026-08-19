@@ -321,6 +321,61 @@ def test_candidate_compiler_fails_closed_without_live_kernel(json_merge_case):
     assert "unavailable" in candidate.stop_reason.lower()
 
 
+def test_complete_failed_preflight_candidate_is_preserved_for_outer_repair(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+
+    def failing_preflight(files, tests):
+        return {
+            "ran": True,
+            "passed": False,
+            "phase": "tests",
+            "failed_paths": ["tests/test_replaces_json_lists.py"],
+            "source_failed_paths": [],
+            "test_failed_paths": ["tests/test_replaces_json_lists.py"],
+            "failures": [
+                {
+                    "kind": "test_failure",
+                    "path": "tests/test_replaces_json_lists.py",
+                    "message": "one residual assertion failed",
+                }
+            ],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=_JsonMergeKernel(),
+        max_preflight_corrections=0,
+        test_preflight_runner=failing_preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert set(candidate.files) == set(candidate.evidence["planned_paths"])
+    assert candidate.evidence["complete_transaction"] is True
+    assert candidate.evidence["preflight_passed"] is False
+    assert candidate.evidence["handoff_status"] == "validator_repair_required"
+    assert "validator-guided repair" in candidate.stop_reason
+
+    repaired = CoderStage(candidate_compiler=compiler).repair(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+    assert repaired.changed is True
+    compilation = repaired.artifact.artifact_manifest["metadata"]["candidate_compilation"]
+    assert compilation["preflight_passed"] is False
+
+    revalidated = ValidatorStage().validate(repaired.artifact, plan, plan.build_spec)
+    assert revalidated.passed is False
+    assert "adapter_capability_mismatch" in revalidated.failure_signatures
+
+
 def test_candidate_compiler_preserves_sanitized_backend_failure_reason(json_merge_case):
     _, plan, artifact, validation = json_merge_case
     compiler = SubstrateCandidateCompiler(

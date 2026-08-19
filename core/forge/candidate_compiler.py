@@ -315,16 +315,17 @@ class SubstrateCandidateCompiler:
                 path: candidate_files[path]
                 for path in active_paths
             }
-        else:
-            candidate_files = {}
-
         preflight_passed = bool(
             attempts
             and attempts[-1]["preflight"].get("passed", False)
             and set(candidate_files) == set(target_paths)
             and not rejected_paths
         )
-        if not preflight_passed:
+        complete_transaction = bool(
+            set(candidate_files) == set(target_paths)
+            and not rejected_paths
+        )
+        if not complete_transaction:
             candidate_files = {}
 
         evidence = {
@@ -334,8 +335,15 @@ class SubstrateCandidateCompiler:
             "planned_paths": target_paths,
             "accepted_paths": sorted(candidate_files),
             "rejected_paths": sorted(set(rejected_paths)),
-            "complete_transaction": bool(candidate_files),
+            "complete_transaction": complete_transaction,
             "preflight_passed": preflight_passed,
+            "handoff_status": (
+                "preflight_passed"
+                if preflight_passed
+                else "validator_repair_required"
+                if candidate_files
+                else "rejected"
+            ),
             "candidate_attempts": attempts,
             "backend_reason": next(
                 (
@@ -348,18 +356,19 @@ class SubstrateCandidateCompiler:
             "lens_names": [getattr(framing, "lens_name", "") for framing in framings],
         }
         backend_reason = str(evidence["backend_reason"])
+        if preflight_passed:
+            stop_reason = ""
+        elif candidate_files:
+            stop_reason = "Complete candidate transaction requires validator-guided repair."
+        else:
+            stop_reason = backend_reason or "Complete candidate transaction did not pass executable preflight."
         return RepairPatchCandidate(
             backend_name=self.backend_name,
             files=candidate_files,
             evidence=evidence,
             rejected_paths=sorted(set(rejected_paths)),
             available=backend_available,
-            stop_reason=(
-                ""
-                if candidate_files
-                else backend_reason
-                or "Complete candidate transaction did not pass executable preflight."
-            ),
+            stop_reason=stop_reason,
         )
 
     @staticmethod

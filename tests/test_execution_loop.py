@@ -312,6 +312,30 @@ def test_execution_loop_proves_general_logical_contract_contradictions(problem, 
 
 
 @pytest.mark.parametrize(
+    ("problem", "proof_terms"),
+    [
+        (
+            "For every input permutation P, return its inverse I satisfying I[P[i]]=i. The inverse "
+            "must also be a derangement even if P has a fixed point; include the identity permutation.",
+            ("identity permutation", "inverse", "derangement"),
+        ),
+        (
+            "Omit any integer that has already occurred, including duplicate values in the input lists, "
+            "but require the output length to be exactly N and every input element to remain in its "
+            "original relative position.",
+            ("duplicate", "fewer than n", "all n"),
+        ),
+    ],
+)
+def test_execution_loop_proves_finite_witness_contract_contradictions(problem, proof_terms):
+    contradictions = ExecutionLoop()._detect_infeasibility(problem)
+
+    assert contradictions
+    proof = " ".join(contradictions).lower()
+    assert all(term in proof for term in proof_terms)
+
+
+@pytest.mark.parametrize(
     "problem",
     [
         "Build a validator that detects contradictions and rejects invalid input.",

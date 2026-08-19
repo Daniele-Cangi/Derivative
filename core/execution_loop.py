@@ -2567,6 +2567,8 @@ class ExecutionLoop:
         contradictions.extend(self._detect_information_capacity_contradictions(problem))
         contradictions.extend(self._detect_retention_contradictions(problem))
         contradictions.extend(self._detect_logical_contract_contradictions(problem))
+        contradictions.extend(self._detect_permutation_contract_contradictions(problem))
+        contradictions.extend(self._detect_uniqueness_cardinality_contradictions(problem))
         deduped: List[str] = []
         seen: set[str] = set()
         for contradiction in contradictions:
@@ -2622,6 +2624,62 @@ class ExecutionLoop:
                 "decided from a finite prefix; two streams may share every observed value and diverge later."
             )
         return contradictions
+
+    def _detect_permutation_contract_contradictions(self, problem: str) -> List[str]:
+        lowered = " ".join(problem.lower().split())
+        inverse_required = bool(
+            "inverse permutation" in lowered
+            or re.search(r"\bi\s*\[\s*p\s*\[\s*i\s*\]\s*\]\s*=\s*i\b", lowered)
+        )
+        universal_input = bool(
+            re.search(r"\b(?:any|every|all)\s+(?:input\s+)?permutations?\b", lowered)
+        )
+        derangement_required = "derangement" in lowered
+        fixed_point_witness = bool(
+            re.search(r"\bidentity\s+permutation\b|\bfixed\s+points?\b", lowered)
+        )
+        if not all((inverse_required, universal_input, derangement_required, fixed_point_witness)):
+            return []
+        return [
+            "INFEASIBLE: choose the identity permutation as a finite counterexample. Its inverse is "
+            "the identity, so the inverse contract forces I[j] = j for every position, while the "
+            "derangement contract requires I[j] != j for every position."
+        ]
+
+    def _detect_uniqueness_cardinality_contradictions(self, problem: str) -> List[str]:
+        lowered = " ".join(problem.lower().split())
+        duplicate_omission = bool(
+            re.search(
+                r"\b(?:omit|remove|discard|skip)s?\b.{0,80}\b(?:duplicate|already\s+occurred|already\s+seen)\b",
+                lowered,
+            )
+            or re.search(r"\bduplicates?\b.{0,50}\b(?:omit|remove|discard|skip)(?:ped|s)?\b", lowered)
+        )
+        duplicate_domain = bool(
+            re.search(r"\b(?:input|collection|lists?).{0,100}\b(?:duplicate|identical|repeated)\b", lowered)
+            or re.search(r"\b(?:duplicate|identical|repeated).{0,100}\b(?:input|collection|lists?)\b", lowered)
+        )
+        exact_input_cardinality = bool(
+            re.search(
+                r"\b(?:output|result).{0,60}\blength\s+"
+                r"(?:is|must\s+be|equals?|to\s+be)?\s*exactly\s+(?:the\s+total\s+)?n\b",
+                lowered,
+            )
+            or re.search(r"\blength\s+exactly\s+n\b", lowered)
+        )
+        preserve_duplicate_positions = bool(
+            re.search(r"\b(?:each|every)\s+input\s+element\b.{0,100}\b(?:position|present|occurring)\b", lowered)
+            or "original length and position" in lowered
+        )
+        if not all(
+            (duplicate_omission, duplicate_domain, exact_input_cardinality, preserve_duplicate_positions)
+        ):
+            return []
+        return [
+            "INFEASIBLE: choose an input containing two equal values. Uniqueness requires one duplicate "
+            "to be omitted, so the output has fewer than N elements, while the exact-cardinality and "
+            "position contract requires all N input occurrences to remain present."
+        ]
 
     def _detect_cardinality_content_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
