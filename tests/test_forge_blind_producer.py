@@ -486,3 +486,4 @@ def test_frozen_bundle_transport_disables_git_text_normalization():
 
     assert "benchmarks/blind_v3/external_*/** -text" in attributes
     assert "benchmarks/blind_v4/external_*/** -text" in attributes
+    assert "benchmarks/blind_v5/external_*/** -text" in attributes

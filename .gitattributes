@@ -1,2 +1,3 @@
 benchmarks/blind_v3/external_*/** -text
 benchmarks/blind_v4/external_*/** -text
+benchmarks/blind_v5/external_*/** -text
