@@ -1114,6 +1114,9 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert "Path.read_text() performs universal-newline translation" in responses.request[
         "instructions"
     ]
+    assert "already contain decoded Unicode characters" in responses.request[
+        "instructions"
+    ]
 
 
 def test_reasoning_kernel_preserves_sanitized_live_revision_error_detail():

@@ -524,6 +524,95 @@ def test_candidate_correction_targets_lossy_newline_observation():
     assert "normalizes CRLF" in exact_observation
 
 
+def test_candidate_correction_reports_structural_and_unicode_fixture_failures():
+    requirements = SubstrateCandidateCompiler._correction_requirements(
+        {
+            "phase": "syntax",
+            "failures": [
+                {
+                    "path": "tests/test_cli_flow.py",
+                    "kind": "syntax_error",
+                    "line": 7,
+                    "message": "expected an indented block",
+                }
+            ],
+            "stdout": (
+                'expected = value.encode("utf-8").decode("unicode_escape")\n'
+            ),
+            "stderr": "",
+        }
+    )
+
+    assert any(
+        "tests/test_cli_flow.py" in requirement
+        and "behaviorally unvalidated" in requirement
+        for requirement in requirements
+    )
+    assert any(
+        "already hold decoded Unicode" in requirement
+        for requirement in requirements
+    )
+
+
+def test_structural_preflight_does_not_freeze_unexecuted_paths(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _MonotonicCorrectionKernel()
+    calls = 0
+
+    def preflight(files, tests):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            failed_path = artifact.test_paths[0]
+            return {
+                "ran": False,
+                "passed": False,
+                "phase": "syntax",
+                "failed_paths": [failed_path],
+                "source_failed_paths": [],
+                "test_failed_paths": [failed_path],
+                "failures": [
+                    {
+                        "path": failed_path,
+                        "kind": "syntax_error",
+                        "line": 3,
+                        "message": "invalid syntax",
+                    }
+                ],
+            }
+        return {
+            "ran": True,
+            "passed": True,
+            "phase": "tests",
+            "failed_paths": [],
+            "source_failed_paths": [],
+            "test_failed_paths": [],
+            "failures": [],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=1,
+        test_preflight_runner=preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert candidate.files
+    assert kernel.target_history[1] == kernel.target_history[0]
+    assert kernel.context_history[1]["preserve_passing_paths"] == []
+    first_preflight = candidate.evidence["candidate_attempts"][0]["preflight"]
+    assert set(first_preflight["behaviorally_unvalidated_paths"]) == set(
+        kernel.target_history[0]
+    )
+
+
 def test_semantic_preflight_uses_validator_anti_stub_contract(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {

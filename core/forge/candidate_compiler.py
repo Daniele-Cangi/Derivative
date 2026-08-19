@@ -1,4 +1,5 @@
 import ast
+import re
 from typing import Any, Callable
 
 from core.forge.contracts import (
@@ -120,6 +121,8 @@ class SubstrateCandidateCompiler:
                     "When a requirement preserves exact bytes or CRLF/LF/CR line endings, observe output "
                     "with read_bytes(), binary mode, or open(..., newline=''); Path.read_text() normalizes "
                     "newlines and is not valid evidence.",
+                    "Python string literals already contain decoded Unicode; never round-trip them through "
+                    "encode('utf-8').decode('unicode_escape') when constructing fixtures or expectations.",
                     "Invalid-input rejection tests must assert ValueError, TypeError, or SystemExit unless the requirement explicitly defines a return-code contract.",
                     "Do not author manifests, provenance, capability declarations, or validation claims.",
                     "Use requirement evidence terms as implementation or test identifiers where practical.",
@@ -270,7 +273,11 @@ class SubstrateCandidateCompiler:
                 )
                 preflight["impact_expanded_paths"] = impact_expanded_paths
                 failed = list(dict.fromkeys([*failed, *impact_expanded_paths]))
-            active_paths = [path for path in failed if path in target_paths]
+            if preflight.get("phase") not in {"tests", "semantic_contract"}:
+                preflight["behaviorally_unvalidated_paths"] = list(target_paths)
+                active_paths = list(target_paths)
+            else:
+                active_paths = [path for path in failed if path in target_paths]
             if not active_paths:
                 active_paths = list(target_paths)
             current_targets = {
@@ -385,6 +392,20 @@ class SubstrateCandidateCompiler:
             for item in preflight.get("correction_requirements", [])
             if str(item).strip()
         ]
+        for failure in preflight.get("failures", []):
+            if not isinstance(failure, dict):
+                continue
+            kind = str(failure.get("kind", ""))
+            if kind not in {"syntax_error", "import_error", "import_failure"}:
+                continue
+            path = str(failure.get("path", "candidate file"))
+            line = failure.get("line")
+            location = f" at line {line}" if line is not None else ""
+            message = str(failure.get("message", kind))
+            requirements.append(
+                f"{path}: resolve {kind}{location}: {message}. The transaction has not completed "
+                "executable preflight, so all supplied paths remain behaviorally unvalidated."
+            )
         for detail in preflight.get("failure_details", []):
             if not isinstance(detail, dict):
                 continue
@@ -409,5 +430,13 @@ class SubstrateCandidateCompiler:
                 f"{path_label}: replace Path.read_text() output observation with Path.read_bytes(), "
                 "binary mode, or Path.open(encoding='utf-8', newline=''); read_text() normalizes CRLF, "
                 "LF, and CR and therefore cannot verify exact line-ending preservation."
+            )
+        if "unicode_escape" in execution_output and re.search(
+            r"encode\(\s*['\"]utf-8['\"]\s*\)", execution_output
+        ):
+            requirements.append(
+                "Generated Python test fixtures already hold decoded Unicode characters: remove chained "
+                "encode('utf-8').decode('unicode_escape') conversions from inputs and expectations, then "
+                "compare the direct Unicode value or its single UTF-8 encoding."
             )
         return list(dict.fromkeys(requirements))

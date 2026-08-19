@@ -147,7 +147,9 @@ click.Command directly with positional business arguments. Use CliRunner only wh
 Typer decorators on that exact function. If decorators is empty and main accepts argv, invoke main([...]) directly and
 never pass it to CliRunner. When a requirement demands exact byte or CRLF/LF/CR preservation, tests must inspect output
 with read_bytes(), binary mode, or open(..., newline=''); Path.read_text() performs universal-newline translation and
-cannot provide valid evidence for that requirement. When a plan interface declares an ordinary function such as
+cannot provide valid evidence for that requirement. Python string literals already contain decoded Unicode characters;
+never construct fixtures or expectations by chaining encode('utf-8').decode('unicode_escape'), because that corrupts
+non-ASCII text. When a plan interface declares an ordinary function such as
 run() -> int, keep it undecorated and put Click/Typer behavior in a separate main or cli wrapper. A CLI requirement must
 expose a real argparse, Typer, or Click entrypoint and tests must invoke that CLI path with explicit arguments and verify
 exit status plus observable output. A test contract containing cli_entrypoint or cli_flow must invoke the declared CLI
