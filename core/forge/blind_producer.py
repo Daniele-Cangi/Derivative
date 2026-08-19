@@ -463,6 +463,8 @@ input and output behavior, edge cases, deterministic failure behavior, and behav
 semantic versions, JSON Pointer, RFC 3339 parsing, interval merging, generic record sorting, email canonicalization, largest-remainder
 allocation, sensor aggregation, or idempotent event creation. Prefer less common but production-plausible transformations and policies.
 Create exactly {config.verified_cases} feasible verified cases, {config.validation_failed_cases} cases whose claims are materially
-ambiguous or universally unprovable, and {config.infeasible_cases} cases with precise formal contradictions. Do not weaken impossible
-constraints. Do not include solutions, implementation hints, test code, oracle details, Markdown, or references to Forge internals.
+ambiguous or universally unprovable while remaining logically satisfiable in principle, and {config.infeasible_cases} cases with precise
+mathematical or finite constraint contradictions independent of platform behavior, unavailable dependencies, or implementation difficulty.
+Do not label an environmental limitation as formal infeasibility and do not weaken impossible constraints. Do not include solutions,
+implementation hints, test code, oracle details, Markdown, or references to Forge internals.
 Return only the requested structured object."""

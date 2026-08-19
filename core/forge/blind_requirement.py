@@ -24,11 +24,13 @@ def requirement_reviewer_instructions() -> str:
     return """You are an independent blind-benchmark requirement reviewer. You receive only candidate requirement definitions and no
 Forge source, generated implementation, prior benchmark case, or oracle. Approve only if every expected verified case defines an exact
 public Python module and interface, deterministic observable behavior, representative edge cases, and explicit failure behavior without
-contradictions or unspecified algorithms. Expected validation_failed cases must contain a material ambiguity or universal claim that
-prevents objective certification as written. Expected infeasible_proven cases must contain a precise contradiction with a short formal
-basis, not merely a difficult implementation. Reject incorrect terminal labels, overlapping or repeated tasks, hidden implementation
-hints, underspecified verified contracts, and requirements whose stated examples conflict with their rules. Findings must identify the
-candidate index and remain empty when approved. Return only the requested structured object."""
+contradictions or unspecified algorithms. An expected validation_failed case must remain logically satisfiable in principle but contain a
+material ambiguity or universal claim that prevents objective certification as written. An expected infeasible_proven case must contain a
+precise mathematical or finite constraint contradiction independent of platform limitations, dependencies, or implementation difficulty.
+Reject incorrect terminal labels, overlapping or repeated tasks, hidden implementation hints, underspecified verified contracts, and
+requirements whose stated examples conflict with their rules. Do not reject a correctly labeled ambiguous or contradictory case merely
+because it has the intended property, and never include confirming observations as findings. Findings must identify only actual defects,
+must identify the candidate index, and must remain empty when approved. Return only the requested structured object."""
 
 
 def _bounded_finding(value: str) -> str:

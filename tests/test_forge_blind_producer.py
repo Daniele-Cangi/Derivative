@@ -122,6 +122,12 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     ]
     requirement_review_request = generator.calls[1]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in requirement_review_request
+    assert "never include confirming observations as findings" in generator.calls[1][
+        "instructions"
+    ]
+    assert "remaining logically satisfiable in principle" in generator.calls[0][
+        "instructions"
+    ]
     oracle_request = generator.calls[2]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in oracle_request
     assert "core/forge" not in oracle_request
@@ -313,7 +319,9 @@ def test_producer_cli_reports_failure_without_traceback_or_locals(monkeypatch, t
     )
 
     assert result.exit_code == 1
-    assert "Blind production failed: review rejected the candidate" in result.output
+    assert "Blind production failed: production_failed" in result.output
+    assert "No bundle was published" in result.output
+    assert "review rejected the candidate" not in result.output
     assert "Traceback" not in result.output
     assert "raw_cases" not in result.output
 

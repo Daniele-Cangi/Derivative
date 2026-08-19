@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 
@@ -58,7 +59,13 @@ def main(
                 model=model,
             )
     except (FileExistsError, RuntimeError, ValueError) as exc:
-        typer.echo(f"Blind production failed: {exc}", err=True)
+        category = _safe_failure_category(exc)
+        failure_id = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:12]
+        typer.echo(
+            f"Blind production failed: {category}. No bundle was published. "
+            f"Failure id: {failure_id}",
+            err=True,
+        )
         raise typer.Exit(code=1) from None
     estimated_cost, pricing_source = usage.estimated_cost()
     typer.echo("Forge Blind Producer")
@@ -76,6 +83,19 @@ def main(
     )
     typer.echo(f"Pricing source: {pricing_source}")
     typer.echo("Status: frozen_before_execution")
+
+
+def _safe_failure_category(exc: Exception) -> str:
+    message = str(exc)
+    if "Requirement producer failed validation" in message:
+        return "requirement_preflight_failed"
+    if "Oracle producer failed validation" in message:
+        return "oracle_preflight_failed"
+    if isinstance(exc, FileExistsError):
+        return "destination_exists"
+    if isinstance(exc, RuntimeError):
+        return "provider_unavailable"
+    return "production_failed"
 
 
 if __name__ == "__main__":
