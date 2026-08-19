@@ -1,5 +1,5 @@
-import ast
 import json
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -13,6 +13,12 @@ from core.forge.benchmark import (
 )
 from core.forge.blind_benchmark import BlindBenchmarkBundle, load_blind_bundle
 from core.forge.blind_freeze import BlindFreezeProvenance, freeze_blind_bundle
+from core.forge.blind_oracle import (
+    oracle_preflight_error,
+    oracle_producer_instructions,
+    oracle_review_error,
+    oracle_reviewer_instructions,
+)
 from core.model_provider import (
     create_openai_client,
     generate_text,
@@ -28,14 +34,31 @@ TextGenerator = Callable[..., str]
 @dataclass(frozen=True)
 class BlindProducerConfig:
     bundle_id: str
+    benchmark_version: str = "v3"
     verified_cases: int = 6
     validation_failed_cases: int = 3
     infeasible_cases: int = 3
     max_generation_attempts: int = 3
 
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"v[1-9][0-9]*", self.benchmark_version) is None:
+            raise ValueError("Blind benchmark_version must match vN, for example 'v4'.")
+
     @property
     def total_cases(self) -> int:
         return self.verified_cases + self.validation_failed_cases + self.infeasible_cases
+
+    @property
+    def case_prefix(self) -> str:
+        return self.benchmark_version.upper()
+
+    @property
+    def benchmark_tag(self) -> str:
+        return f"blind-{self.benchmark_version}"
+
+    @property
+    def schema_namespace(self) -> str:
+        return f"forge_blind_{self.benchmark_version}"
 
 
 def produce_and_freeze_blind_bundle(
@@ -67,7 +90,7 @@ def produce_and_freeze_blind_bundle(
     generator = text_generator or _live_generator(api_key)
     staging = Path(
         tempfile.mkdtemp(
-            prefix=".blind-v3-stage-",
+            prefix=f".{config.benchmark_tag}-stage-",
             dir=str(destination.parent),
         )
     )
@@ -93,12 +116,13 @@ def produce_and_freeze_blind_bundle(
                     "no Forge source, generated artifact, or prior blind case was supplied."
                 ),
                 oracle_origin=(
-                    "Separate stateless generation request per verified requirement; "
-                    "no Forge source or candidate implementation was supplied."
+                    "Separate stateless generation and review requests per verified "
+                    "requirement; no Forge source or candidate implementation was supplied."
                 ),
                 declaration=(
-                    "Requirements and black-box oracles were generated, statically checked, "
-                    "and sealed in one transaction before any case was executed by Forge."
+                    "Requirements and black-box oracles were generated, causally checked, "
+                    "independently reviewed, and sealed in one transaction before any case "
+                    "was executed by Forge."
                 ),
             ),
             source_urls=[],
@@ -179,7 +203,7 @@ def _generate_requirement_cases(
                 + feedback
             ),
             output_schema=schema,
-            output_schema_name="forge_blind_v3_requirements",
+            output_schema_name=f"{config.schema_namespace}_requirements",
         )
         payload = _parse_json_object(response, "requirement producer")
         cases = payload.get("cases")
@@ -200,22 +224,28 @@ def _materialize_cases_and_oracles(
 ) -> list[dict[str, Any]]:
     dataset: list[dict[str, Any]] = []
     for index, item in enumerate(raw_cases, start=1):
-        case_id = f"V3-{index:03d}"
+        case_id = f"{config.case_prefix}-{index:03d}"
         status = str(item["expected_terminal_status"])
+        item_tags = [
+            str(tag).strip()
+            for tag in item["tags"]
+            if str(tag).strip() and str(tag).strip() != config.benchmark_tag
+        ]
         case = {
             "case_id": case_id,
             "requirement": str(item["requirement"]).strip(),
             "expected_terminal_status": status,
-            "tags": ["blind-v3", *[str(tag).strip() for tag in item["tags"]]],
+            "tags": [config.benchmark_tag, *item_tags],
         }
         if status == TERMINAL_VERIFIED:
             relative_oracle = Path("oracles") / case_id / "oracle.py"
-            oracle_source = _generate_oracle(
+            oracle_source, oracle_validation = _generate_oracle(
                 generator=generator,
                 model=model,
                 case_id=case_id,
                 requirement=case["requirement"],
                 max_attempts=config.max_generation_attempts,
+                schema_namespace=config.schema_namespace,
             )
             oracle_path = staging / relative_oracle
             oracle_path.parent.mkdir(parents=True, exist_ok=True)
@@ -224,6 +254,7 @@ def _materialize_cases_and_oracles(
                 "path": relative_oracle.as_posix(),
                 "timeout_seconds": 30,
             }
+            case["oracle_validation"] = oracle_validation
         dataset.append(case)
     return dataset
 
@@ -235,7 +266,8 @@ def _generate_oracle(
     case_id: str,
     requirement: str,
     max_attempts: int,
-) -> str:
+    schema_namespace: str,
+) -> tuple[str, dict[str, Any]]:
     schema = {
         "type": "object",
         "properties": {"oracle_py": {"type": "string"}},
@@ -247,22 +279,75 @@ def _generate_oracle(
         response = generator(
             model=model,
             max_output_tokens=6000,
-            instructions=_oracle_producer_instructions(),
+            instructions=oracle_producer_instructions(),
             input_text=(
                 f"Case id: {case_id}\nRequirement:\n{requirement}\n"
                 "Produce the complete independent oracle now."
                 + feedback
             ),
             output_schema=schema,
-            output_schema_name="forge_blind_v3_oracle",
+            output_schema_name=f"{schema_namespace}_oracle",
         )
         payload = _parse_json_object(response, f"oracle producer {case_id}")
         source = str(payload.get("oracle_py", ""))
-        error = _oracle_error(source)
+        error = oracle_preflight_error(source)
         if error is None:
-            return source
+            review = _review_oracle(
+                generator=generator,
+                model=model,
+                case_id=case_id,
+                requirement=requirement,
+                source=source,
+                schema_namespace=schema_namespace,
+            )
+            review_error = oracle_review_error(review)
+            if review_error is None:
+                return source, {
+                    "static_checks_passed": True,
+                    "independent_review_passed": True,
+                    "review_model": model,
+                    "findings": [],
+                }
+            error = review_error
         feedback = f"\nThe previous oracle was rejected: {error}. Return a complete replacement."
     raise ValueError(f"Oracle producer failed validation for {case_id}: {feedback.strip()}")
+
+
+def _review_oracle(
+    *,
+    generator: TextGenerator,
+    model: str,
+    case_id: str,
+    requirement: str,
+    source: str,
+    schema_namespace: str,
+) -> dict[str, Any]:
+    schema = {
+        "type": "object",
+        "properties": {
+            "approved": {"type": "boolean"},
+            "findings": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 12,
+            },
+        },
+        "required": ["approved", "findings"],
+        "additionalProperties": False,
+    }
+    response = generator(
+        model=model,
+        max_output_tokens=1800,
+        instructions=oracle_reviewer_instructions(),
+        input_text=(
+            f"Case id: {case_id}\n"
+            f"Frozen requirement:\n{requirement}\n\n"
+            f"Candidate oracle.py:\n{source}"
+        ),
+        output_schema=schema,
+        output_schema_name=f"{schema_namespace}_oracle_review",
+    )
+    return _parse_json_object(response, f"oracle reviewer {case_id}")
 
 
 def _case_set_error(cases: object, config: BlindProducerConfig) -> str | None:
@@ -297,63 +382,6 @@ def _case_set_error(cases: object, config: BlindProducerConfig) -> str | None:
     return None
 
 
-def _oracle_error(source: str) -> str | None:
-    if not source.strip():
-        return "oracle source is empty"
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as exc:
-        return f"oracle syntax error at line {exc.lineno}: {exc.msg}"
-
-    test_functions = [
-        node
-        for node in tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith("test_")
-    ]
-    if len(test_functions) < 3:
-        return "oracle must define at least three independent pytest tests"
-    if any(
-        isinstance(node, ast.Assert)
-        and isinstance(node.test, ast.Constant)
-        and node.test.value is True
-        for node in ast.walk(tree)
-    ):
-        return "oracle contains trivial assert True"
-    semantic_checks = sum(
-        1
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assert) or _is_pytest_raises(node)
-    )
-    if semantic_checks < 3:
-        return "oracle must contain at least three semantic assertions or exception checks"
-    if any(isinstance(node, ast.Pass) for test in test_functions for node in ast.walk(test)):
-        return "oracle test contains pass"
-
-    forbidden_imports = {"core", "forge", "subprocess", "socket", "requests", "httpx"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names = {alias.name.split(".", 1)[0] for alias in node.names}
-        elif isinstance(node, ast.ImportFrom):
-            names = {(node.module or "").split(".", 1)[0]}
-        else:
-            continue
-        overlap = names & forbidden_imports
-        if overlap:
-            return "oracle imports forbidden module(s): " + ", ".join(sorted(overlap))
-    return None
-
-
-def _is_pytest_raises(node: ast.AST) -> bool:
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "pytest"
-        and node.func.attr == "raises"
-    )
-
-
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(raw)
@@ -375,13 +403,3 @@ Create exactly {config.verified_cases} feasible verified cases, {config.validati
 ambiguous or universally unprovable, and {config.infeasible_cases} cases with precise formal contradictions. Do not weaken impossible
 constraints. Do not include solutions, implementation hints, test code, oracle details, Markdown, or references to Forge internals.
 Return only the requested structured object."""
-
-
-def _oracle_producer_instructions() -> str:
-    return """You are an independent black-box acceptance-test producer. You receive one frozen natural-language requirement and no
-Forge source code or generated implementation. Return a complete pytest module testing only the public contract. The package under
-test is the current working directory and its src directory is already on PYTHONPATH. Import the exact public module/function named
-by the requirement. Define at least three tests with non-trivial fixtures, direct target invocation, concrete semantic assertions,
-edge cases, and required exception checks. Tests must be deterministic, cross-platform, offline, and standard-library-only except
-for pytest. Do not use subprocesses, sockets, HTTP clients, timing assumptions, skip/xfail, assert True, source inspection, manifest
-inspection, Forge modules, generated tests, or implementation-private names. Return only the requested structured object."""

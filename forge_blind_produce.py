@@ -18,6 +18,7 @@ app = typer.Typer(
 def main(
     output_root: str = typer.Argument(..., help="New directory for the sealed bundle."),
     bundle_id: str = typer.Option(..., "--bundle-id"),
+    benchmark_version: str = typer.Option("v3", "--benchmark-version"),
     model: str | None = typer.Option(None, "--model"),
     verified_cases: int = typer.Option(6, "--verified-cases", min=1),
     validation_failed_cases: int = typer.Option(3, "--validation-failed-cases", min=1),
@@ -30,6 +31,7 @@ def main(
             repository_root=repository_root,
             config=BlindProducerConfig(
                 bundle_id=bundle_id,
+                benchmark_version=benchmark_version,
                 verified_cases=verified_cases,
                 validation_failed_cases=validation_failed_cases,
                 infeasible_cases=infeasible_cases,
