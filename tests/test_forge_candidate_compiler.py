@@ -74,6 +74,17 @@ class _UnavailableKernel:
     use_live_model = False
 
 
+class _LiveUnavailableKernel:
+    use_live_model = True
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        return {
+            "status": "unavailable",
+            "files": [],
+            "reason": "Live revision failed: BadRequestError: invalid schema",
+        }
+
+
 class _ExtraPathKernel(_JsonMergeKernel):
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         payload = super().propose_code_revision(
@@ -308,6 +319,28 @@ def test_candidate_compiler_fails_closed_without_live_kernel(json_merge_case):
     assert candidate.available is False
     assert candidate.files == {}
     assert "unavailable" in candidate.stop_reason.lower()
+
+
+def test_candidate_compiler_preserves_sanitized_backend_failure_reason(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=_LiveUnavailableKernel(),
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    expected = "Live revision failed: BadRequestError: invalid schema"
+    assert candidate.available is False
+    assert candidate.files == {}
+    assert candidate.stop_reason == expected
+    assert candidate.evidence["backend_reason"] == expected
+    assert candidate.evidence["candidate_attempts"][0]["reason"] == expected
 
 
 def test_candidate_correction_preserves_passing_files(json_merge_case):

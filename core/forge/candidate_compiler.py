@@ -170,6 +170,7 @@ class SubstrateCandidateCompiler:
                 lens_framings=framings,
             )
             status = str(payload.get("status", "candidate"))
+            reason = " ".join(str(payload.get("reason", "")).split())[:240]
             if status != "unavailable":
                 backend_available = True
             else:
@@ -177,6 +178,7 @@ class SubstrateCandidateCompiler:
                     {
                         "attempt": attempt + 1,
                         "status": status,
+                        "reason": reason,
                         "target_paths": list(active_paths),
                         "omitted_paths": list(active_paths),
                         "rejected_paths": sorted(set(rejected_paths)),
@@ -205,6 +207,7 @@ class SubstrateCandidateCompiler:
             attempt_record: dict[str, Any] = {
                 "attempt": attempt + 1,
                 "status": status,
+                "reason": reason,
                 "target_paths": list(active_paths),
                 "preserved_paths": sorted(set(target_paths) - set(active_paths)),
                 "omitted_paths": omitted,
@@ -293,8 +296,17 @@ class SubstrateCandidateCompiler:
             "complete_transaction": bool(candidate_files),
             "preflight_passed": preflight_passed,
             "candidate_attempts": attempts,
+            "backend_reason": next(
+                (
+                    str(attempt.get("reason", ""))
+                    for attempt in reversed(attempts)
+                    if str(attempt.get("reason", "")).strip()
+                ),
+                "",
+            ),
             "lens_names": [getattr(framing, "lens_name", "") for framing in framings],
         }
+        backend_reason = str(evidence["backend_reason"])
         return RepairPatchCandidate(
             backend_name=self.backend_name,
             files=candidate_files,
@@ -304,7 +316,8 @@ class SubstrateCandidateCompiler:
             stop_reason=(
                 ""
                 if candidate_files
-                else "Complete candidate transaction did not pass executable preflight."
+                else backend_reason
+                or "Complete candidate transaction did not pass executable preflight."
             ),
         )
 
