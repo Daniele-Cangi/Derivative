@@ -1,0 +1,297 @@
+[
+  {
+    "case_id": "V4-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V4-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'revwords', must accept exactly two positional arguments: (1) the path to a UTF-8 encoded text file, and (2) an output file path. It reads the input file line by line; for each non-empty line, it outputs the line to the output file with every word (defined as a sequence of non-whitespace characters separated by ASCII whitespace only: space, tab, carriage return, or form feed) reversed in place (word order preserved, only each word's character order reversed), and original line endings preserved (handle any of CRLF, LF, or CR). Empty lines must be written unchanged. If the input path is '-', read from standard input; if the output path is '-', write to standard output. If given an argument of '-' for both input and output, raise a usage error. If insufficient arguments or too many arguments are given, print a deterministic single-line usage message to stderr: 'usage: revwords INPUT OUTPUT' and return exit status 2. If the input file does not exist or is not readable when not '-', print a deterministic error message to stderr 'Input file not found or unreadable: PATH' and return exit status 1. Any other error returns exit status 1. Test cases must cover at minimum: reading a file with mixed line endings, words containing non-ASCII Unicode, empty files, empty lines, input path of '-', output path of '-', and improper argument counts.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "text-processing",
+      "edge-cases",
+      "unicode",
+      "deterministic-io",
+      "stdin-stdout"
+    ]
+  },
+  {
+    "case_id": "V4-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V4-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'dedupcase', must accept exactly two positional arguments: (1) the path to a UTF-8 encoded text file, and (2) an output file path. It reads the input file line by line; it writes out each line to the output file unless a case-insensitive match of that line has already been written, in which case it skips this line. Leading and trailing whitespace is ignored for comparison, but preserved in the output. Original line endings (CRLF, LF, or CR) must be preserved for each written line. If the input file does not exist or is unreadable and not '-', print a deterministic error message to stderr: 'Input file not found or unreadable: PATH' and return exit status 1. If insufficient or too many arguments are given, print a deterministic single-line usage message to stderr: 'usage: dedupcase INPUT OUTPUT' and return exit status 2. If the input path is '-', read from standard input; if the output path is '-', write to standard output. If both are '-', raise a usage error with exit status 2 and the usage message. Any other error returns exit status 1. Test cases must cover: files with mixed case duplicate lines, identical lines differing only by leading/trailing whitespace, files with mixed line endings, files containing Unicode characters, empty input files, input/output of '-', and improper argument counts.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "verified",
+      "standard-library-only",
+      "file-processing",
+      "deduplication",
+      "line-processing"
+    ]
+  },
+  {
+    "case_id": "V4-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V4-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'colstats', accepts exactly two positional arguments: (1) the path to a UTF-8 encoded, tab-delimited text file, and (2) the output file path. Each line in the input represents a row of values. The CLI must read the file line by line and compute the minimum, maximum, mean (to six decimal places), and non-empty count for each column, treating empty fields as missing (ignore in statistics). Non-numeric fields (excluding empty) must trigger a deterministic error on the first occurrence: print to stderr 'Non-numeric value in column N: VALUE' (N is 1-based column index; VALUE is the literal field contents), and return exit status 1. Columns are determined by the maximum number of fields in any row; missing trailing fields are treated as empty. The output file (or stdout if output path is '-') must be written as tab-delimited with a header: 'column\tcount\tmin\tmax\tmean\\n', followed by one line per column (columns numbered 1, 2, ...), with values left empty if the count is zero for that column. If input path is '-', read from stdin; if both input and output path are '-', raise a usage error. If the input file does not exist or unreadable and not '-', print a deterministic error 'Input file not found or unreadable: PATH' to stderr and return exit status 1. If the argument count is incorrect, print 'usage: colstats INPUT OUTPUT' to stderr and return exit status 2. Any other error returns exit status 1. Behavioral test cases must cover: (a) input with non-numeric values in different columns, (b) tab-delimited rows of unequal length, (c) empty input file, (d) files with blank fields and blank lines, (e) input or output path of '-', (f) input file not found, (g) both input and output as '-', and (h) improper argument counts.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "verified",
+      "tab-delimited",
+      "columnar-stats",
+      "stdin",
+      "stdout"
+    ]
+  },
+  {
+    "case_id": "V4-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V4-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'squeeze', must accept exactly two positional arguments: (1) a path to a UTF-8 encoded text file, and (2) an output file path. The CLI reads the input line by line. For each line, it collapses all runs of ASCII whitespace (space, tab, carriage return, form feed; not newline) to a single space character, but preserves all leading and trailing whitespace exactly as present in the input. Original line endings (CRLF, LF, or CR) must be preserved per line in the output. Empty lines must be written unchanged. If the input path is '-', read from standard input; if the output path is '-', write to standard output. If both input and output are '-', print to stderr the line: 'usage: squeeze INPUT OUTPUT' and return exit status 2. If an incorrect number of arguments is supplied, print the same usage message to stderr and return exit status 2. If the input file does not exist or is unreadable (e.g., permission denied, not a file), print to stderr the message: 'Input file not found or unreadable: PATH' (substitute PATH with the provided input path) and return exit status 1. If the output file path exists and is not writable, or cannot be created or written to (e.g., permission denied, directory full), print to stderr: 'Output file not writable: PATH' and return exit status 1. If any other error occurs during processing or I/O, print to stderr: 'Error: MESSAGE' where MESSAGE is a deterministic str() of the triggering exception, and return exit status 1. On success, return exit status 0. Behavioral test cases must include: (a) input with lines containing multiple sequential ASCII whitespace (all variants), (b) input mixing different line endings, (c) lines with leading/trailing whitespace and runs of internal whitespace, (d) input from stdin and output to stdout, (e) input file missing or permission denied, (f) output path unwritable or output directory missing, (g) both input and output as '-', (h) improper argument counts, and (i) an empty input file.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "text-transformation",
+      "verified",
+      "standard-library-only",
+      "file-io",
+      "whitespace-collapse"
+    ]
+  },
+  {
+    "case_id": "V4-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V4-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'colpad', must accept exactly three positional arguments: (1) the path to a UTF-8 encoded, tab-delimited text file, (2) the output file path, and (3) a positive integer N. The CLI reads the input file line by line; for each line, if it contains fewer than N columns (columns are fields separated by tab characters, \\t), the line is padded at the end with empty fields so that it has exactly N columns. If the line contains more than N columns, the extra columns are removed so that only the first N columns remain. Line endings (LF, CRLF, or CR) of the input must be preserved exactly in the output. If the input file is empty, the output file must also be empty. If the input path is '-', read from standard input; if the output path is '-', write to standard output. If both input and output are '-', print a usage error as 'usage: colpad INPUT OUTPUT N' to stderr and return exit status 2. If the argument count is incorrect, print 'usage: colpad INPUT OUTPUT N' to stderr and return exit status 2. If the provided N is not a positive integer, print 'Error: N must be a positive integer' to stderr and return exit status 1. If the input file does not exist or is unreadable and not '-', print 'Input file not found or unreadable: PATH' to stderr and return exit status 1. If the output path is not writable or cannot be created, print 'Output file not writable: PATH' to stderr and return exit status 1. On any other error, print 'Error: MESSAGE' (where MESSAGE is str(exception)) to stderr and return exit status 1. On success, return exit status 0. Behavioral test cases must include: (a) lines with fewer, exactly, and more than N columns, (b) files using LF, CRLF, and CR line endings, (c) empty input file, (d) non-integer and negative or zero N, (e) input from stdin and output to stdout, (f) missing or unwritable paths, (g) both input and output as '-', (h) improper argument counts.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "tabular-data",
+      "column-normalization",
+      "padding",
+      "truncate",
+      "line-ending-preservation"
+    ]
+  },
+  {
+    "case_id": "V4-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V4-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Design a verified Python CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'rstrim', accepts exactly two positional arguments: (1) the path to a UTF-8 encoded text file, (2) the output file path. The tool reads the input file line by line. For each line, it removes all ASCII whitespace characters (space, tab, carriage return, form feed) strictly from the end of each line (trailing only; leading whitespace and internal whitespace are preserved), leaving the original line ending (LF, CRLF, or CR) intact. If a line is entirely whitespace (including line ending), it must be output as only the preserved line ending (i.e., all content prior to the line ending is removed). If the input path is '-', read from standard input; if the output path is '-', write to standard output. If both input and output are '-', print to stderr 'usage: rstrim INPUT OUTPUT' and return exit status 2. If insufficient or too many arguments are supplied, print the same usage message to stderr and exit with status 2. If the input file does not exist or is not readable and is not '-', print to stderr 'Input file not found or unreadable: PATH' and return exit status 1. If the output path is not writable or output file cannot be created, print to stderr 'Output file not writable: PATH' and return exit status 1. Any other error prints 'Error: MESSAGE' (where MESSAGE is the deterministic str(exception)) to stderr and returns exit status 1. On success, return exit status 0. Behavioral tests must cover: (a) lines with only trailing whitespace, (b) lines with only whitespace before a line ending, (c) preservation of leading whitespace, (d) input with mixed or unusual line endings, (e) use of input or output as '-', (f) improper argument counts, (g) missing input, (h) unwritable output, (i) empty input file.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "text-manipulation",
+      "whitespace",
+      "file-io",
+      "line-ending-preservation",
+      "edge-case-handling"
+    ]
+  },
+  {
+    "case_id": "V4-007",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. The CLI, named 'splitmap', accepts exactly three positional arguments: (1) a non-empty UTF-8 encoded text file path, (2) an existing directory path, (3) a one-word 'mode' which must be either 'prefix' or 'suffix'. The CLI reads the input file line by line and for each line writes a copy to a new file in the directory: if mode is 'prefix', use the first word (sequence of non-whitespace, as delimited by space, tab, CR, or FF) of the line as the output filename (with UTF-8 encoding and '.txt' extension); if 'suffix', use the last word. Multiple lines mapping to the same file must have their full lines appended (in input order). All lines must be written with their original line endings preserved. If any line is empty or consists solely of whitespace, behavior is undefined (no requirement stated) regarding file assignment. The CLI must return exit status 0 on success. If the input file does not exist or is not readable, print 'Input file not found or unreadable: PATH' to stderr and exit 1. If the directory path does not exist or is not a directory or not writable, print 'Directory not writable: PATH' to stderr and exit 1. If mode is neither 'prefix' nor 'suffix', print 'Invalid mode: MODE' to stderr and exit 2. If the wrong number of arguments is given, print 'usage: splitmap INPUT DIR MODE' to stderr and exit 2. Any other error prints 'Error: MESSAGE' (MESSAGE is str(exception)) to stderr and exits 1. Test cases must exercise: lines with repeated prefix or suffix words, input with non-ASCII characters, mixed line endings, unwritable or missing directory, missing or unreadable input file, improper argument counts or mode, and at least one file containing only a single line. It is required, but undefined, what occurs if a word chosen for a filename is empty, only whitespace, or contains characters invalid for filenames on some platforms.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "python",
+      "validation_failed",
+      "determinism_required",
+      "edge-cases-required"
+    ]
+  },
+  {
+    "case_id": "V4-008",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'filtlatin', accepts exactly two positional arguments: (1) the path to a UTF-8 encoded text file, and (2) the output file path. The tool reads the input file line by line. For each line, the CLI must write the line to the output only if every word (a sequence of non-whitespace characters separated by ASCII whitespace: space, tab, carriage return, or form feed) contains at least one character from the Latin script as classified by the Unicode standard. If any word on the line does not satisfy this property, the entire line is omitted from output. Input lines that are empty or contain only whitespace must be passed to the output unchanged. If the input path is '-', read from standard input; if the output path is '-', write to standard output. If both input and output are '-', print to stderr 'usage: filtlatin INPUT OUTPUT' and return exit status 2. If insufficient or too many arguments are supplied, print the same usage message to stderr and exit with status 2. If the input file does not exist or is not readable and is not '-', print 'Input file not found or unreadable: PATH' to stderr and return exit status 1. If the output path is not writable or cannot be created, print 'Output file not writable: PATH' to stderr and return exit status 1. Any other error prints 'Error: MESSAGE' (where MESSAGE is str(exception)) to stderr and returns exit status 1. On success, return exit status 0. Behavioral tests must cover: (a) lines with words mixing Latin and non-Latin scripts, (b) lines where at least one word contains no Latin characters, (c) lines with only non-word content, (d) empty lines or lines with only spaces, (e) input or output as '-', (f) input file not found or unreadable, (g) output path unwritable, (h) improper argument counts. However, since the definition of what constitutes a character 'from the Latin script as classified by the Unicode standard' may be interpreted inconsistently depending on the Unicode version and character property support in the Python standard library, and no explicit algorithm is specified, it is not possible to determine objectively for all possible input whether a character is Latin. This prevents objective certification, but is technically logically satisfiable in principle.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "validation_failed",
+      "stdlib-only",
+      "text-filtering",
+      "unicode",
+      "ambiguous-classification"
+    ]
+  },
+  {
+    "case_id": "V4-009",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Design a verified CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'globfind', accepts exactly three positional arguments: (1) a UTF-8 encoded input file path, (2) a search pattern string, and (3) an output file path. The tool reads the input file line by line and writes to the output file all lines that match the specified pattern. The pattern must be interpreted according to the rules of glob syntax as supported by the Python standard library, matching the full line (excluding its line ending). All original line endings (CRLF, LF, or CR) must be preserved in the output. Lines with only a line ending and no content must be matched (or not) according to how the pattern applies to the empty string and included or excluded respectively. If the input path is '-', read from standard input; if the output path is '-', write to standard output. If both are '-', print 'usage: globfind INPUT PATTERN OUTPUT' to stderr and return exit status 2. If insufficient or too many arguments are given, print the exact usage message to stderr and exit status 2. If the input file does not exist or is unreadable and not '-', print 'Input file not found or unreadable: PATH' to stderr and return exit status 1. If the output path is unwritable or cannot be created, print 'Output file not writable: PATH' to stderr and return exit status 1. Any other error prints 'Error: MESSAGE' (where MESSAGE is str(exception)) to stderr and returns exit status 1. On success, return exit status 0. Test cases must exercise: patterns matching everything, nothing, special glob metacharacters including '?', '*', and '[]', empty input file, input from stdin, output to stdout, improper argument counts, missing or unwritable files. However, because glob matching of arbitrary Unicode lines and patterns may have variable results depending on Python standard library implementation and locale settings, and because the full behavior of glob syntax on all lines is not precisely defined (e.g., how differences in case sensitivity or character normalization affect matches is not specified), it is not possible to objectively certify correctness for all possible inputs, even though the requirement is logically satisfiable in principle.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V4-010",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Design a verified Python CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'uniqpair', accepts exactly one positional argument: the path to a UTF-8 encoded text file containing zero or more lines. The CLI must print to standard output all pairs of distinct lines (preserving both input line order and line endings, considering empty lines as valid and distinct) such that no two pairs share any line in common and the set of all printed pairs is both maximal (no additional pairs can be added without violating this property) and unique (no equivalent set exists for a different pairing). If the input contains an odd number of lines, the unpaired line must be omitted from output. Output format: each printed line must consist of the two original lines concatenated with a tab character (\\t) between them, exactly preserving line order and endings within the pair. If there are no pairs (input has fewer than two lines), output nothing. If the argument is missing or extra arguments are supplied, print to stderr 'usage: uniqpair INPUT' and return exit status 2. If the input file does not exist or is not readable, print 'Input file not found or unreadable: PATH' to stderr and return exit status 1. Any other error prints 'Error: MESSAGE' (where MESSAGE is str(exception)) to stderr and returns status 1. On success, return 0. Behavioral tests must include: (a) empty file, (b) even number of non-empty distinct lines, (c) odd number of lines, (d) input with duplicate or blank lines, (e) mixed and preserved line endings, (f) file not found, (g) improper argument counts. This requirement is infeasible because for input with any repeated lines, there is no unique way to produce a maximal set of pairs where no two pairs share any line. Multiple equivalent maximal sets exist, contradicting the requirement for global uniqueness despite the constraints for maximality, pairwise disjointness, and strict line preservation, making objective implementation or certification impossible.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "pairwise",
+      "line-order",
+      "terminal:infeasible_proven",
+      "maximal-unique-combination-contradiction",
+      "uniqueness-paradox"
+    ]
+  },
+  {
+    "case_id": "V4-011",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Design a verified Python library function split_palindrome_segments(s: str) -> list[str] that, given any non-empty string s, returns a list of non-empty substrings whose concatenation equals s, such that each substring in the output is a palindrome (reads identically backward and forward), and the list is of minimum possible length. If there are multiple segmentations with the minimum length, return the lexicographically smallest list (compared elementwise, Python order) among them. If s contains only whitespace, treat whitespace as significant text. If s is not a str or is empty, raise TypeError or ValueError respectively. Edge cases: For a string which cannot be split into palindromic substrings of any length, raise ValueError. However, all non-empty strings have at least a trivial palindrome decomposition (e.g., single characters), so the contradiction is as follows: For the string 'abcba', the segmentation might be ['abcba'] (one palindrome), but for 'abccba', both ['a','bccb','a'] and ['abccba'] are valid (different lex orders). For certain composite strings, two distinct sets of minimal-length, lexicographically minimal segmentations can exist due to ties, and consistent tie-breaking for lexicographical order is not well-defined for all Unicode strings under Python's ordering (e.g., combining characters, casefold collisions), so unique and objective certification of the requirement is infeasible. Behavioral tests must include: palindromic whole strings, non-palindromic inputs, mixtures of Unicode codepoints (grapheme clusters), strings with only whitespace, empty strings (ValueError), and non-str input (TypeError).",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "library",
+      "infeasible_proven",
+      "palindrome segmentation",
+      "minimum decomposition",
+      "lexicographical order edge case",
+      "unicode ordering contradiction"
+    ]
+  },
+  {
+    "case_id": "V4-012",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Design a verified Python CLI tool with an importable main(argv: list[str] | None = None) -> int interface. This CLI, named 'maxdistinct', accepts exactly one positional argument: the path to a UTF-8 encoded text file containing zero or more lines, each potentially with arbitrary Unicode content and line endings (CRLF, LF, CR). The CLI must write to standard output a subset S of the input lines (preserving original content and line endings) such that: (1) every pair of lines in S differs by at least two characters (counting character positions, including line endings), (2) the set S is of maximum possible size for the input, and (3) if multiple subsets of maximal size exist, the output is the unique subset which is lexicographically minimal with respect to the order in which lines appear in the input (break ties by earliest occurrence). If the input file does not exist or is not readable, print 'Input file not found or unreadable: PATH' to stderr and return exit status 1. If the number of arguments is not exactly one, print to stderr 'usage: maxdistinct INPUT' and return exit status 2. Any other error prints 'Error: MESSAGE' (str(exception)) to stderr and returns exit status 1. On success, return exit status 0. Output nothing if no lines satisfy the constraint. Behavioral test cases must include: (a) empty file, (b) one line, (c) all lines pairwise differing by at least two characters, (d) lines with only one-character differences, (e) input with repeated lines, (f) lines with mixed line endings, (g) improper argument count, (h) file not found. However, for certain inputs (e.g., lines that differ from each other by exactly two characters in multiple possible positions and permutations), there can exist multiple maximal-size subsets with different lexicographical orders depending on the order of selection, and no strategy can guarantee a unique lex-minimal subset for all possible input arrangements and Unicode normalizations. This creates a finite constraint contradiction between the uniqueness, maximality, and ordering conditions, rendering the requirement infeasible for objective and deterministic implementation or validation.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v4",
+      "cli",
+      "utf-8",
+      "line-processing",
+      "combinatorics",
+      "lex-order",
+      "terminal:infeasible_proven"
+    ]
+  }
+]
