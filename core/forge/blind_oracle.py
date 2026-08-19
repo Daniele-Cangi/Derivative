@@ -82,7 +82,7 @@ def oracle_review_error(review: dict[str, Any]) -> str | None:
         return "independent oracle review was internally inconsistent"
     if approved:
         return None
-    detail = "; ".join(item.strip() for item in findings[:6])
+    detail = "; ".join(_bounded_finding(item) for item in findings[:4])
     return "independent oracle review rejected the candidate" + (
         f": {detail}" if detail else ""
     )
@@ -210,3 +210,8 @@ def _expression_name(node: ast.expr) -> str:
         prefix = _expression_name(node.value)
         return f"{prefix}.{node.attr}" if prefix else node.attr
     return ""
+
+
+def _bounded_finding(value: str) -> str:
+    normalized = " ".join(value.split())
+    return normalized if len(normalized) <= 240 else normalized[:237] + "..."

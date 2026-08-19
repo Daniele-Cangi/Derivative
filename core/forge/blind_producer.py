@@ -19,6 +19,10 @@ from core.forge.blind_oracle import (
     oracle_review_error,
     oracle_reviewer_instructions,
 )
+from core.forge.blind_requirement import (
+    requirement_review_error,
+    requirement_reviewer_instructions,
+)
 from core.model_provider import (
     create_openai_client,
     generate_text,
@@ -38,7 +42,7 @@ class BlindProducerConfig:
     verified_cases: int = 6
     validation_failed_cases: int = 3
     infeasible_cases: int = 3
-    max_generation_attempts: int = 3
+    max_generation_attempts: int = 5
 
     def __post_init__(self) -> None:
         if re.fullmatch(r"v[1-9][0-9]*", self.benchmark_version) is None:
@@ -95,13 +99,18 @@ def produce_and_freeze_blind_bundle(
         )
     )
     try:
-        raw_cases = _generate_requirement_cases(generator, resolved_model, config)
+        raw_cases, requirement_validation = _generate_requirement_cases(
+            generator,
+            resolved_model,
+            config,
+        )
         dataset = _materialize_cases_and_oracles(
             generator=generator,
             model=resolved_model,
             staging=staging,
             raw_cases=raw_cases,
             config=config,
+            requirement_validation=requirement_validation,
         )
         (staging / "cases.json").write_bytes(
             (json.dumps(dataset, indent=2, sort_keys=True) + "\n").encode("utf-8")
@@ -157,7 +166,7 @@ def _generate_requirement_cases(
     generator: TextGenerator,
     model: str,
     config: BlindProducerConfig,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     schema = {
         "type": "object",
         "properties": {
@@ -209,9 +218,61 @@ def _generate_requirement_cases(
         cases = payload.get("cases")
         error = _case_set_error(cases, config)
         if error is None:
-            return list(cases)
+            review = _review_requirement_cases(
+                generator=generator,
+                model=model,
+                cases=list(cases),
+                schema_namespace=config.schema_namespace,
+            )
+            review_error = requirement_review_error(review)
+            if review_error is None:
+                return list(cases), {
+                    "static_checks_passed": True,
+                    "independent_review_passed": True,
+                    "review_model": model,
+                    "findings": [],
+                }
+            error = review_error
         feedback = f"\nThe previous response was rejected: {error}. Return a complete replacement."
     raise ValueError(f"Requirement producer failed validation: {feedback.strip()}")
+
+
+def _review_requirement_cases(
+    *,
+    generator: TextGenerator,
+    model: str,
+    cases: list[dict[str, Any]],
+    schema_namespace: str,
+) -> dict[str, Any]:
+    schema = {
+        "type": "object",
+        "properties": {
+            "approved": {"type": "boolean"},
+            "findings": {
+                "type": "array",
+                "items": {"type": "string", "maxLength": 300},
+                "maxItems": 12,
+            },
+        },
+        "required": ["approved", "findings"],
+        "additionalProperties": False,
+    }
+    indexed_cases = [
+        {"index": index, **case}
+        for index, case in enumerate(cases, start=1)
+    ]
+    response = generator(
+        model=model,
+        max_output_tokens=2400,
+        instructions=requirement_reviewer_instructions(),
+        input_text=(
+            "Review this complete candidate set before any oracle is authored:\n"
+            + json.dumps(indexed_cases, indent=2, sort_keys=True)
+        ),
+        output_schema=schema,
+        output_schema_name=f"{schema_namespace}_requirements_review",
+    )
+    return _parse_json_object(response, "requirement reviewer")
 
 
 def _materialize_cases_and_oracles(
@@ -221,6 +282,7 @@ def _materialize_cases_and_oracles(
     staging: Path,
     raw_cases: list[dict[str, Any]],
     config: BlindProducerConfig,
+    requirement_validation: dict[str, Any],
 ) -> list[dict[str, Any]]:
     dataset: list[dict[str, Any]] = []
     for index, item in enumerate(raw_cases, start=1):
@@ -236,6 +298,7 @@ def _materialize_cases_and_oracles(
             "requirement": str(item["requirement"]).strip(),
             "expected_terminal_status": status,
             "tags": [config.benchmark_tag, *item_tags],
+            "requirement_validation": requirement_validation,
         }
         if status == TERMINAL_VERIFIED:
             relative_oracle = Path("oracles") / case_id / "oracle.py"
@@ -328,7 +391,7 @@ def _review_oracle(
             "approved": {"type": "boolean"},
             "findings": {
                 "type": "array",
-                "items": {"type": "string"},
+                "items": {"type": "string", "maxLength": 300},
                 "maxItems": 12,
             },
         },

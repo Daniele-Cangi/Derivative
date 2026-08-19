@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
+import forge_blind_produce
 from core.forge.blind_oracle import oracle_preflight_error
 from core.forge.blind_producer import BlindProducerConfig, produce_and_freeze_blind_bundle
 
@@ -62,15 +64,22 @@ class _RecordingGenerator:
         self,
         oracle_payload: dict | None = None,
         review_payloads: list[dict] | None = None,
+        requirement_review_payloads: list[dict] | None = None,
     ):
         self.calls = []
         self.oracle_payload = oracle_payload or _oracle_payload()
         self.review_payloads = list(
             review_payloads or [{"approved": True, "findings": []}]
         )
+        self.requirement_review_payloads = list(
+            requirement_review_payloads or [{"approved": True, "findings": []}]
+        )
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
+        if kwargs["output_schema_name"].endswith("_requirements_review"):
+            payload = self.requirement_review_payloads.pop(0)
+            return json.dumps(payload)
         if kwargs["output_schema_name"].endswith("_requirements"):
             return json.dumps(_case_payload())
         if kwargs["output_schema_name"].endswith("_oracle_review"):
@@ -107,14 +116,17 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     ).read_bytes()
     assert [call["output_schema_name"] for call in generator.calls] == [
         "forge_blind_v4_requirements",
+        "forge_blind_v4_requirements_review",
         "forge_blind_v4_oracle",
         "forge_blind_v4_oracle_review",
     ]
-    oracle_request = generator.calls[1]["input_text"]
+    requirement_review_request = generator.calls[1]["input_text"]
+    assert _case_payload()["cases"][0]["requirement"] in requirement_review_request
+    oracle_request = generator.calls[2]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in oracle_request
     assert "core/forge" not in oracle_request
     assert "candidate implementation" not in oracle_request.lower()
-    review_request = generator.calls[2]["input_text"]
+    review_request = generator.calls[3]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in review_request
     assert _oracle_payload()["oracle_py"] in review_request
 
@@ -126,6 +138,12 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert set(manifest["oracle_sha256"]) == {"V4-001"}
     cases = json.loads((output_root / "cases.json").read_text(encoding="utf-8"))
     assert cases[0]["tags"][0] == "blind-v4"
+    assert cases[0]["requirement_validation"] == {
+        "findings": [],
+        "independent_review_passed": True,
+        "review_model": "external-test-model",
+        "static_checks_passed": True,
+    }
     assert cases[0]["oracle_validation"] == {
         "findings": [],
         "independent_review_passed": True,
@@ -219,7 +237,40 @@ def test_one_shot_producer_regenerates_oracle_rejected_by_independent_review(tmp
     schemas = [call["output_schema_name"] for call in generator.calls]
     assert schemas.count("forge_blind_v4_oracle") == 2
     assert schemas.count("forge_blind_v4_oracle_review") == 2
-    assert "independent oracle review rejected" in generator.calls[3]["input_text"]
+    assert "independent oracle review rejected" in generator.calls[4]["input_text"]
+
+
+def test_one_shot_producer_regenerates_case_set_rejected_by_requirement_review(tmp_path):
+    destination = tmp_path / "requirement-reviewed"
+    generator = _RecordingGenerator(
+        requirement_review_payloads=[
+            {
+                "approved": False,
+                "findings": ["Candidate 1 leaves output ordering unspecified."],
+            },
+            {"approved": True, "findings": []},
+        ]
+    )
+
+    bundle = produce_and_freeze_blind_bundle(
+        output_root=destination,
+        repository_root=Path(__file__).resolve().parents[1],
+        config=BlindProducerConfig(
+            bundle_id="blind-v4-requirement-reviewed",
+            benchmark_version="v4",
+            verified_cases=1,
+            validation_failed_cases=1,
+            infeasible_cases=1,
+        ),
+        text_generator=generator,
+        model="external-test-model",
+    )
+
+    assert len(bundle.cases) == 3
+    schemas = [call["output_schema_name"] for call in generator.calls]
+    assert schemas.count("forge_blind_v4_requirements") == 2
+    assert schemas.count("forge_blind_v4_requirements_review") == 2
+    assert "independent requirement review rejected" in generator.calls[2]["input_text"]
 
 
 def test_oracle_preflight_rejects_discarded_entrypoint_return_value():
@@ -245,6 +296,26 @@ def test_oracle_preflight_rejects_discarded_entrypoint_return_value():
 def test_blind_producer_rejects_invalid_version_identifier():
     with pytest.raises(ValueError, match="benchmark_version"):
         BlindProducerConfig(bundle_id="invalid", benchmark_version="4")
+
+
+def test_producer_cli_reports_failure_without_traceback_or_locals(monkeypatch, tmp_path):
+    def fail_production(**_kwargs):
+        raise ValueError("review rejected the candidate")
+
+    monkeypatch.setattr(
+        forge_blind_produce,
+        "produce_and_freeze_blind_bundle",
+        fail_production,
+    )
+    result = CliRunner().invoke(
+        forge_blind_produce.app,
+        [str(tmp_path / "bundle"), "--bundle-id", "blind-v4-safe-error"],
+    )
+
+    assert result.exit_code == 1
+    assert "Blind production failed: review rejected the candidate" in result.output
+    assert "Traceback" not in result.output
+    assert "raw_cases" not in result.output
 
 
 def test_frozen_bundle_transport_disables_git_text_normalization():

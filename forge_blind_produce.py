@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import typer
@@ -10,7 +11,8 @@ from core.forge.telemetry import track_model_usage
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 
 app = typer.Typer(
-    help="Produce and freeze an isolated OpenAI-authored blind bundle before Forge execution."
+    help="Produce and freeze an isolated OpenAI-authored blind bundle before Forge execution.",
+    pretty_exceptions_show_locals=False,
 )
 
 
@@ -24,20 +26,40 @@ def main(
     validation_failed_cases: int = typer.Option(3, "--validation-failed-cases", min=1),
     infeasible_cases: int = typer.Option(3, "--infeasible-cases", min=1),
     repository_root: str = typer.Option(".", "--repository-root"),
+    input_cost_per_1m: float | None = typer.Option(
+        None,
+        "--input-cost-per-1m",
+        min=0.0,
+    ),
+    output_cost_per_1m: float | None = typer.Option(
+        None,
+        "--output-cost-per-1m",
+        min=0.0,
+    ),
 ) -> None:
-    with track_model_usage() as usage:
-        bundle = produce_and_freeze_blind_bundle(
-            output_root=output_root,
-            repository_root=repository_root,
-            config=BlindProducerConfig(
-                bundle_id=bundle_id,
-                benchmark_version=benchmark_version,
-                verified_cases=verified_cases,
-                validation_failed_cases=validation_failed_cases,
-                infeasible_cases=infeasible_cases,
-            ),
-            model=model,
-        )
+    if (input_cost_per_1m is None) != (output_cost_per_1m is None):
+        raise typer.BadParameter("Both token cost rates must be provided together.")
+    if input_cost_per_1m is not None and output_cost_per_1m is not None:
+        os.environ["OPENAI_INPUT_COST_PER_1M_TOKENS"] = str(input_cost_per_1m)
+        os.environ["OPENAI_OUTPUT_COST_PER_1M_TOKENS"] = str(output_cost_per_1m)
+
+    try:
+        with track_model_usage() as usage:
+            bundle = produce_and_freeze_blind_bundle(
+                output_root=output_root,
+                repository_root=repository_root,
+                config=BlindProducerConfig(
+                    bundle_id=bundle_id,
+                    benchmark_version=benchmark_version,
+                    verified_cases=verified_cases,
+                    validation_failed_cases=validation_failed_cases,
+                    infeasible_cases=infeasible_cases,
+                ),
+                model=model,
+            )
+    except (FileExistsError, RuntimeError, ValueError) as exc:
+        typer.echo(f"Blind production failed: {exc}", err=True)
+        raise typer.Exit(code=1) from None
     estimated_cost, pricing_source = usage.estimated_cost()
     typer.echo("Forge Blind Producer")
     typer.echo(f"Bundle: {bundle.bundle_id}")
