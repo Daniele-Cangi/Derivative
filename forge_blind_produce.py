@@ -69,12 +69,23 @@ def main(
     except (FileExistsError, RuntimeError, ValueError) as exc:
         category = _safe_failure_category(exc)
         failure_id = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:12]
+        estimated_cost, pricing_source = usage.estimated_cost()
         typer.echo(
             f"Blind production failed: {category}. No bundle was published. "
             f"Rejection classes: {_safe_rejection_classes(exc)}. "
             f"Failure id: {failure_id}",
             err=True,
         )
+        typer.echo(f"Model requests before failure: {usage.request_count}", err=True)
+        typer.echo(f"Model input tokens before failure: {usage.input_tokens}", err=True)
+        typer.echo(f"Model output tokens before failure: {usage.output_tokens}", err=True)
+        typer.echo(f"Model tokens before failure: {usage.total_tokens}", err=True)
+        typer.echo(
+            "Estimated producer cost before failure: "
+            + ("unavailable" if estimated_cost is None else f"${estimated_cost:.8f}"),
+            err=True,
+        )
+        typer.echo(f"Pricing source: {pricing_source}", err=True)
         raise typer.Exit(code=1) from None
     estimated_cost, pricing_source = usage.estimated_cost()
     typer.echo("Forge Blind Producer")

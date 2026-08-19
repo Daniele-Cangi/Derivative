@@ -466,6 +466,12 @@ def test_producer_cli_reports_failure_without_traceback_or_locals(monkeypatch, t
     assert "Blind production failed: oracle_preflight_failed" in result.output
     assert "No bundle was published" in result.output
     assert "Rejection classes: causal_assertion,independent_review" in result.output
+    assert "Model requests before failure: 0" in result.output
+    assert "Model input tokens before failure: 0" in result.output
+    assert "Model output tokens before failure: 0" in result.output
+    assert "Model tokens before failure: 0" in result.output
+    assert "Estimated producer cost before failure: $0.00000000" in result.output
+    assert "Pricing source: no_model_calls" in result.output
     assert "Oracle producer failed validation" not in result.output
     assert "Traceback" not in result.output
     assert "raw_cases" not in result.output
