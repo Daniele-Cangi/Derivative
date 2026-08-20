@@ -116,13 +116,34 @@ def structurally_evidences(
     source_content: str,
     interfaces: Iterable[Any],
 ) -> bool:
-    if term not in {"cli_entrypoint", "no_cli_entrypoint", "no_service_interface"}:
+    if term not in {
+        "cli_entrypoint",
+        "missing_fields",
+        "no_cli_entrypoint",
+        "no_service_interface",
+    }:
         return False
     interface_list = list(interfaces)
     try:
         tree = ast.parse(source_content)
     except SyntaxError:
         return False
+
+    if term == "missing_fields":
+        return any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and (
+                len(node.args) == 1
+                or (
+                    len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)
+                    and node.args[1].value is None
+                )
+            )
+            for node in ast.walk(tree)
+        )
 
     if term == "no_cli_entrypoint":
         if any(
@@ -202,10 +223,14 @@ def behaviorally_evidences(
         return _has_negative_hasattr_assertion(tree, {"main", "cli", "build_parser"})
     if term == "no_service_interface":
         return _has_negative_hasattr_assertion(tree, {"app", "application", "router"})
+    if term == "missing_fields":
+        return (
+            has_expected_exception_assertion(content, public_interface_names)
+            or _has_none_assertion(tree)
+        )
     if term in {
         "malformed_records",
         "malformed_rows",
-        "missing_fields",
         "invalid_dates",
         "invalid_timestamp",
     }:
@@ -294,6 +319,18 @@ def _has_dunder_main_guard(tree: ast.AST) -> bool:
 
 
 def _has_negative_hasattr_assertion(tree: ast.AST, forbidden_names: set[str]) -> bool:
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    bindings = {
+        target.id: value
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for target, value in _assignment_targets_and_value(node)
+        if isinstance(target, ast.Name)
+    }
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assert):
             continue
@@ -307,6 +344,60 @@ def _has_negative_hasattr_assertion(tree: ast.AST, forbidden_names: set[str]) ->
             continue
         attribute = call.args[1]
         if isinstance(attribute, ast.Constant) and attribute.value in forbidden_names:
+            return True
+        if isinstance(attribute, ast.Name):
+            parent = parents.get(node)
+            while parent is not None:
+                if (
+                    isinstance(parent, (ast.For, ast.AsyncFor))
+                    and isinstance(parent.target, ast.Name)
+                    and parent.target.id == attribute.id
+                ):
+                    values = _literal_string_values(parent.iter, bindings)
+                    if values & forbidden_names:
+                        return True
+                    break
+                parent = parents.get(parent)
+    return False
+
+
+def _assignment_targets_and_value(
+    node: ast.Assign | ast.AnnAssign,
+) -> list[tuple[ast.expr, ast.expr]]:
+    if isinstance(node, ast.Assign):
+        return [(target, node.value) for target in node.targets]
+    if node.value is None:
+        return []
+    return [(node.target, node.value)]
+
+
+def _literal_string_values(
+    node: ast.expr,
+    bindings: Mapping[str, ast.expr],
+) -> set[str]:
+    if isinstance(node, ast.Name) and node.id in bindings:
+        return _literal_string_values(bindings[node.id], bindings)
+    if not isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return set()
+    return {
+        element.value
+        for element in node.elts
+        if isinstance(element, ast.Constant) and isinstance(element.value, str)
+    }
+
+
+def _has_none_assertion(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert) or not isinstance(node.test, ast.Compare):
+            continue
+        values = [node.test.left, *node.test.comparators]
+        if any(
+            isinstance(value, ast.Constant) and value.value is None
+            for value in values
+        ) and any(
+            isinstance(operator, (ast.Is, ast.Eq))
+            for operator in node.test.ops
+        ):
             return True
     return False
 

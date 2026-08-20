@@ -344,3 +344,32 @@ def test_positive_targets_still_outrank_unrelated_negative_capabilities():
     )
     assert "no_cli_entrypoint" in no_cli_atom.evidence_terms
     assert "cli_entrypoint" not in no_cli_atom.evidence_terms
+
+
+def test_deterministic_conditional_clauses_remain_hard_requirement_atoms():
+    requirement = (
+        "Implement a Python module exposing transform(rows, field_order, shift=1) -> list[dict]. "
+        "If field_order is empty, return every row unmodified. "
+        "If shift is zero, field values remain unchanged. "
+        "For any row, if a field is missing, its value becomes None. "
+        "Deterministic failure: if field_order is not a list of str, raise TypeError."
+    )
+
+    spec = RequirementCompiler().compile(requirement)
+    conditional_atoms = [
+        atom
+        for atom in spec.requirement_atoms
+        if atom.text.lower().startswith(("if ", "for any ", "deterministic failure:"))
+    ]
+
+    assert len(conditional_atoms) == 4
+    assert all(atom.category != "ambiguity" for atom in conditional_atoms)
+    assert all(atom.strength in {"hard", "universal"} for atom in conditional_atoms)
+    field_order_failure = next(
+        atom for atom in conditional_atoms if "not a list of str" in atom.text
+    )
+    assert field_order_failure.category == "validation"
+    assert "raise TypeError" in field_order_failure.text
+    missing_field = next(atom for atom in conditional_atoms if atom.text.startswith("For any"))
+    assert missing_field.category == "universal_constraint"
+    assert missing_field.verification_method == "property_test"

@@ -110,6 +110,29 @@ def test_forbidden_interfaces_require_structural_absence_and_behavioral_assertio
     )
 
 
+def test_missing_field_none_and_iterated_forbidden_symbols_are_executable_evidence():
+    interfaces = [PlanInterface(name="rotate_fields", interface_type="function")]
+    source = (
+        "def rotate_fields(rows, field_order):\n"
+        "    return [{field: row.get(field, None) for field in field_order} for row in rows]\n"
+    )
+    test_source = '''import rowrotate
+
+
+def test_missing_and_public_surface():
+    result = rowrotate.rotate_fields([{}], ["missing"])
+    assert result[0]["missing"] is None
+    forbidden = ["main", "cli", "app", "router"]
+    for symbol in forbidden:
+        assert not hasattr(rowrotate, symbol)
+'''
+
+    assert structurally_evidences("missing_fields", source, interfaces)
+    assert behaviorally_evidences("missing_fields", test_source, {"rotate_fields"})
+    assert behaviorally_evidences("no_cli_entrypoint", test_source, {"rotate_fields"})
+    assert behaviorally_evidences("no_service_interface", test_source, {"rotate_fields"})
+
+
 def test_custom_cli_requires_candidate_generation_capability(tmp_path):
     spec = RequirementCompiler().compile(
         "Build a Python CLI utility that reads newline-delimited words from standard input, "

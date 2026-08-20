@@ -752,6 +752,23 @@ class RequirementCompiler:
         while index < len(normalized):
             current = normalized[index]
             if (
+                re.match(
+                    r"^(?:deterministic\s+failure:\s*)?(?:if|when|unless)\b",
+                    current,
+                    re.IGNORECASE,
+                )
+                and index + 1 < len(normalized)
+                and not re.search(
+                    r"\b(?:returns?|raises?|becomes?|remains?|is\s+returned|"
+                    r"must|shall|should|unchanged|rejected|skipped)\b",
+                    current,
+                    re.IGNORECASE,
+                )
+            ):
+                merged.append(f"{current}, {normalized[index + 1]}")
+                index += 2
+                continue
+            if (
                 current.lower() in {"guarantee", "guarantees", "support", "supports"}
                 and index + 1 < len(normalized)
             ):
@@ -773,6 +790,7 @@ class RequirementCompiler:
             "guarantees",
             "for every",
             "for all",
+            "for any",
         )
         validation_tokens = ("test", "tests", "malformed", "invalid", "reject", "validate", "verif")
         quality_tokens = (
@@ -842,6 +860,20 @@ class RequirementCompiler:
             return "universal_constraint"
         if any(token in lowered for token in validation_tokens):
             return "validation"
+        if re.match(
+            r"^(?:deterministic\s+failure:\s*)?(?:if|when|unless)\b",
+            lowered,
+        ) and re.search(
+            r"\b(?:returns?|raises?|becomes?|remains?|must|shall|unchanged|"
+            r"reject(?:s|ed)?|skip(?:s|ped)?|write(?:s|ten)?)\b",
+            lowered,
+        ):
+            if re.search(
+                r"\b(?:raises?|errors?|invalid|not\s+(?:a|an)\b|reject(?:s|ed)?)\b",
+                lowered,
+            ):
+                return "validation"
+            return "functional"
         if re.match(
             r"^(builds?|creates?|implements?|develops?|delivers?|provides?|designs?|defines?|writes?|"
             r"reads?|extracts?|flags?|includes?|processes?|identifies?|produces?|parses?|rejects?|"
@@ -977,6 +1009,7 @@ class RequirementCompiler:
             "guarantees",
             "for every",
             "for all",
+            "for any",
         )
         hard_tokens = (
             "must",
