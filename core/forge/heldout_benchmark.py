@@ -21,6 +21,7 @@ from core.forge.execution import (
     SandboxProcessRequest,
 )
 from core.forge.fixture_oracle import fixture_oracle_mismatches
+from core.forge.oracle_contract import oracle_contract_mismatches
 
 
 @dataclass(frozen=True)
@@ -281,15 +282,26 @@ def inspect_oracle_sanity(case: HeldoutBenchmarkCase) -> OracleResult | None:
     except (OSError, UnicodeError):
         return None
     mismatches = fixture_oracle_mismatches(source, case.requirement)
-    if not mismatches:
-        return None
-    return OracleResult(
-        executed=False,
-        passed=False,
-        valid=False,
-        error="oracle_invalid: fixture expectations contradict the requirement",
-        sanity_failures=[mismatch.to_evidence() for mismatch in mismatches],
-    )
+    if mismatches:
+        return OracleResult(
+            executed=False,
+            passed=False,
+            valid=False,
+            error="oracle_invalid: fixture expectations contradict the requirement",
+            sanity_failures=[mismatch.to_evidence() for mismatch in mismatches],
+        )
+    contract_mismatches = oracle_contract_mismatches(source, case.requirement)
+    if contract_mismatches:
+        return OracleResult(
+            executed=False,
+            passed=False,
+            valid=False,
+            error="oracle_invalid: invocation contract contradicts the requirement",
+            sanity_failures=[
+                mismatch.to_evidence() for mismatch in contract_mismatches
+            ],
+        )
+    return None
 
 
 def run_heldout_cases(

@@ -299,6 +299,111 @@ def test_oracle_sanity_detects_word_boundary_contradiction(tmp_path):
     ]
 
 
+def test_oracle_sanity_rejects_injected_cli_name_before_forge(tmp_path):
+    oracle_path = tmp_path / "oracle.py"
+    oracle_path.write_text(
+        "from pycolmask import main\n\n"
+        "def test_nominal_masking(tmp_path):\n"
+        "    argv = ['pycolmask', str(tmp_path / 'in.csv'), '--mask=1']\n"
+        "    rc = main(argv)\n"
+        "    assert rc == 0\n",
+        encoding="utf-8",
+    )
+    requirement = (
+        "Implement a verified CLI utility named 'pycolmask' that reads a CSV file. "
+        "The main(argv: list[str] | None = None) -> int contract must be importable."
+    )
+    case = HeldoutBenchmarkCase(
+        "V5-001",
+        requirement,
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(oracle_path)),
+    )
+    forge_calls: list[str] = []
+
+    summary = run_heldout_cases(
+        [case],
+        run_case=lambda current_requirement: (
+            forge_calls.append(current_requirement)
+            or _forge_result(TERMINAL_VERIFIED, "pkg")
+        ),
+    )
+
+    assert forge_calls == []
+    assert summary.invalid_oracle_cases == 1
+    assert summary.case_results[0].observed_terminal_status == "oracle_invalid"
+    assert summary.case_results[0].model_request_count == 0
+    assert summary.case_results[0].oracle_result is not None
+    assert summary.case_results[0].oracle_result.error == (
+        "oracle_invalid: invocation contract contradicts the requirement"
+    )
+    assert summary.case_results[0].oracle_result.sanity_failures == [
+        {
+            "contract_id": "in_process_main_argv",
+            "function": "test_nominal_masking",
+            "call_line": 5,
+            "declared_cli_name": "pycolmask",
+            "argument_name": "argv",
+            "first_argument": "pycolmask",
+            "message": (
+                "oracle injects the declared CLI name as argv[0], but the "
+                "requirement does not define main(argv) as full sys.argv"
+            ),
+        }
+    ]
+
+
+def test_oracle_sanity_allows_cli_name_when_requirement_defines_argv_zero(tmp_path):
+    oracle_path = tmp_path / "oracle.py"
+    oracle_path.write_text(
+        "from pycolmask import main\n\n"
+        "def test_nominal_masking():\n"
+        "    rc = main(['pycolmask', 'in.csv', '--mask=1'])\n"
+        "    assert rc == 0\n",
+        encoding="utf-8",
+    )
+    case = HeldoutBenchmarkCase(
+        "explicit-argv-zero",
+        (
+            "Implement a CLI utility named 'pycolmask'. The main(argv) contract "
+            "receives full sys.argv, including the program name in argv[0]."
+        ),
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(oracle_path)),
+    )
+
+    assert inspect_oracle_sanity(case) is None
+
+
+def test_frozen_v5_001_oracle_is_rejected_by_invocation_contract_gate():
+    dataset = (
+        Path(__file__).resolve().parents[1]
+        / "benchmarks"
+        / "blind_v5"
+        / "external_001"
+        / "cases.json"
+    )
+    case = next(
+        item for item in load_heldout_cases(str(dataset)) if item.case_id == "V5-001"
+    )
+
+    result = inspect_oracle_sanity(case)
+
+    assert result is not None
+    assert result.valid is False
+    assert result.executed is False
+    assert result.error == (
+        "oracle_invalid: invocation contract contradicts the requirement"
+    )
+    assert len(result.sanity_failures) == 10
+    assert {item["contract_id"] for item in result.sanity_failures} == {
+        "in_process_main_argv"
+    }
+    assert {item["declared_cli_name"] for item in result.sanity_failures} == {
+        "pycolmask"
+    }
+
+
 def test_invalid_oracle_stops_case_before_forge_and_is_excluded_from_metrics(tmp_path):
     invalid_oracle = tmp_path / "invalid_oracle.py"
     invalid_oracle.write_text(

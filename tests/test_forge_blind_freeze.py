@@ -272,3 +272,45 @@ def test_freeze_refuses_external_oracle_with_fixture_contradiction(tmp_path):
         _freeze(bundle_root, repository_root)
 
     assert (bundle_root / "manifest.json").exists() is False
+
+
+def test_freeze_refuses_external_oracle_with_main_argv_contract_mismatch(tmp_path):
+    bundle_root = tmp_path / "invalid-argv-oracle-bundle"
+    oracle_root = bundle_root / "oracles" / "V5-001"
+    oracle_root.mkdir(parents=True)
+    (oracle_root / "oracle.py").write_text(
+        "from pycolmask import main\n\n"
+        "def test_nominal():\n"
+        "    argv = ['pycolmask', 'input.csv', '--mask=1']\n"
+        "    rc = main(argv)\n"
+        "    assert rc == 0\n",
+        encoding="utf-8",
+    )
+    (bundle_root / "cases.json").write_text(
+        json.dumps(
+            [
+                {
+                    "case_id": "V5-001",
+                    "requirement": (
+                        "Implement a verified CLI utility named 'pycolmask'. "
+                        "The main(argv: list[str] | None = None) -> int contract "
+                        "must be importable."
+                    ),
+                    "expected_terminal_status": "verified",
+                    "tags": ["blind-v5", "cli"],
+                    "oracle": {
+                        "path": "oracles/V5-001/oracle.py",
+                        "timeout_seconds": 20,
+                    },
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    repository_root = _write_baseline(tmp_path / "repository")
+
+    with pytest.raises(ValueError, match="rejection_classes=oracle_contract_mismatch"):
+        _freeze(bundle_root, repository_root)
+
+    assert (bundle_root / "manifest.json").exists() is False

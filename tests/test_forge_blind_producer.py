@@ -370,6 +370,54 @@ def test_oracle_preflight_rejects_deterministic_fixture_contradiction():
     assert oracle_preflight_failure_class(error) == "fixture_oracle_mismatch"
 
 
+def test_oracle_preflight_rejects_injected_cli_name_in_main_argv():
+    requirement = (
+        "Implement a verified CLI utility named 'pycolmask'. "
+        "The main(argv: list[str] | None = None) -> int contract must be importable."
+    )
+    source = (
+        "from pycolmask import main\n\n"
+        "def test_one():\n"
+        "    argv = ['pycolmask', 'one.csv', '--mask=1']\n"
+        "    rc = main(argv)\n"
+        "    assert rc == 0\n\n"
+        "def test_two():\n"
+        "    argv = ['pycolmask', 'two.csv', '--mask=0']\n"
+        "    rc = main(argv)\n"
+        "    assert rc == 0\n\n"
+        "def test_three():\n"
+        "    argv = ['pycolmask', 'three.csv', '--mask=2']\n"
+        "    rc = main(argv)\n"
+        "    assert rc == 0\n"
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is not None
+    assert "invocation contract contradicts the requirement" in error
+    assert "passes declared CLI name 'pycolmask' as argv[0]" in error
+    assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
+
+
+def test_oracle_preflight_uses_argv_value_preceding_each_call():
+    requirement = (
+        "Implement a verified CLI utility named 'pycolmask'. "
+        "The main(argv: list[str] | None = None) -> int contract must be importable."
+    )
+    tests = []
+    for index in range(3):
+        tests.append(
+            f"def test_{index}():\n"
+            f"    argv = ['input-{index}.csv', '--mask=1']\n"
+            "    rc = main(argv)\n"
+            "    argv = ['pycolmask', 'unused.csv', '--mask=1']\n"
+            "    assert rc == 0\n"
+        )
+    source = "from pycolmask import main\n\n" + "\n".join(tests)
+
+    assert oracle_preflight_error(source, requirement) is None
+
+
 def test_oracle_producer_regenerates_before_review_on_fixture_contradiction():
     requirement = (
         "Reverse every word defined as a sequence of non-whitespace characters separated "
