@@ -5,6 +5,7 @@ import pytest
 from core.forge.telemetry import track_model_usage
 from core.model_provider import (
     DEFAULT_OPENAI_MODEL,
+    create_openai_client,
     generate_text,
     is_live_openai_key,
     resolve_openai_api_key,
@@ -25,6 +26,20 @@ class _Responses:
 class _FailingResponses:
     def create(self, **kwargs):
         raise RuntimeError("provider unavailable")
+
+
+def test_openai_client_creation_fails_explicitly_when_runtime_is_unavailable(monkeypatch):
+    original_import = __import__
+
+    def reject_openai(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "openai":
+            raise ImportError("openai unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", reject_openai)
+
+    with pytest.raises(RuntimeError, match="OpenAI runtime is required"):
+        create_openai_client("sk-test")
 
 
 def test_generate_text_uses_openai_responses_api():

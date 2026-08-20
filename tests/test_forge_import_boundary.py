@@ -8,6 +8,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 OPTIONAL_SUBSTRATE_ROOTS = {
     "dowhy",
     "networkx",
+    "openai",
     "pgmpy",
     "pint",
     "qiskit",
@@ -41,7 +42,7 @@ def test_importing_forge_does_not_load_optional_substrate_runtimes():
 def test_constructing_substrate_does_not_load_optional_lens_runtimes():
     script = (
         "import json, sys; from core.substrate import CognitiveSubstrate; "
-        "substrate = CognitiveSubstrate(); "
+        "substrate = CognitiveSubstrate(execution_mode='local-only'); "
         f"roots = {sorted(OPTIONAL_SUBSTRATE_ROOTS)!r}; "
         "print(json.dumps({'lens_count': len(substrate.lenses), "
         "'loaded': sorted(name for name in roots if name in sys.modules)}))"
@@ -63,7 +64,8 @@ def test_constructing_substrate_does_not_load_optional_lens_runtimes():
 def test_symbolic_problem_loads_sympy_without_loading_unrelated_lens_runtimes():
     script = (
         "import json, sys; from core.substrate import CognitiveSubstrate; "
-        "CognitiveSubstrate().decompose('Derive the symbolic formula x = y + 1 and verify the invariant'); "
+        "CognitiveSubstrate(execution_mode='local-only').decompose("
+        "'Derive the symbolic formula x = y + 1 and verify the invariant'); "
         f"roots = {sorted(OPTIONAL_SUBSTRATE_ROOTS)!r}; "
         "print(json.dumps(sorted(name for name in roots if name in sys.modules)))"
     )
@@ -79,6 +81,33 @@ def test_symbolic_problem_loads_sympy_without_loading_unrelated_lens_runtimes():
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == ["sympy", "z3"]
+
+
+def test_hybrid_kernel_loads_openai_client_without_making_a_request():
+    script = (
+        "import json, sys; from core.kernel import ReasoningKernel; "
+        "before = 'openai' in sys.modules; "
+        "kernel = ReasoningKernel(api_key='sk-test', execution_mode='hybrid'); "
+        "print(json.dumps({'before': before, 'after': 'openai' in sys.modules, "
+        "'client_created': kernel.client is not None, 'live': kernel.use_live_model}))"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", script],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "before": False,
+        "after": True,
+        "client_created": True,
+        "live": True,
+    }
 
 
 def test_constructing_planner_does_not_load_networkx():

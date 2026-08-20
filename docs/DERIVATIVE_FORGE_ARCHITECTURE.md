@@ -66,11 +66,17 @@ NetworkX is no longer imported by `ExecutionLoop` or the topology solver at modu
 
 On the same environment, constructing the default `PlannerStage` measured approximately 4.105 seconds, loaded 936 modules, and loaded OpenAI but no observed scientific runtime. A four-node exact topology solve started with NetworkX absent, imported it on demand, evaluated six connected atlas graphs, found three satisfiable candidates, and completed in approximately 1.434 seconds.
 
-The remaining dependency work is installation metadata and the host model-provider boundary. OpenAI remains imported by the common lens base even in local-only mode. Optional installation groups must preserve explicit failure when a selected capability is unavailable.
+## Fourth post-V5 boundary improvement
+
+The shared model provider no longer imports the OpenAI SDK at module load. Local-only substrate and planner construction therefore remain independent of the model runtime, while `hybrid` and `remote-only` execution import OpenAI when they create a live client. If that selected runtime is unavailable, client creation fails explicitly instead of silently degrading to local narration.
+
+On the same environment, constructing the default local-only `PlannerStage` measured approximately 0.488 seconds, loaded 156 modules, preserved all seven lenses, and loaded none of the observed OpenAI or scientific runtime roots. Constructing a hybrid `ReasoningKernel` with a live-form key started with OpenAI absent, imported it, and created the client without making a provider request.
+
+The remaining dependency work is installation metadata. Optional installation groups must preserve explicit failure when a selected capability is unavailable.
 
 ## Post-V5 dependency objective
 
-The remaining dependency objective is optional installation groups and local-only model-provider isolation, not separation into a parallel truth system.
+The remaining dependency objective is optional installation groups, not separation into a parallel truth system.
 
 The intended change is:
 

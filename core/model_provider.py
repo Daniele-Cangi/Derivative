@@ -1,8 +1,6 @@
 import os
 from typing import Any
 
-from openai import OpenAI
-
 from core.forge.telemetry import record_model_request, record_model_response
 
 
@@ -22,7 +20,13 @@ def is_live_openai_key(api_key: str) -> bool:
     return api_key not in _NON_LIVE_KEYS
 
 
-def create_openai_client(api_key: str) -> OpenAI:
+def create_openai_client(api_key: str) -> Any:
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise RuntimeError(
+            "OpenAI runtime is required for hybrid or remote-only execution. Install the 'openai' package."
+        ) from exc
     return OpenAI(api_key=api_key)
 
 
