@@ -30,6 +30,10 @@ def _expression_name(node: ast.expr) -> str:
 
 
 def semantic_term_present(term: str, corpus: str, is_test: bool = False) -> bool:
+    if term in {"no_cli_entrypoint", "no_service_interface"}:
+        # Negative capabilities require structural or behavioral proof. A label or
+        # comment containing the term is never evidence of absence.
+        return False
     normalized = corpus.replace("-", "_").replace(" ", "_")
     aliases = {
         "cli_entrypoint": ("argparse", "typer", "click.command", "sys.argv"),
@@ -112,19 +116,70 @@ def structurally_evidences(
     source_content: str,
     interfaces: Iterable[Any],
 ) -> bool:
-    if term != "cli_entrypoint":
+    if term not in {"cli_entrypoint", "no_cli_entrypoint", "no_service_interface"}:
         return False
+    interface_list = list(interfaces)
+    try:
+        tree = ast.parse(source_content)
+    except SyntaxError:
+        return False
+
+    if term == "no_cli_entrypoint":
+        if any(
+            getattr(interface, "interface_type", "") == "cli_entrypoint"
+            for interface in interface_list
+        ):
+            return False
+        forbidden_imports = {"argparse", "click", "typer", "fire"}
+        if _imports_any(tree, forbidden_imports):
+            return False
+        if _top_level_function_names(tree) & {"main", "build_parser", "cli"}:
+            return False
+        return not any(
+            isinstance(node, ast.Attribute)
+            and _expression_name(node.value) == "sys"
+            and node.attr == "argv"
+            for node in ast.walk(tree)
+        ) and not _has_dunder_main_guard(tree)
+
+    if term == "no_service_interface":
+        if any(
+            getattr(interface, "interface_type", "") in {
+                "http_endpoint",
+                "rest_endpoint",
+                "service_entrypoint",
+            }
+            for interface in interface_list
+        ):
+            return False
+        if _imports_any(tree, {"fastapi", "flask", "starlette", "django", "falcon"}):
+            return False
+        service_constructors = {"FastAPI", "Flask", "Starlette", "Falcon"}
+        if any(
+            isinstance(node, ast.Call)
+            and _expression_name(node.func).split(".")[-1] in service_constructors
+            for node in ast.walk(tree)
+        ):
+            return False
+        route_decorators = {"route", "get", "post", "put", "patch", "delete", "websocket"}
+        return not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and any(
+                _expression_name(decorator.func if isinstance(decorator, ast.Call) else decorator)
+                .split(".")[-1]
+                in route_decorators
+                for decorator in node.decorator_list
+            )
+            for node in ast.walk(tree)
+        )
+
     expected_names = {
         interface.name
-        for interface in interfaces
+        for interface in interface_list
         if getattr(interface, "interface_type", "") == "cli_entrypoint"
         and getattr(interface, "name", "").isidentifier()
     }
     if not expected_names:
-        return False
-    try:
-        tree = ast.parse(source_content)
-    except SyntaxError:
         return False
     defined_names = {
         node.name
@@ -143,6 +198,10 @@ def behaviorally_evidences(
         tree = ast.parse(content)
     except SyntaxError:
         return False
+    if term == "no_cli_entrypoint":
+        return _has_negative_hasattr_assertion(tree, {"main", "cli", "build_parser"})
+    if term == "no_service_interface":
+        return _has_negative_hasattr_assertion(tree, {"app", "application", "router"})
     if term in {
         "malformed_records",
         "malformed_rows",
@@ -193,6 +252,63 @@ def behaviorally_evidences(
         )
     ]
     return len(list_literals) >= 2 and bool(equality_assertions)
+
+
+def _imports_any(tree: ast.AST, roots: set[str]) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name.split(".")[0] in roots for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.split(".")[0] in roots:
+                return True
+    return False
+
+
+def _top_level_function_names(tree: ast.Module) -> set[str]:
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+
+
+def _has_dunder_main_guard(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+            continue
+        operands = [node.test.left, *node.test.comparators]
+        names = {
+            operand.id
+            for operand in operands
+            if isinstance(operand, ast.Name)
+        }
+        constants = {
+            operand.value
+            for operand in operands
+            if isinstance(operand, ast.Constant) and isinstance(operand.value, str)
+        }
+        if "__name__" in names and "__main__" in constants:
+            return True
+    return False
+
+
+def _has_negative_hasattr_assertion(tree: ast.AST, forbidden_names: set[str]) -> bool:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert):
+            continue
+        test = node.test
+        if not isinstance(test, ast.UnaryOp) or not isinstance(test.op, ast.Not):
+            continue
+        call = test.operand
+        if not isinstance(call, ast.Call) or _expression_name(call.func) != "hasattr":
+            continue
+        if len(call.args) != 2:
+            continue
+        attribute = call.args[1]
+        if isinstance(attribute, ast.Constant) and attribute.value in forbidden_names:
+            return True
+    return False
 
 
 def has_json_lines_processing(content: str) -> bool:

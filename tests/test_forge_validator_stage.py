@@ -10,6 +10,7 @@ from core.forge.contracts import CodeArtifact, FeasiblePlan, PlanInterface, Vali
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.semantic_contracts import (
+    behaviorally_evidences,
     has_end_to_end_file_workflow_test,
     structurally_evidences,
 )
@@ -79,6 +80,34 @@ def test_cli_entrypoint_is_structural_evidence_without_framework_tokens():
         interfaces,
     )
     assert spec.requirement_atoms[0].evidence_terms == ["cli_entrypoint"]
+
+
+def test_forbidden_interfaces_require_structural_absence_and_behavioral_assertions():
+    interfaces = [PlanInterface(name="rotate_fields", interface_type="function")]
+    library_source = "def rotate_fields(rows, field_order, shift=1):\n    return list(rows)\n"
+
+    assert structurally_evidences("no_cli_entrypoint", library_source, interfaces)
+    assert structurally_evidences("no_service_interface", library_source, interfaces)
+    assert not structurally_evidences(
+        "no_cli_entrypoint",
+        library_source + "\ndef main(argv=None):\n    return 0\n",
+        interfaces,
+    )
+    assert not structurally_evidences(
+        "no_service_interface",
+        "from fastapi import FastAPI\napp = FastAPI()\n",
+        interfaces,
+    )
+    assert behaviorally_evidences(
+        "no_cli_entrypoint",
+        "import rowrotate\n\ndef test_public_surface():\n    assert not hasattr(rowrotate, 'main')\n",
+        {"rotate_fields"},
+    )
+    assert not behaviorally_evidences(
+        "no_cli_entrypoint",
+        "def test_label_only():\n    no_cli_entrypoint = True\n    assert no_cli_entrypoint\n",
+        {"rotate_fields"},
+    )
 
 
 def test_custom_cli_requires_candidate_generation_capability(tmp_path):

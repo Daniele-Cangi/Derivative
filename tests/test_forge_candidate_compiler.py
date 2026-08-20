@@ -751,6 +751,53 @@ def test_semantic_preflight_rejects_fixture_that_contradicts_explicit_regex():
     )
 
 
+def test_semantic_preflight_rejects_forbidden_cli_in_library_source():
+    spec = RequirementCompiler().compile(
+        "Implement a Python module called 'rowrotate' exposing a single function "
+        "rotate_fields(rows: list[dict], field_order: list[str], shift: int = 1) -> list[dict]. "
+        "Only rotate_fields is public, and the module has no CLI or service interface."
+    )
+    restriction = next(
+        atom for atom in spec.requirement_atoms if "no CLI or service" in atom.text
+    )
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            requirement_atoms=[restriction],
+            normalized_requirement=spec.normalized_requirement,
+        ),
+        required_tests=[],
+        interfaces=[SimpleNamespace(name="rotate_fields", interface_type="function")],
+        requirement_coverage={
+            restriction.requirement_id: {
+                "files": ["src/rowrotate.py"],
+                "tests": [],
+                "acceptance_criteria": [],
+            }
+        },
+    )
+    files = {
+        "src/rowrotate.py": (
+            "def rotate_fields(rows, field_order, shift=1):\n"
+            "    return list(rows)\n\n"
+            "def main(argv=None):\n"
+            "    return 0\n"
+        )
+    }
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        {},
+        {"phase": "tests", "passed": True, "failures": []},
+    )
+
+    assert result["passed"] is False
+    failure = next(
+        item for item in result["failures"] if item["kind"] == "source_semantic_contract_failure"
+    )
+    assert failure["missing_evidence_terms"] == ["no_cli_entrypoint"]
+
+
 def test_semantic_preflight_rejects_tautological_acceptance_assertion(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {

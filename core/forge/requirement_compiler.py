@@ -355,7 +355,9 @@ class RequirementCompiler:
 
     def _detect_target_artifact_type(self, requirement: str) -> ArtifactTargetType:
         lowered = requirement.lower()
-        if re.search(r"\bcli\b|command[- ]line", lowered):
+        cli_pattern = r"\bcli\b|\bcommand[- ]line(?:\s+interface)?\b"
+        service_pattern = r"\b(?:rest|http|api|endpoint|microservice|server)\b"
+        if self._has_positive_target_mention(lowered, cli_pattern):
             return ArtifactTargetType.CLI
         explicit_callable = bool(
             re.search(r"\bdef\s+[a-z_][a-z0-9_]*\s*\(", lowered)
@@ -374,22 +376,72 @@ class RequirementCompiler:
                 lowered,
             )
         )
-        explicit_http_service = bool(
-            re.search(r"\b(?:rest|http|api|endpoint|microservice|server)\b", lowered)
+        explicit_http_service = self._has_positive_target_mention(
+            lowered,
+            service_pattern,
         )
         if explicit_callable and not explicit_http_service:
             return ArtifactTargetType.LIBRARY
-        if re.search(r"\bdata\s+pipeline\b|\bpipeline\b", lowered):
+        if self._has_positive_target_mention(
+            lowered,
+            r"\bdata[-\s]+pipeline\b|\bpipeline\b",
+        ):
             return ArtifactTargetType.PIPELINE
         if explicit_http_service:
             return ArtifactTargetType.SERVICE
-        if re.search(r"\bservice\b", lowered):
+        if self._has_positive_target_mention(lowered, r"\bservice\b"):
             return ArtifactTargetType.SERVICE
-        if re.search(r"\blibrary\b|\bpackage\b|\bsdk\b", lowered):
+        if self._has_positive_target_mention(
+            lowered,
+            r"\blibrary\b|\bpackage\b|\bsdk\b|\bmodule\b",
+        ):
             return ArtifactTargetType.LIBRARY
-        if re.search(r"\bscript\b", lowered):
+        if self._has_positive_target_mention(lowered, r"\bscript\b"):
             return ArtifactTargetType.SCRIPT
         return ArtifactTargetType.UNKNOWN
+
+    @classmethod
+    def _has_positive_target_mention(cls, text: str, pattern: str) -> bool:
+        return any(
+            not cls._target_mention_is_negated(text, match.start())
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+        )
+
+    @classmethod
+    def _has_negated_target_mention(cls, text: str, pattern: str) -> bool:
+        return any(
+            cls._target_mention_is_negated(text, match.start())
+            for match in re.finditer(pattern, text, re.IGNORECASE)
+        )
+
+    @staticmethod
+    def _target_mention_is_negated(text: str, mention_start: int) -> bool:
+        prefix = text[max(0, mention_start - 120):mention_start]
+        scope = re.split(
+            r"[.;:!?]|\b(?:but|however|whereas)\b",
+            prefix,
+            flags=re.IGNORECASE,
+        )[-1]
+        positive_resets = list(
+            re.finditer(
+                r"\b(?:and|then)\s+"
+                r"(?:exposes?|provides?|includes?|implements?|offers?|runs?|uses?)\b",
+                scope,
+                re.IGNORECASE,
+            )
+        )
+        if positive_resets:
+            scope = scope[positive_resets[-1].end():]
+        scope = re.sub(r"\bnot\s+only\b", "", scope, flags=re.IGNORECASE)
+        return bool(
+            re.search(
+                r"\b(?:no|without|neither|nor|forbid(?:s|den)?|"
+                r"must\s+not|shall\s+not|may\s+not|does\s+not|"
+                r"do\s+not|is\s+not|are\s+not)\b[^.;:!?]{0,90}$",
+                scope,
+                re.IGNORECASE,
+            )
+        )
 
     def _extract_public_module(
         self,
@@ -818,8 +870,14 @@ class RequirementCompiler:
             if term not in terms:
                 terms.append(term)
 
-        if re.search(r"\bcli\b", lowered):
+        cli_pattern = r"\bcli\b|\bcommand[- ]line(?:\s+interface)?\b"
+        service_pattern = r"\b(?:service|rest|http|api|endpoint|microservice|server)\b"
+        if self._has_positive_target_mention(lowered, cli_pattern):
             add("cli_entrypoint")
+        if self._has_negated_target_mention(lowered, cli_pattern):
+            add("no_cli_entrypoint")
+        if self._has_negated_target_mention(lowered, service_pattern):
+            add("no_service_interface")
         if re.search(r"\b(?:json\s+lines?|jsonl)\b", lowered):
             add("input_jsonl" if re.match(r"^(reads?|parses?|processes?)\b", lowered) else "jsonl")
         if re.search(r"\breads?\b.*\bcsv\b", lowered):
@@ -896,6 +954,10 @@ class RequirementCompiler:
             r"\b(?:no|without|must\s+not|may\s+not|is\s+not\s+allowed)\b"
             r".{0,100}\b(?:network|socket|subprocess|http\s+client)\b",
             lowered,
+        ):
+            return "static_analysis"
+        if {"no_cli_entrypoint", "no_service_interface"} & set(
+            self._extract_evidence_terms(clause)
         ):
             return "static_analysis"
         if "standard library" in lowered or "stdlib" in lowered:

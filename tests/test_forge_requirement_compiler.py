@@ -307,3 +307,40 @@ def test_blind_v5_public_artifact_shapes_are_preserved(
 
     assert spec.target_artifact_type == expected_type
     assert spec.public_module == expected_module
+
+
+def test_negative_interface_mentions_are_preserved_as_forbidden_capabilities():
+    requirement = (
+        "Implement a Python data-pipeline module called 'rowrotate' exposing a single function "
+        "rotate_fields(rows: list[dict], field_order: list[str], shift: int = 1) -> list[dict]. "
+        "Only rotate_fields is public, and the module has no CLI or service interface."
+    )
+
+    spec = RequirementCompiler().compile(requirement)
+    restriction = next(
+        atom for atom in spec.requirement_atoms if "no CLI or service" in atom.text
+    )
+
+    assert spec.target_artifact_type == ArtifactTargetType.LIBRARY
+    assert spec.public_module == "rowrotate"
+    assert "no_cli_entrypoint" in restriction.evidence_terms
+    assert "no_service_interface" in restriction.evidence_terms
+    assert "cli_entrypoint" not in restriction.evidence_terms
+    assert restriction.verification_method == "static_analysis"
+
+
+def test_positive_targets_still_outrank_unrelated_negative_capabilities():
+    cli_spec = RequirementCompiler().compile(
+        "Build a Python CLI module exposing def main(argv) -> int without network access."
+    )
+    service_spec = RequirementCompiler().compile(
+        "Build a REST API exposing def read_item(item_id: str) -> dict. The service has no CLI."
+    )
+
+    assert cli_spec.target_artifact_type == ArtifactTargetType.CLI
+    assert service_spec.target_artifact_type == ArtifactTargetType.SERVICE
+    no_cli_atom = next(
+        atom for atom in service_spec.requirement_atoms if "no CLI" in atom.text
+    )
+    assert "no_cli_entrypoint" in no_cli_atom.evidence_terms
+    assert "cli_entrypoint" not in no_cli_atom.evidence_terms

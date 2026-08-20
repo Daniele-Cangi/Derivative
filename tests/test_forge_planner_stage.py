@@ -659,6 +659,27 @@ def test_named_callable_component_becomes_public_module_contract(tmp_path):
     assert interface.module_path == "filter_by_predicate"
 
 
+def test_module_with_forbidden_cli_and_service_gets_library_only_plan(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Implement a Python data-pipeline module called 'rowrotate' exposing a single function "
+        "rotate_fields(rows: list[dict], field_order: list[str], shift: int = 1) -> list[dict]. "
+        "Only rotate_fields is public, and the module has no CLI or service interface. Include tests."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    assert {item.path for item in output.file_tree_plan} == {
+        "src/rowrotate.py",
+        "tests/test_rowrotate.py",
+    }
+    assert output.packaging_target == "python_library_package"
+    assert [(item.name, item.interface_type) for item in output.interfaces] == [
+        ("rotate_fields", "function")
+    ]
+    assert "pipeline.py" not in output.architecture_summary
+
+
 def test_named_cli_command_preserves_module_entrypoint_contract(tmp_path):
     build_spec = RequirementCompiler().compile(
         "Develop a CLI tool 'jsoncompact' that reads a JSON array from standard input, writes JSON "
