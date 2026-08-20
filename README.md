@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-410%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-412%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -100,7 +100,7 @@ The critical separation is deliberate: the planner cannot decide truth, generate
 
 Derivative and Forge share one truth-producing substrate but have different responsibilities: Derivative supplies computational lenses, execution grounding, obligations, contradiction witnesses, audit and memory; Forge supplies typed software-build contracts, candidate expansion, independent validation, bounded repair and fail-closed packaging. The detailed boundary and the current eager dependency-loading debt are documented in [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md).
 
-The Forge composition root is lazy: importing `forge` or displaying CLI help does not load optional scientific lens runtimes. A default planning run preserves all seven Derivative lenses while activating SymPy, Qiskit, Z3, SciPy/Pint, and other lens runtimes only for matching problem signals. NetworkX remains eager through the kernel topology path and is the next dependency boundary.
+The Forge composition root is lazy: importing `forge` or displaying CLI help does not load optional scientific lens runtimes. A default planning run preserves all seven Derivative lenses while activating SymPy, Qiskit, Z3, SciPy/Pint, NetworkX, and other lens or solver runtimes only for matching problem signals. OpenAI remains a host-side import through the shared model provider; installation extras are the next dependency boundary.
 
 ## Core Modules
 

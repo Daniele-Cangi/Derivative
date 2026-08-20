@@ -58,13 +58,19 @@ On the same closure environment:
 
 - constructing `CognitiveSubstrate` measured approximately 3.214 seconds and loaded OpenAI but no optional scientific lens runtime;
 - decomposing a generic Python CLI requirement measured approximately 0.003 seconds, returned seven framings, and loaded no additional optional runtime;
-- constructing the complete default `PlannerStage` measured approximately 5.370 seconds and loaded OpenAI plus NetworkX, but not SymPy, Qiskit, Z3, SciPy/Pint, DoWhy, or pgmpy.
+- before the topology boundary fix, constructing the complete default `PlannerStage` measured approximately 5.370 seconds and loaded OpenAI plus NetworkX, but not SymPy, Qiskit, Z3, SciPy/Pint, DoWhy, or pgmpy.
 
-NetworkX remains eager because `ReasoningKernel` imports `ExecutionLoop` and the topology solver at module load. Moving that dependency behind the topology capability is the next runtime-loading task. Optional installation groups remain subsequent packaging work.
+## Third post-V5 boundary improvement
+
+NetworkX is no longer imported by `ExecutionLoop` or the topology solver at module load. Query parsing and topology contracts remain lightweight; exact graph enumeration and regular-graph counts import NetworkX inside the functions that execute them.
+
+On the same environment, constructing the default `PlannerStage` measured approximately 4.105 seconds, loaded 936 modules, and loaded OpenAI but no observed scientific runtime. A four-node exact topology solve started with NetworkX absent, imported it on demand, evaluated six connected atlas graphs, found three satisfiable candidates, and completed in approximately 1.434 seconds.
+
+The remaining dependency work is installation metadata and the host model-provider boundary. OpenAI remains imported by the common lens base even in local-only mode. Optional installation groups must preserve explicit failure when a selected capability is unavailable.
 
 ## Post-V5 dependency objective
 
-The remaining dependency objective is capability-driven kernel and solver loading, not separation into a parallel truth system.
+The remaining dependency objective is optional installation groups and local-only model-provider isolation, not separation into a parallel truth system.
 
 The intended change is:
 

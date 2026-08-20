@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.constraint_witnesses import finite_witness_contradictions
 
-import networkx as nx
-
 from audit.trail import AuditEntry, AuditTrail
 from core.json_utils import clamp_float
 from core.obligation_compiler import ObligationCompiler
@@ -2441,6 +2439,8 @@ class ExecutionLoop:
         return None
 
     def _count_regular_graphs(self, node_count: int, regular_degree: int, connected_only: bool) -> int:
+        import networkx as nx
+
         atlas = [graph for graph in nx.graph_atlas_g() if graph.number_of_nodes() == node_count]
         count = 0
         for graph in atlas:
@@ -2492,6 +2492,8 @@ class ExecutionLoop:
     @staticmethod
     @lru_cache(maxsize=8)
     def _connected_graph_count(node_count: int) -> int:
+        import networkx as nx
+
         return sum(
             1
             for graph in nx.graph_atlas_g()

@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import math
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
-import networkx as nx
+if TYPE_CHECKING:
+    import networkx as nx
 
 from core.json_utils import clamp_float
 
@@ -83,6 +86,8 @@ def parse_topology_search_query(problem: str) -> Optional[TopologySearchQuery]:
 
 
 def solve_topology_search(query: TopologySearchQuery) -> TopologySearchResult:
+    import networkx as nx
+
     atlas_graphs = [
         nx.convert_node_labels_to_integers(graph.copy())
         for graph in nx.graph_atlas_g()
