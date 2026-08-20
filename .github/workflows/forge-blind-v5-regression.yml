@@ -2,6 +2,11 @@ name: Forge Blind v5 Targeted Regression
 
 on:
   workflow_dispatch:
+    inputs:
+      case_ids:
+        description: Space-separated frozen V5 case IDs to replay
+        required: true
+        default: "V5-001 V5-005 V5-010 V5-012"
 
 permissions:
   contents: read
@@ -47,28 +52,35 @@ jobs:
 
       - name: Execute targeted post-fix replay
         env:
+          CASE_IDS: ${{ inputs.case_ids }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-4.1
           OPENAI_INPUT_COST_PER_1M_TOKENS: "2.00"
           OPENAI_OUTPUT_COST_PER_1M_TOKENS: "8.00"
-        run: >
-          python forge_blind_benchmark.py
-          --manifest benchmarks/blind_v5/external_001/manifest.json
-          --mode hybrid
-          --execution-backend docker
-          --sandbox-image derivative-forge-sandbox:py311
-          --post-fix-replay
-          --case-id V5-001
-          --case-id V5-005
-          --case-id V5-010
-          --case-id V5-012
-          --no-enforce-thresholds
+        run: |
+          case_flags=()
+          read -r -a requested_cases <<< "$CASE_IDS"
+          for case_id in "${requested_cases[@]}"; do
+            if [[ ! "$case_id" =~ ^V5-[0-9]{3}$ ]]; then
+              echo "Invalid V5 case ID: $case_id" >&2
+              exit 2
+            fi
+            case_flags+=(--case-id "$case_id")
+          done
+          python forge_blind_benchmark.py \
+            --manifest benchmarks/blind_v5/external_001/manifest.json \
+            --mode hybrid \
+            --execution-backend docker \
+            --sandbox-image derivative-forge-sandbox:py311 \
+            --post-fix-replay \
+            "${case_flags[@]}" \
+            --no-enforce-thresholds
 
       - name: Upload replay evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: forge-blind-v5-targeted-regression-001
+          name: forge-blind-v5-targeted-regression-${{ github.run_number }}
           path: |
             generated_artifacts/forge_blind_benchmarks/
             generated_artifacts/forge_blind_runs/
