@@ -314,3 +314,45 @@ def test_freeze_refuses_external_oracle_with_main_argv_contract_mismatch(tmp_pat
         _freeze(bundle_root, repository_root)
 
     assert (bundle_root / "manifest.json").exists() is False
+
+
+def test_freeze_refuses_verified_unicode_case_cardinality_conflict(tmp_path):
+    bundle_root = tmp_path / "invalid-unicode-requirement-bundle"
+    oracle_root = bundle_root / "oracles" / "V5-003"
+    oracle_root.mkdir(parents=True)
+    (oracle_root / "oracle.py").write_text(
+        "from pyutfinvert import invert_case_preserve_nonletters\n\n"
+        "def test_case():\n"
+        "    assert invert_case_preserve_nonletters('A') == 'a'\n",
+        encoding="utf-8",
+    )
+    (bundle_root / "cases.json").write_text(
+        json.dumps(
+            [
+                {
+                    "case_id": "V5-003",
+                    "requirement": (
+                        "Return a string of the same length as input where each "
+                        "Unicode letter has its case inverted."
+                    ),
+                    "expected_terminal_status": "verified",
+                    "tags": ["blind-v5", "unicode"],
+                    "oracle": {
+                        "path": "oracles/V5-003/oracle.py",
+                        "timeout_seconds": 20,
+                    },
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    repository_root = _write_baseline(tmp_path / "repository")
+
+    with pytest.raises(
+        ValueError,
+        match="rejection_classes=requirement_finite_witness",
+    ):
+        _freeze(bundle_root, repository_root)
+
+    assert (bundle_root / "manifest.json").exists() is False

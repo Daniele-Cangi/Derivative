@@ -22,6 +22,7 @@ from core.forge.blind_oracle import (
     oracle_reviewer_instructions,
 )
 from core.forge.blind_requirement import (
+    requirement_preflight_error,
     requirement_review_error,
     requirement_reviewer_instructions,
 )
@@ -259,24 +260,32 @@ def _generate_requirement_case(
                 **dict(raw_case),
                 "expected_terminal_status": expected_status,
             }
-            review = _review_requirement_case(
-                generator=generator,
-                model=model,
-                case=candidate,
-                index=index,
-                schema_namespace=config.schema_namespace,
+            preflight_error = requirement_preflight_error(
+                str(candidate["requirement"]),
+                expected_status,
             )
-            review_error = requirement_review_error(review)
-            if review_error is None:
-                candidate["_requirement_validation"] = {
-                    "static_checks_passed": True,
-                    "independent_review_passed": True,
-                    "review_model": model,
-                    "findings": [],
-                }
-                return candidate
-            rejection_classes.append("independent_review")
-            error = review_error
+            if preflight_error is None:
+                review = _review_requirement_case(
+                    generator=generator,
+                    model=model,
+                    case=candidate,
+                    index=index,
+                    schema_namespace=config.schema_namespace,
+                )
+                review_error = requirement_review_error(review)
+                if review_error is None:
+                    candidate["_requirement_validation"] = {
+                        "static_checks_passed": True,
+                        "independent_review_passed": True,
+                        "review_model": model,
+                        "findings": [],
+                    }
+                    return candidate
+                rejection_classes.append("independent_review")
+                error = review_error
+            else:
+                rejection_classes.append("finite_witness")
+                error = preflight_error
         else:
             rejection_classes.append("static_case")
         feedback = f"\nThe previous response was rejected: {error}. Return a replacement."

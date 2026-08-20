@@ -404,6 +404,45 @@ def test_frozen_v5_001_oracle_is_rejected_by_invocation_contract_gate():
     }
 
 
+def test_frozen_v5_003_requirement_is_rejected_before_forge():
+    dataset = (
+        Path(__file__).resolve().parents[1]
+        / "benchmarks"
+        / "blind_v5"
+        / "external_001"
+        / "cases.json"
+    )
+    case = next(
+        item for item in load_heldout_cases(str(dataset)) if item.case_id == "V5-003"
+    )
+    forge_calls: list[str] = []
+
+    summary = run_heldout_cases(
+        [case],
+        run_case=lambda requirement: (
+            forge_calls.append(requirement)
+            or _forge_result(TERMINAL_VERIFIED, "pkg")
+        ),
+    )
+
+    result = summary.case_results[0]
+    assert forge_calls == []
+    assert result.observed_terminal_status == "oracle_invalid"
+    assert result.model_request_count == 0
+    assert result.oracle_result is not None
+    assert result.oracle_result.executed is False
+    assert result.oracle_result.valid is False
+    assert result.oracle_result.error == (
+        "oracle_invalid: expected terminal status contradicts a finite "
+        "requirement witness"
+    )
+    assert result.oracle_result.sanity_failures[0]["contract_id"] == (
+        "unicode_case_cardinality"
+    )
+    assert result.oracle_result.sanity_failures[0]["witness_code_point"] == "U+0130"
+    assert result.oracle_result.sanity_failures[0]["mapped_length"] == 2
+
+
 def test_invalid_oracle_stops_case_before_forge_and_is_excluded_from_metrics(tmp_path):
     invalid_oracle = tmp_path / "invalid_oracle.py"
     invalid_oracle.write_text(

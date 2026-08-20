@@ -335,6 +335,32 @@ def test_execution_loop_proves_finite_witness_contract_contradictions(problem, p
     assert all(term in proof for term in proof_terms)
 
 
+def test_execution_loop_proves_unicode_case_cardinality_contradiction():
+    problem = (
+        "Return a string of the same length as input where each Unicode letter has "
+        "its case inverted, using str.isupper(), str.islower(), and str.isalpha()."
+    )
+
+    contradictions = ExecutionLoop()._detect_infeasibility(problem)
+
+    assert contradictions
+    proof = " ".join(contradictions)
+    assert "U+0130" in proof
+    assert "2 code points" in proof
+    assert "same length" in proof
+
+
+def test_unicode_case_cardinality_detector_requires_all_contract_parts():
+    loop = ExecutionLoop()
+
+    assert loop._detect_infeasibility(
+        "Invert the case of every ASCII letter while preserving length."
+    ) == []
+    assert loop._detect_infeasibility(
+        "Invert the case of each Unicode letter and permit length-changing mappings."
+    ) == []
+
+
 @pytest.mark.parametrize(
     "problem",
     [

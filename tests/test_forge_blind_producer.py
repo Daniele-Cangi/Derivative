@@ -9,6 +9,7 @@ from core.forge.blind_oracle import (
     oracle_preflight_error,
     oracle_preflight_failure_class,
 )
+from core.forge.blind_requirement import requirement_preflight_error
 from core.forge.blind_producer import (
     BlindProducerConfig,
     _generate_oracle,
@@ -397,6 +398,20 @@ def test_oracle_preflight_rejects_injected_cli_name_in_main_argv():
     assert "invocation contract contradicts the requirement" in error
     assert "passes declared CLI name 'pycolmask' as argv[0]" in error
     assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
+
+
+def test_requirement_preflight_rejects_verified_unicode_cardinality_conflict():
+    requirement = (
+        "Implement a function returning a string of the same length as input where "
+        "each Unicode letter has its case inverted."
+    )
+
+    error = requirement_preflight_error(requirement, "verified")
+
+    assert error is not None
+    assert "finite witness contradiction" in error
+    assert "U+0130" in error
+    assert requirement_preflight_error(requirement, "infeasible_proven") is None
 
 
 def test_oracle_preflight_uses_argv_value_preceding_each_call():

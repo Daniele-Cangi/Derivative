@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.constraint_witnesses import finite_witness_contradictions
+
 import networkx as nx
 
 from audit.trail import AuditEntry, AuditTrail
@@ -2562,6 +2564,9 @@ class ExecutionLoop:
 
     def _detect_infeasibility(self, problem: str) -> List[str]:
         contradictions = self._detect_constraint_contradictions(problem)
+        contradictions.extend(
+            witness.message for witness in finite_witness_contradictions(problem)
+        )
         contradictions.extend(self._detect_implicit_graph_contradictions(problem))
         contradictions.extend(self._detect_cardinality_content_contradictions(problem))
         contradictions.extend(self._detect_information_capacity_contradictions(problem))

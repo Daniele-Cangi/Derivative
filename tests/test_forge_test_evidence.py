@@ -104,6 +104,59 @@ def test_shared_anti_stub_contract_accepts_post_target_file_observation():
     assert reasons == {}
 
 
+def test_shared_evidence_accepts_literal_getattr_target_alias():
+    path = "tests/test_public_api.py"
+    content = (
+        "import pyutfinvert\n"
+        "\n"
+        "def test_public_interface_only():\n"
+        "    func = getattr(pyutfinvert, 'invert_case_preserve_nonletters', None)\n"
+        "    result = func('AbC 123!')\n"
+        "    assert result == 'aBc 123!'\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"invert_case_preserve_nonletters"},
+        target_modules={"pyutfinvert"},
+    )
+    report = requirement_assertion_evidence(
+        {"R012": ["invert_case_preserve_nonletters"]},
+        {"R012": [path]},
+        {path: content},
+        target_names={"invert_case_preserve_nonletters"},
+        target_modules={"pyutfinvert"},
+    )
+
+    assert reasons == {}
+    assert report["R012"]["passed"] is True
+    assert report["R012"]["assertions"][0]["expression"] == (
+        "result == 'aBc 123!'"
+    )
+
+
+def test_shared_evidence_rejects_dynamic_getattr_alias():
+    path = "tests/test_dynamic_target.py"
+    content = (
+        "import pyutfinvert\n"
+        "\n"
+        "def test_dynamic_target(target_name):\n"
+        "    func = getattr(pyutfinvert, target_name, None)\n"
+        "    result = func('AbC')\n"
+        "    assert result == 'aBc'\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"invert_case_preserve_nonletters"},
+        target_modules={"pyutfinvert"},
+    )
+
+    assert reasons == {path: ["missing_target_invocation"]}
+
+
 def test_requirement_evidence_rejects_term_and_assertion_in_different_functions():
     path = "tests/test_contract.py"
     content = (

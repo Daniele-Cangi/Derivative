@@ -153,6 +153,11 @@ def _test_function_semantic_state(
             "has_assertion": False,
             "assertions": [],
         }
+    target_names = target_names | _static_target_callable_aliases(
+        function,
+        target_names,
+        target_module_aliases,
+    )
     calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
     target_calls = [
         call
@@ -211,6 +216,64 @@ def _test_function_semantic_state(
         "has_assertion": has_assertion,
         "assertions": observable_assertions,
     }
+
+
+def _static_target_callable_aliases(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    target_names: set[str],
+    target_module_aliases: set[str],
+) -> set[str]:
+    aliases: set[str] = set()
+    assignments = sorted(
+        (
+            (node, value, targets)
+            for node in ast.walk(function)
+            for value, targets in [_assignment_value_and_targets(node)]
+            if value is not None and targets
+        ),
+        key=lambda item: getattr(item[0], "lineno", 0),
+    )
+    changed = True
+    while changed:
+        changed = False
+        known_names = target_names | aliases
+        for _node, value, targets in assignments:
+            if not _expression_is_static_target_callable(
+                value,
+                known_names,
+                target_module_aliases,
+            ):
+                continue
+            new_aliases = targets - aliases
+            if new_aliases:
+                aliases.update(new_aliases)
+                changed = True
+    return aliases
+
+
+def _expression_is_static_target_callable(
+    expression: ast.expr,
+    target_names: set[str],
+    target_module_aliases: set[str],
+) -> bool:
+    name = _expression_name(expression)
+    if name:
+        tail = name.rsplit(".", 1)[-1]
+        root = name.split(".", 1)[0]
+        if name in target_names or tail in target_names:
+            return isinstance(expression, ast.Name) or root in target_module_aliases
+    if not isinstance(expression, ast.Call):
+        return False
+    if _expression_name(expression.func) != "getattr" or len(expression.args) < 2:
+        return False
+    module_name = _expression_name(expression.args[0]).split(".", 1)[0]
+    attribute = expression.args[1]
+    return (
+        module_name in target_module_aliases
+        and isinstance(attribute, ast.Constant)
+        and isinstance(attribute.value, str)
+        and attribute.value in target_names
+    )
 
 
 def _target_import_context(

@@ -302,6 +302,25 @@ def test_cardinality_and_content_contradictions_are_terminal_infeasibility(tmp_p
         assert output.contradictions
 
 
+def test_unicode_case_cardinality_witness_is_terminal_infeasibility(tmp_path):
+    requirement = (
+        "Implement a Python module returning a new string of the same length as input, "
+        "where each Unicode letter has its case inverted. Use str.isupper(), "
+        "str.islower(), and str.isalpha() to determine each character's status."
+    )
+
+    output = _build_planner(tmp_path).plan(
+        RequirementCompiler().compile(requirement)
+    )
+
+    assert isinstance(output, InfeasibilityCertificate)
+    assert output.terminal_status == "infeasible_proven"
+    assert output.execution_evidence["is_satisfiable"] is False
+    proof = " ".join(output.contradictions)
+    assert "U+0130" in proof
+    assert "2 code points" in proof
+
+
 def test_information_and_retention_contradictions_are_terminal_infeasibility(tmp_path):
     planner = _build_planner(tmp_path)
 

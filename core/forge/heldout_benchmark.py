@@ -14,6 +14,7 @@ from core.forge.benchmark import (
     TERMINAL_INFEASIBLE_PROVEN,
     TERMINAL_VERIFIED,
 )
+from core.constraint_witnesses import finite_witness_contradictions
 from core.forge.contracts import ForgeResult
 from core.forge.execution import (
     LocalProcessExecutor,
@@ -277,6 +278,24 @@ def _copy_package_for_oracle(source: Path, destination: Path) -> None:
 def inspect_oracle_sanity(case: HeldoutBenchmarkCase) -> OracleResult | None:
     if case.oracle is None:
         return None
+    witness_contradictions = finite_witness_contradictions(case.requirement)
+    if (
+        witness_contradictions
+        and case.expected_terminal_status != TERMINAL_INFEASIBLE_PROVEN
+    ):
+        return OracleResult(
+            executed=False,
+            passed=False,
+            valid=False,
+            error=(
+                "oracle_invalid: expected terminal status contradicts a finite "
+                "requirement witness"
+            ),
+            sanity_failures=[
+                contradiction.to_evidence()
+                for contradiction in witness_contradictions
+            ],
+        )
     try:
         source = Path(case.oracle.path).read_text(encoding="utf-8")
     except (OSError, UnicodeError):

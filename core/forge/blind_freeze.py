@@ -16,6 +16,7 @@ from core.forge.blind_oracle import (
     oracle_preflight_failure_class,
     oracle_semantic_sanity_error,
 )
+from core.forge.blind_requirement import requirement_preflight_error
 from core.forge.heldout_benchmark import HeldoutBenchmarkCase, load_heldout_cases
 
 
@@ -99,6 +100,15 @@ def freeze_blind_bundle(
 
 def _validate_oracle_semantic_sanity(cases: List[HeldoutBenchmarkCase]) -> None:
     for case in cases:
+        requirement_error = requirement_preflight_error(
+            case.requirement,
+            case.expected_terminal_status,
+        )
+        if requirement_error is not None:
+            raise ValueError(
+                f"Blind benchmark requirement for {case.case_id} failed semantic sanity; "
+                f"rejection_classes=requirement_finite_witness; {requirement_error}"
+            )
         if case.oracle is None:
             continue
         try:

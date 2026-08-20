@@ -1,5 +1,20 @@
 from typing import Any
 
+from core.constraint_witnesses import finite_witness_contradictions
+
+
+def requirement_preflight_error(
+    requirement: str,
+    expected_terminal_status: str,
+) -> str | None:
+    contradictions = finite_witness_contradictions(requirement)
+    if not contradictions or expected_terminal_status == "infeasible_proven":
+        return None
+    return (
+        f"expected {expected_terminal_status} requirement has a finite witness "
+        f"contradiction: {contradictions[0].message}"
+    )
+
 
 def requirement_review_error(review: dict[str, Any]) -> str | None:
     approved = review.get("approved")
@@ -32,7 +47,8 @@ requirements whose stated examples conflict with their rules. Do not reject a co
 because it has the intended property, and never include confirming observations as findings. Findings must identify only actual defects,
 must identify the candidate index, and must remain empty when approved. Reject any verified CLI without an importable
 main(argv: list[str] | None = None) -> int interface that can be tested in-process, and reject any verified service contract that requires
-a live server, socket, subprocess, or HTTP client instead of a callable module interface. Return only the requested structured object."""
+a live server, socket, subprocess, or HTTP client instead of a callable module interface. For universal character transformations with
+fixed output length, check finite witnesses whose case mapping expands to multiple code points. Return only the requested structured object."""
 
 
 def _bounded_finding(value: str) -> str:
