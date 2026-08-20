@@ -24,7 +24,7 @@ requirement
 
 The validator remains independent of generated claims and model confidence. Derivative can ground planning and candidate revision, but it cannot mark a Forge build verified. Only the Forge validation contracts and observed execution evidence can authorize packaging.
 
-## Current import coupling
+## V5 closure import coupling
 
 The semantic boundary is sound; the dependency-loading boundary is not yet optimized.
 
@@ -40,11 +40,19 @@ On the V5 closure environment, a clean `import forge` measured approximately 42 
 - `scipy`
 - `sympy`
 
-It also loaded host dependencies such as `openai`, `typer`, and `rich`. This explains why Forge currently carries the complete Derivative dependency set at startup.
+It also loaded host dependencies such as `openai`, `typer`, and `rich`. This explains why Forge carried the complete Derivative dependency set at startup in the frozen V5 snapshot.
+
+## First post-V5 boundary improvement
+
+The Forge composition root now imports default stages and model-backed repair components only when `run_forge()` needs to construct them. Importing the module or rendering `forge.py --help` no longer constructs the Derivative substrate.
+
+Using the same clean-process probe on the same environment, `import forge` now measures approximately 1.298 seconds and 360 loaded modules. None of the observed optional substrate roots (`dowhy`, `networkx`, `pgmpy`, `pint`, `qiskit`, `scipy`, or `sympy`) is loaded. Typer and Rich remain because they implement the host CLI.
+
+This is a composition-root fix, not complete capability loading. A default Forge run still constructs `PlannerStage`, whose current `CognitiveSubstrate` loads all lens implementations. Selective runtime loading and optional installation groups remain the next dependency task.
 
 ## Post-V5 dependency objective
 
-The first architectural task after the V5 freeze is capability-driven lazy loading, not separation into a parallel truth system.
+The dependency objective after the composition-root fix is capability-driven runtime loading, not separation into a parallel truth system.
 
 The intended change is:
 

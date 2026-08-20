@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import time
 from dataclasses import asdict, is_dataclass
@@ -5,13 +7,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import typer
 from dotenv import load_dotenv
 
-from core.forge.coder_stage import CoderStage
-from core.forge.candidate_compiler import SubstrateCandidateCompiler
 from core.forge.contracts import (
     BuildSpec,
     CodeArtifact,
@@ -29,13 +29,15 @@ from core.forge.execution import (
     DOCKER_BACKEND,
     create_process_executor,
 )
-from core.forge.packaging_stage import PackagingStage
-from core.forge.planner_stage import PlannerStage
-from core.forge.repair import RepairPolicy
-from core.forge.repair_backend import SubstrateRepairBackend
-from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.telemetry import track_model_usage
-from core.forge.validator_stage import ValidatorStage
+
+if TYPE_CHECKING:
+    from core.forge.coder_stage import CoderStage
+    from core.forge.packaging_stage import PackagingStage
+    from core.forge.planner_stage import PlannerStage
+    from core.forge.repair import RepairPolicy
+    from core.forge.requirement_compiler import RequirementCompiler
+    from core.forge.validator_stage import ValidatorStage
 
 load_dotenv(Path(__file__).resolve().with_name(".env"))
 
@@ -87,8 +89,18 @@ def run_forge(
     started = time.perf_counter()
     normalized_planner_attempts = max(1, int(max_planner_attempts))
     normalized_coder_attempts = max(1, int(max_coder_attempts))
-    compiler = requirement_compiler or RequirementCompiler()
-    planner = planner_stage or PlannerStage(execution_mode=execution_mode)
+    if requirement_compiler is None:
+        from core.forge.requirement_compiler import RequirementCompiler
+
+        compiler = RequirementCompiler()
+    else:
+        compiler = requirement_compiler
+    if planner_stage is None:
+        from core.forge.planner_stage import PlannerStage
+
+        planner = PlannerStage(execution_mode=execution_mode)
+    else:
+        planner = planner_stage
     process_executor = create_process_executor(
         execution_backend,
         image=sandbox_image,
@@ -96,9 +108,14 @@ def run_forge(
     if coder_stage is not None:
         coder = coder_stage
     else:
+        from core.forge.coder_stage import CoderStage
+
         repair_backend = None
         candidate_compiler = None
         if execution_mode != "local-only":
+            from core.forge.candidate_compiler import SubstrateCandidateCompiler
+            from core.forge.repair_backend import SubstrateRepairBackend
+
             repair_backend = SubstrateRepairBackend(
                 execution_mode=execution_mode,
                 substrate=getattr(planner, "substrate", None),
@@ -115,12 +132,27 @@ def run_forge(
             repair_backend=repair_backend,
             candidate_compiler=candidate_compiler,
         )
-    validator = validator_stage or ValidatorStage(
-        executor=process_executor,
-        require_isolation=True,
-    )
-    packager = packaging_stage or PackagingStage(output_root=packaging_output_root)
-    repairs = repair_policy or RepairPolicy()
+    if validator_stage is None:
+        from core.forge.validator_stage import ValidatorStage
+
+        validator = ValidatorStage(
+            executor=process_executor,
+            require_isolation=True,
+        )
+    else:
+        validator = validator_stage
+    if packaging_stage is None:
+        from core.forge.packaging_stage import PackagingStage
+
+        packager = PackagingStage(output_root=packaging_output_root)
+    else:
+        packager = packaging_stage
+    if repair_policy is None:
+        from core.forge.repair import RepairPolicy
+
+        repairs = RepairPolicy()
+    else:
+        repairs = repair_policy
 
     build_spec = compiler.compile(requirement)
     attempt_trace: list[dict[str, object]] = []

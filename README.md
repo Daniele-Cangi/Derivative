@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-407%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-408%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -99,6 +99,8 @@ flowchart LR
 The critical separation is deliberate: the planner cannot decide truth, generated code cannot self-certify, and the validator cannot redesign the build. Validator evidence alone controls retry, rejection and packaging.
 
 Derivative and Forge share one truth-producing substrate but have different responsibilities: Derivative supplies computational lenses, execution grounding, obligations, contradiction witnesses, audit and memory; Forge supplies typed software-build contracts, candidate expansion, independent validation, bounded repair and fail-closed packaging. The detailed boundary and the current eager dependency-loading debt are documented in [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md).
+
+The Forge composition root is lazy: importing `forge` or displaying CLI help does not load optional scientific lens runtimes. A real default planning run still activates the complete Derivative lens set; capability-selective runtime loading is the next dependency boundary.
 
 ## Core Modules
 
