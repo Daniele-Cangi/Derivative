@@ -1,8 +1,5 @@
 from lenses.base import BaseLens
-try:
-    import z3  # noqa: F401
-except ImportError:
-    z3 = None
+from lenses.runtime import load_optional_module
 
 class FormalLens(BaseLens):
     epistemic_tag = "formal"
@@ -30,9 +27,6 @@ class FormalLens(BaseLens):
     )
 
     def _collect_library_signals(self, problem: str):
-        if z3 is None:
-            return [], [], [], 0.0
-
         normalized = problem.lower()
         contradiction_pairs = (
             ("always", "never"),
@@ -42,6 +36,13 @@ class FormalLens(BaseLens):
         )
 
         conflicts = [pair for pair in contradiction_pairs if pair[0] in normalized and pair[1] in normalized]
+        if not self._matched_keywords(problem) and not conflicts:
+            return [], [], [], 0.0
+
+        z3, _ = load_optional_module("z3")
+        if z3 is None:
+            return [], [], [], 0.0
+
         if conflicts:
             solver = z3.Solver()
             marker = z3.Bool("requirement_marker")

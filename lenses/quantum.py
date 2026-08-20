@@ -1,10 +1,11 @@
 from lenses.base import BaseLens
-try:
-    from qiskit import QuantumCircuit
-    QUANTUM_IMPORT_ERROR = ""
-except ImportError as exc:
-    QuantumCircuit = None
-    QUANTUM_IMPORT_ERROR = str(exc)
+from lenses.runtime import load_optional_module
+
+
+def _load_quantum_circuit():
+    qiskit, import_error = load_optional_module("qiskit")
+    quantum_circuit = getattr(qiskit, "QuantumCircuit", None) if qiskit is not None else None
+    return quantum_circuit, import_error
 
 class QuantumLens(BaseLens):
     epistemic_tag = "quantum"
@@ -32,15 +33,19 @@ class QuantumLens(BaseLens):
     )
 
     def _collect_library_signals(self, problem: str):
-        if QuantumCircuit is None:
+        if not self._matched_keywords(problem):
+            return [], [], [], 0.0
+
+        quantum_circuit, import_error = _load_quantum_circuit()
+        if quantum_circuit is None:
             notes = ["Qiskit runtime unavailable; the quantum layer is operating in degraded design-only mode."]
             blind_spots = []
-            if QUANTUM_IMPORT_ERROR:
-                blind_spots.append(f"Quantum runtime import error: {QUANTUM_IMPORT_ERROR}")
+            if import_error:
+                blind_spots.append(f"Quantum runtime import error: {import_error}")
             return notes, [], blind_spots, 0.0
 
         width = 2 if len(problem) < 220 else 3
-        circuit = QuantumCircuit(width)
+        circuit = quantum_circuit(width)
         circuit.h(0)
         if width > 1:
             circuit.cx(0, 1)
@@ -71,13 +76,15 @@ class QuantumLens(BaseLens):
         ]
 
     def runtime_status(self) -> str:
-        if QuantumCircuit is not None:
+        quantum_circuit, import_error = _load_quantum_circuit()
+        if quantum_circuit is not None:
             return "ready"
-        if QUANTUM_IMPORT_ERROR:
+        if import_error:
             return "degraded"
         return "unavailable"
 
     def runtime_detail(self) -> str:
-        if QuantumCircuit is not None:
+        quantum_circuit, import_error = _load_quantum_circuit()
+        if quantum_circuit is not None:
             return "QuantumCircuit import ok"
-        return QUANTUM_IMPORT_ERROR or "QuantumCircuit unavailable"
+        return import_error or "QuantumCircuit unavailable"

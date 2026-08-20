@@ -1,8 +1,4 @@
 from lenses.base import BaseLens
-try:
-    import dowhy  # noqa: F401
-except ImportError:
-    dowhy = None
 
 class CausalLens(BaseLens):
     epistemic_tag = "causal"

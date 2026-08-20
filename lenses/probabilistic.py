@@ -1,8 +1,4 @@
 from lenses.base import BaseLens
-try:
-    import pgmpy  # noqa: F401
-except ImportError:
-    pgmpy = None
 
 class ProbabilisticLens(BaseLens):
     epistemic_tag = "probabilistic"

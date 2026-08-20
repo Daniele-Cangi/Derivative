@@ -1,8 +1,5 @@
 from lenses.base import BaseLens
-try:
-    import sympy  # noqa: F401
-except ImportError:
-    sympy = None
+from lenses.runtime import load_optional_module
 
 class SymbolicLens(BaseLens):
     epistemic_tag = "symbolic"
@@ -30,6 +27,11 @@ class SymbolicLens(BaseLens):
     )
 
     def _collect_library_signals(self, problem: str):
+        operator_count = sum(problem.count(operator) for operator in ("=", "<", ">", "+", "-", "*", "/"))
+        if not self._matched_keywords(problem) and operator_count == 0:
+            return [], [], [], 0.0
+
+        sympy, _ = load_optional_module("sympy")
         if sympy is None:
             return [], [], [], 0.0
 
@@ -47,7 +49,6 @@ class SymbolicLens(BaseLens):
         if not isinstance(symbols, tuple):
             symbols = (symbols,)
 
-        operator_count = sum(problem.count(operator) for operator in ("=", "<", ">", "+", "-", "*", "/"))
         notes = [f"SymPy normalized {len(symbols)} symbolic variable(s) from the prompt."]
         if operator_count:
             notes.append(f"Detected {operator_count} explicit operator token(s) that can anchor invariants.")

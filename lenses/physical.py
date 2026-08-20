@@ -1,14 +1,6 @@
 from lenses.base import BaseLens
+from lenses.runtime import load_optional_module
 import re
-try:
-    import scipy  # noqa: F401
-except ImportError:
-    scipy = None
-
-try:
-    import pint  # noqa: F401
-except ImportError:
-    pint = None
 
 class PhysicalLens(BaseLens):
     epistemic_tag = "physical"
@@ -36,11 +28,12 @@ class PhysicalLens(BaseLens):
     )
 
     def _collect_library_signals(self, problem: str):
-        if pint is None:
-            return [], [], [], 0.0
-
         matches = re.findall(r"(\d+(?:\.\d+)?)\s*(ms|s|sec|seconds|kb|mb|gb|tb|hz|mhz|ghz)", problem.lower())
         if not matches:
+            return [], [], [], 0.0
+
+        pint, _ = load_optional_module("pint")
+        if pint is None:
             return [], [], [], 0.0
 
         registry = pint.UnitRegistry()
@@ -72,6 +65,7 @@ class PhysicalLens(BaseLens):
 
         note = f"Pint normalized {len(normalized_values)} explicit resource quantity signal(s)."
         notes = [note]
+        scipy, _ = load_optional_module("scipy")
         if scipy is not None and len(normalized_values) > 1:
             try:
                 spread = float(scipy.stats.variation(normalized_values))

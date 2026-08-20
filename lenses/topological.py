@@ -1,8 +1,5 @@
 from lenses.base import BaseLens
-try:
-    import networkx  # noqa: F401
-except ImportError:
-    networkx = None
+from lenses.runtime import load_optional_module
 
 class TopologicalLens(BaseLens):
     epistemic_tag = "deductive"
@@ -30,6 +27,10 @@ class TopologicalLens(BaseLens):
     )
 
     def _collect_library_signals(self, problem: str):
+        if not self._matched_keywords(problem):
+            return [], [], [], 0.0
+
+        networkx, _ = load_optional_module("networkx")
         if networkx is None:
             return [], [], [], 0.0
 
