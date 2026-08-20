@@ -1078,8 +1078,17 @@ class PlannerStage:
             return "test_handles_malformed_rows", "validation"
         if "invalid date" in lowered:
             return "test_rejects_invalid_dates", "validation"
-        if "every possible date format" in lowered or "universal constraint" in lowered:
+        if "every possible date format" in lowered:
             return "test_universal_date_format_support", "proof"
+        if "universal constraint" in lowered:
+            semantic_objective = re.sub(
+                r"^prove\s+universal\s+constraint:\s*",
+                "",
+                lowered,
+            )
+            compact = "_".join(re.findall(r"[a-z0-9]+", semantic_objective)[:6])
+            compact = compact or f"constraint_{index:02d}"
+            return f"test_universal_{compact}_{index:02d}", "proof"
         if "read" in lowered and "csv" in lowered:
             return "test_reads_contracts_csv", "integration"
         if "extract" in lowered and "expiration" in lowered:

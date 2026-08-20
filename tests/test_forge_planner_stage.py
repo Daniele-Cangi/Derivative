@@ -232,6 +232,28 @@ def test_idempotent_event_service_plan_preserves_declared_api_and_omits_unreques
     assert "rate-limit" not in output.architecture_summary.lower()
 
 
+def test_generic_universal_proof_uses_semantic_non_date_name():
+    planner = PlannerStage.__new__(PlannerStage)
+    test_name, test_type = planner._semantic_test_spec(
+        "Prove universal constraint: For any row, if a field in field_order is missing, "
+        "its rotated value becomes None",
+        6,
+    )
+    assert test_name == "test_universal_for_any_row_if_a_field_06"
+    assert "date_format" not in test_name
+    assert test_type == "proof"
+
+
+def test_universal_date_format_requirement_keeps_specialized_test_name():
+    planner = PlannerStage.__new__(PlannerStage)
+    test_name, test_type = planner._semantic_test_spec(
+        "Prove universal constraint: supports every possible date format",
+        4,
+    )
+    assert test_name == "test_universal_date_format_support"
+    assert test_type == "proof"
+
+
 def test_sales_jsonl_pipeline_plan_preserves_output_and_function_signature(tmp_path):
     output = _build_planner(tmp_path).plan(
         RequirementCompiler().compile(SALES_JSONL_PIPELINE_REQUIREMENT)

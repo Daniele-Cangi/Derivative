@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-405%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-407%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -97,6 +97,8 @@ flowchart LR
 ```
 
 The critical separation is deliberate: the planner cannot decide truth, generated code cannot self-certify, and the validator cannot redesign the build. Validator evidence alone controls retry, rejection and packaging.
+
+Derivative and Forge share one truth-producing substrate but have different responsibilities: Derivative supplies computational lenses, execution grounding, obligations, contradiction witnesses, audit and memory; Forge supplies typed software-build contracts, candidate expansion, independent validation, bounded repair and fail-closed packaging. The detailed boundary and the current eager dependency-loading debt are documented in [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md).
 
 ## Core Modules
 
@@ -298,6 +300,8 @@ OPENAI_MODEL="gpt-4.1-mini"
 
 - [Contributing guide](CONTRIBUTING.md): development workflow and acceptance expectations.
 - [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md): requirements for adding capabilities without weakening `verified`.
+- [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md): why Forge uses the Derivative substrate and how capability-driven lazy loading will reduce startup dependencies after the V5 freeze.
+- [Forge Evidence Closure - Blind V5](docs/FORGE_V5_EVIDENCE_CLOSURE.md): immutable baseline semantics, attributable replay receipts, and the next independent evaluation contract.
 - [Blind evaluation protocol](benchmarks/blind_v3/README.md): freeze, provenance and replay rules for independent evaluation.
 - [Blind-v5 manifest](benchmarks/blind_v5/external_001/manifest.json): current frozen requirements, oracle digests, provenance, and protected baseline.
 - [Blind-v5 immutable baseline](benchmarks/blind_v5/external_001/baseline_result.json): first-run result before regression work.
@@ -321,7 +325,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 Evidence is reported by revision and evaluation type. Targeted post-fix replays are regression evidence, never retroactively promoted to a fresh blind aggregate.
 
-- At commit `fcff3b5`, the full local suite reports **405 passed, 2 skipped**. GitHub Actions run [`32368423598`](https://github.com/Daniele-Cangi/Derivative/actions/runs/32368423598) is green with the Docker sandbox and the internal 30-case regression gate.
+- The V5 evidence-closure snapshot reports **407 passed, 2 skipped** locally. Its release is published only after the same commit passes the GitHub Actions Docker sandbox and internal 30-case regression gate.
 - The 30-case gate remains useful for deterministic CI regression, but it is not presented as independent blind proof because its cases are repository-maintained.
 - Blind V5 was frozen before first execution. Its immutable baseline scored **4/12**, status accuracy **0.417**, external false-verified rate **1.000**, infeasibility detection **0.333**, 680,399 model tokens, and an estimated cost of $1.83934.
 - Structural fixes are measured through isolated, explicitly labeled post-fix replays. There is intentionally no synthetic "current V5 score" assembled from runs made at different revisions.
@@ -388,17 +392,17 @@ Current boundaries:
 
 ## Development Roadmap
 
-The current phase is evidence closure, not feature expansion. Forge remains focused on its existing Python CLI, service, pipeline, and library surface.
+Blind V5 is frozen as an evidence snapshot, not retained as an optimization target. Forge remains focused on its existing Python CLI, service, pipeline, and library surface until a newly authored independent blind establishes how well the current system transfers.
 
-Current phase priorities:
+Post-freeze priorities:
 
-1. Preserve every baseline, replay, oracle-invalid finding, token count, cost, latency, repair count, and artifact digest.
-2. Keep external false-verified rate at zero on valid post-fix evidence; never weaken validator gates to improve throughput.
-3. Remove residual domain-specific naming from generic universal proof-test plans without changing their verification semantics.
-4. Freeze the current Forge phase from the valid V5 evidence without combining revisions into a fictional aggregate.
-5. Start a new independent blind only after the current phase is frozen; do not expand domains to improve known-case scores.
+1. Preserve every V5 baseline, replay, oracle-invalid finding, false-positive incident, token count, cost, latency, repair count, and artifact digest without assembling a fictional cross-revision aggregate.
+2. Introduce capability-driven lazy imports and optional dependency groups while preserving the shared Derivative truth substrate and fail-closed behavior.
+3. Freeze a genuinely new blind bundle before Forge sees its requirements or oracles.
+4. Report Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, latency, tokens, cost per externally accepted artifact, and repairs per successful build together.
+5. Correct only structural mechanisms exposed by the new blind; do not add one-off templates for known cases.
 
-No blind V6, new software domain, or existing-repository mode is required to close this phase.
+No new software domain or existing-repository mode is required before that independent evaluation.
 
 Existing-repository mode, additional languages, frontend generation, new broad domain adapters, wheel/container distribution packaging, SBOM generation, and dependency auditing are explicitly deferred. They are not acceptance criteria for closing the current Forge phase.
 
