@@ -336,7 +336,7 @@ Evidence is reported by revision and evaluation type. Targeted post-fix replays 
 | `V5-001` | `oracle_invalid` before Forge execution | Frozen oracle supplied process-style `argv[0]` to an importable `main(argv)` contract |
 | `V5-003` | `oracle_invalid` before Forge execution | Universal Unicode case inversion contradicted the fixed-length output contract (`İ` is a finite witness) |
 | `V5-004` | `oracle_invalid` before Forge execution | Frozen invalid fixture contradicted its own explicit regex; replay used zero model calls/tokens |
-| `V5-006` | Pending isolated replay | Remaining valid feasible V5 case; no result is claimed yet |
+| `V5-006` | `validation_failed` after two repairs; oracle not run | Fail-closed routing regression: the negative clause "no CLI" selected a CLI/pipeline plan; 107,022 tokens, external false-verified rate 0.000 |
 
 The complete immutable reports are stored beside the V5 manifest as `baseline_result.json` and `post_fix_replay_*.json`. Oracle-invalid findings are exclusions with evidence, not passes.
 
@@ -392,9 +392,9 @@ The current phase is evidence closure, not feature expansion. Forge remains focu
 
 Current phase priorities:
 
-1. Execute the remaining valid feasible case `V5-006` in isolation against its unchanged oracle.
-2. Preserve every baseline, replay, oracle-invalid finding, token count, cost, latency, repair count, and artifact digest.
-3. Correct only general failures in candidate compilation, semantic preflight, repair targeting, and evidence coverage.
+1. Correct positive/negative target and capability polarity so exclusion clauses cannot select or require forbidden interfaces.
+2. Replay `V5-006` unchanged after that structural fix; do not add a case-specific domain template.
+3. Preserve every baseline, replay, oracle-invalid finding, token count, cost, latency, repair count, and artifact digest.
 4. Keep external false-verified rate at zero on valid post-fix evidence; never weaken validator gates to improve throughput.
 5. Freeze the current Forge phase only after the valid V5 evidence has been adjudicated without combining revisions into a fictional aggregate.
 
