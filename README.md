@@ -7,8 +7,9 @@
 [![Forge CI](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml/badge.svg)](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-346%20passing-2f855a)
-![Quality gate](https://img.shields.io/badge/benchmark-30%2F30-d39e2f)
+[![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
+![Tests](https://img.shields.io/badge/tests-398%20passing-2f855a)
+![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
 </div>
@@ -20,7 +21,7 @@
 Derivative is an execution-grounded reasoning and software-synthesis project. Its product-facing **Forge** pipeline compiles a natural-language build requirement into typed contracts, plans and generates code, executes it inside a constrained environment, validates independent evidence, and packages only artifacts that pass every gate.
 
 > [!IMPORTANT]
-> Forge does not treat model confidence or generated test presence as proof. `verified` means the artifact satisfied the compiled requirement, quality, execution and adversarial contracts. It does not claim that an underspecified requirement is complete or that unrequested production properties were proven.
+> Forge does not treat model confidence or generated test presence as proof. `verified` means the artifact satisfied the compiled internal requirement, quality, execution and adversarial contracts. Independent blind-oracle acceptance is reported separately. Neither status is a proof of universal correctness or of properties absent from the requirement.
 
 **Navigate:** [Quick start](#quick-start) · [How Forge works](#how-forge-works) · [Validation](#validation-layers) · [Isolation](#execution-isolation) · [Supported surface](#scope-and-maturity) · [Evidence](#current-verification-status) · [Contributing](#contributing-and-certified-extensions)
 
@@ -127,17 +128,23 @@ The critical separation is deliberate: the planner cannot decide truth, generate
 
 ## Libraries
 
-The substrate and CLI rely on these packages:
-- `sympy`: symbolic algebra and recurrence solving.
-- `networkx`: graph and topology modeling/enumeration.
-- `qiskit`, `qiskit-aer`: quantum circuit construction and simulation.
-- `z3-solver`: satisfiability and constraint proving.
-- `pgmpy`, `dowhy`: probabilistic/causal reasoning support.
-- `scipy`, `pint`: scientific computation and unit-aware calculations.
-- `openai`: model-backed complete candidate compilation and targeted repair in non-local modes.
-- `typer`, `rich`: command-line interface and structured console output.
-- `python-dotenv`: runtime environment loading.
-- `pytest`, `bcrypt`: generated acceptance execution and the certified sandbox service surface.
+Libraries are permanent computational lenses at substrate level, not names placed in a prompt. `CognitiveSubstrate` loads the causal, symbolic, topological, probabilistic, quantum, formal, and physical lenses at startup; deterministic solvers and generated executable checks then ground their claims.
+
+| Package | Substrate role |
+| --- | --- |
+| `sympy` | Symbolic algebra, linear recurrence solving, limits, and closed-form obligation checks |
+| `networkx` | Exact graph enumeration, connectivity, topology metrics, and structural witnesses |
+| `qiskit`, `qiskit-aer` | Quantum circuit construction and executable circuit-backed checks |
+| `z3-solver` | Satisfiability checks and formal contradiction witnesses |
+| `pgmpy` | Probabilistic-model lens support |
+| `dowhy` | Causal-model lens support |
+| `scipy`, `pint` | Scientific and unit-aware physical reasoning support |
+| `openai` | Complete-candidate compilation and targeted repair in `hybrid`/`remote-only`; never the final validator |
+| `pytest` | Generated acceptance tests and independent benchmark-oracle execution |
+| `typer`, `rich`, `python-dotenv` | CLI, structured output, and host-side configuration |
+| `bcrypt` | Certified sandbox dependency for hashed-auth service contracts |
+
+Missing solver libraries degrade or block the corresponding lens; Forge does not silently replace a required deterministic capability with model narration.
 
 ## Requirement Preservation and Coverage Gate
 
@@ -223,6 +230,12 @@ In `hybrid` or `remote-only` mode, Forge may ask the existing cognitive substrat
 
 For an uncovered capability, Forge uses the stricter complete Candidate Compiler transaction instead of a partial repair. Preflight executes all generated tests and checks mapped semantic evidence before the candidate reaches `ValidatorStage`. Requirement evidence is tracked at test-function and assertion level, including the assertion line, expression, and semantic terms it covers; a term elsewhere in the file cannot certify an unrelated assertion. The validator remains the final authority and can still reject the candidate. Repository-held acceptance oracles are used only by the held-out benchmark and are never exposed to generation.
 
+## Oracle Contract Preflight
+
+Blind evidence is accepted only when the external oracle is coherent with the frozen requirement. Before Forge spends model tokens or generates a candidate, the benchmark runner checks executable acceptance fixtures against explicit contracts such as quoted regular expressions and finite Unicode/cardinality witnesses.
+
+An inconsistent benchmark terminates as benchmark-only `oracle_invalid`. That status is not converted to `validation_failed`, `infeasible_proven`, or a passing score, and Forge execution is skipped. The frozen requirement and oracle remain unchanged; the mismatch and source location are persisted as adjudication evidence.
+
 ## CLI Reference
 
 ### Derivative CLI
@@ -285,8 +298,11 @@ OPENAI_MODEL="gpt-4.1-mini"
 
 - [Contributing guide](CONTRIBUTING.md): development workflow and acceptance expectations.
 - [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md): requirements for adding capabilities without weakening `verified`.
-- [Blind-v3 protocol](benchmarks/blind_v3/README.md): freeze, provenance and replay rules for independent evaluation.
+- [Blind evaluation protocol](benchmarks/blind_v3/README.md): freeze, provenance and replay rules for independent evaluation.
+- [Blind-v5 manifest](benchmarks/blind_v5/external_001/manifest.json): current frozen requirements, oracle digests, provenance, and protected baseline.
+- [Blind-v5 immutable baseline](benchmarks/blind_v5/external_001/baseline_result.json): first-run result before regression work.
 - [Forge CI workflow](.github/workflows/forge-ci.yml): the Linux/Docker test and benchmark gate executed on every push and pull request.
+- [Release v0.1.0](https://github.com/Daniele-Cangi/Derivative/releases/tag/v0.1.0): first public release snapshot.
 - [MIT License](LICENSE): usage and redistribution terms.
 
 ## Contributing and Certified Extensions
@@ -303,16 +319,29 @@ Derivative is released under the [MIT License](LICENSE).
 
 ## Current Verification Status
 
-The repository currently has the following verified baseline:
+Evidence is reported by revision and evaluation type. Targeted post-fix replays are regression evidence, never retroactively promoted to a fresh blind aggregate.
 
-- 346 repository tests in the CI suite. The latest local run passes 344 and skips 2 Docker-gated isolation tests on this workstation; GitHub Actions executes the complete set.
-- A 30-case extended benchmark balanced across `verified`, `validation_failed`, and `infeasible_proven`, executed inside the Docker sandbox and enforced as a CI quality gate. CI run [`31970466118`](https://github.com/Daniele-Cangi/Derivative/actions/runs/31970466118) reports status accuracy 1.000, Verified@1 1.000, no repair-eligible cases, false-verified rate 0.000, infeasibility detection 1.000, average latency 1.20s, median latency 1.78s, and P95 latency 1.82s.
-- A held-out benchmark with repository-maintained acceptance oracles that execute independently against packaged artifacts.
-- A sealed blind-v2 calibration bundle containing 10 cases: 6 expected verified builds, 2 expected validation failures, and 2 expected infeasibility proofs.
-- A genuinely new blind-v3 bundle frozen before execution with 12 cases and six independent black-box oracles. Its first run is preserved unchanged and establishes a deliberately unfiltered baseline: 3/12 passed, status accuracy 0.333, external Verified@1 0.000, oracle pass rate 0.000, false-verified rate 1.000, and infeasibility detection 0.000.
+- At commit `168a120`, the full local suite reports **398 passed, 2 skipped**. GitHub Actions run [`32351644970`](https://github.com/Daniele-Cangi/Derivative/actions/runs/32351644970) is green with the Docker sandbox and the internal 30-case regression gate.
+- The 30-case gate remains useful for deterministic CI regression, but it is not presented as independent blind proof because its cases are repository-maintained.
+- Blind V5 was frozen before first execution. Its immutable baseline scored **4/12**, status accuracy **0.417**, external false-verified rate **1.000**, infeasibility detection **0.333**, 680,399 model tokens, and an estimated cost of $1.83934.
+- Structural fixes are measured through isolated, explicitly labeled post-fix replays. There is intentionally no synthetic "current V5 score" assembled from runs made at different revisions.
+
+### Blind V5 regression ledger
+
+| Evidence | Result | Interpretation |
+| --- | --- | --- |
+| `V5-002` | `verified` after one repair; independent oracle 7/7 | Valid feasible regression; 64,234 tokens, four model requests, external false-verified rate 0.000 |
+| `V5-005` | `verified`; independent oracle passed | Valid feasible evidence on the frozen contract |
+| `V5-010`, `V5-012` | `infeasible_proven` | Contradiction routing remained terminal and fail-closed |
+| `V5-001` | `oracle_invalid` before Forge execution | Frozen oracle supplied process-style `argv[0]` to an importable `main(argv)` contract |
+| `V5-003` | `oracle_invalid` before Forge execution | Universal Unicode case inversion contradicted the fixed-length output contract (`İ` is a finite witness) |
+| `V5-004` | `oracle_invalid` before Forge execution | Frozen invalid fixture contradicted its own explicit regex; replay used zero model calls/tokens |
+| `V5-006` | Pending isolated replay | Remaining valid feasible V5 case; no result is claimed yet |
+
+The complete immutable reports are stored beside the V5 manifest as `baseline_result.json` and `post_fix_replay_*.json`. Oracle-invalid findings are exclusions with evidence, not passes.
 
 <details>
-<summary><strong>Benchmark history and blind replay ledger</strong> (run IDs, raw metrics, known oracle defects)</summary>
+<summary><strong>Historical blind-v2/v3 replay ledger</strong> (run IDs, raw metrics, known oracle defects)</summary>
 
 The original sealed blind-v2 run is preserved unchanged and scored 6/10 with an external false-verified rate of 0.0. Later post-fix replays and targeted oracle runs are regression evidence, not new blind evidence, because those requirements are now known to the development process. The latest targeted rerun of the three previously failing feasible cases (`B001`, `B004`, and `B005`) passed 3/3 with all external oracles, but this must not be reported as a fresh blind 10/10 result.
 
@@ -359,24 +388,17 @@ Current boundaries:
 
 ## Development Roadmap
 
-The current phase is evidence closure, not feature expansion. Forge will remain focused on its existing Python CLI, service, pipeline, and library surface until that surface has been independently evaluated.
+The current phase is evidence closure, not feature expansion. Forge remains focused on its existing Python CLI, service, pipeline, and library surface.
 
 Current phase priorities:
 
-1. Preserve the completed blind-v3 first-run report and its frozen inputs as immutable evidence.
-2. Correct only structural failures exposed by the frozen blind evaluation. A blind case must not cause a new case-specific template or weakened verification gate.
-3. Re-run the unchanged bundle as explicitly labeled post-fix regression evidence.
-4. Measure external Verified@1, success after repair, false-verified rate, repair count, execution latency, and model cost on every replay.
-5. Preserve capability composition and verification contracts as the only accepted extension mechanism inside the current surface.
+1. Execute the remaining valid feasible case `V5-006` in isolation against its unchanged oracle.
+2. Preserve every baseline, replay, oracle-invalid finding, token count, cost, latency, repair count, and artifact digest.
+3. Correct only general failures in candidate compilation, semantic preflight, repair targeting, and evidence coverage.
+4. Keep external false-verified rate at zero on valid post-fix evidence; never weaken validator gates to improve throughput.
+5. Freeze the current Forge phase only after the valid V5 evidence has been adjudicated without combining revisions into a fictional aggregate.
 
-This phase is complete only when:
-
-- the blind-v3 manifest, dataset, and oracle digests were frozen before the first Forge execution;
-- generated code and acceptance tests executed under the declared isolation policy;
-- the complete metric report and per-case evidence were persisted;
-- the external false-verified rate remained zero;
-- every post-blind code change is traceable to a structural failure class rather than a benchmark-specific implementation;
-- a final replay uses the unchanged frozen dataset and oracles and is clearly labeled as post-fix regression evidence.
+No blind V6, new software domain, or existing-repository mode is required to close this phase.
 
 Existing-repository mode, additional languages, frontend generation, new broad domain adapters, wheel/container distribution packaging, SBOM generation, and dependency auditing are explicitly deferred. They are not acceptance criteria for closing the current Forge phase.
 
@@ -400,7 +422,7 @@ docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py31
 
 The image contains only Python, pytest, and bcrypt needed by the currently certified Forge surface. It is a validation runtime, not a distribution container for generated software. `forge.py`, the benchmark runner, held-out runner, and blind runner select this Docker backend by default. If Docker or the image is unavailable, validation fails closed with `sandbox_unavailable`; Forge does not fall back to local execution. Passing `--execution-backend local` to the production orchestrator is also refused with `sandbox_policy_violation`.
 
-GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case quality gate through the Docker backend. Workflow run [`31970706108`](https://github.com/Daniele-Cangi/Derivative/actions/runs/31970706108) confirms the current isolated and instrumented baseline for this policy.
+GitHub Actions builds this image before testing, runs the real network/filesystem/resource boundary tests, and executes the complete 30-case internal regression gate through the Docker backend. Workflow run [`32351644970`](https://github.com/Daniele-Cangi/Derivative/actions/runs/32351644970) confirms the current isolated baseline for this policy.
 
 ## Benchmark Telemetry
 
@@ -421,7 +443,7 @@ python -B -m pytest -q -p no:cacheprovider tests
 
 Run the Forge benchmark quality gate locally (same thresholds used in CI):
 ```bash
-python forge_benchmark.py --preset extended --enforce-thresholds --min-status-accuracy 0.95 --min-verified-at-1 0.95 --max-false-verified-rate 0.00 --min-infeasible-detection-rate 1.00
+python forge_benchmark.py --preset extended --execution-backend docker --sandbox-image derivative-forge-sandbox:py311 --enforce-thresholds --min-status-accuracy 0.95 --min-verified-at-1 0.95 --max-false-verified-rate 0.00 --min-infeasible-detection-rate 1.00
 ```
 
 Run the separate held-out benchmark with independent acceptance oracles:
@@ -431,17 +453,21 @@ python forge_heldout_benchmark.py
 
 The held-out runner does not trust Forge's generated tests. For feasible cases it executes a repository-maintained oracle against the packaged artifact and reports `External Verified@1`, oracle pass rate, and external false-verified rate. This benchmark is intentionally not a CI gate until a stable external baseline is established.
 
-Run the sealed blind-v2 benchmark against the exact Forge baseline recorded in its manifest:
+Run the remaining isolated V5 regression case against the unchanged frozen inputs:
 ```bash
-python forge_blind_benchmark.py --mode hybrid
+python forge_blind_benchmark.py \
+  --manifest benchmarks/blind_v5/external_001/manifest.json \
+  --case-id V5-006 \
+  --mode hybrid \
+  --post-fix-replay
 ```
 
-`benchmarks/blind_v2/manifest.json` locks the dataset, every external oracle, and the protected Forge source baseline with SHA-256 digests. Loading fails before execution if any locked input or Forge implementation file changed. The bundled calibration set includes contracts derived from Semantic Versioning 2.0.0, RFC 6901, and RFC 3339 plus independently specified behavioral cases. Forge receives only each natural-language requirement; the acceptance oracle runs afterward against the packaged artifact. The first run is preserved in `benchmarks/blind_v2/baseline_result.json`. For later genuinely private evaluations, pass an independently maintained bundle with `--manifest` and do not commit it into the repository.
+The manifest locks the dataset, every external oracle, and the protected Forge source baseline with SHA-256 digests. `--post-fix-replay` permits a changed Forge implementation but marks the result as regression evidence and keeps `baseline_verified=false`. Forge receives only the natural-language requirement; the black-box oracle runs afterward against the packaged artifact. Frozen requirements and oracles must never be edited to make a replay pass.
 
 Freeze a new externally authored blind bundle before its first Forge execution:
 ```bash
 python forge_blind_freeze.py PATH_TO_PRIVATE_BUNDLE \
-  --bundle-id forge-blind-v3-external-001 \
+  --bundle-id forge-blind-external-001 \
   --producer "Independent benchmark producer" \
   --requirements-origin "Requirements authored outside the Forge process" \
   --oracle-origin "Independent black-box acceptance suite" \
@@ -449,7 +475,7 @@ python forge_blind_freeze.py PATH_TO_PRIVATE_BUNDLE \
   --source-url https://example.com/benchmark-spec
 ```
 
-The freezer accepts an existing `cases.json` and its referenced oracle files; it never generates either. It writes a schema-v2 manifest once and refuses overwrite. The manifest records UTC freeze time, explicit provenance attestations, optional HTTPS source URLs, and SHA-256 digests for the dataset, each oracle, and the protected Forge baseline. The exact private bundle can then be executed with `python forge_blind_benchmark.py --manifest PATH_TO_PRIVATE_BUNDLE/manifest.json`. See `benchmarks/blind_v3/README.md` for the intake protocol. Provenance is an auditable declaration rather than cryptographic proof, so the external producer remains responsible for keeping inputs hidden until freeze.
+The freezer accepts an existing `cases.json` and its referenced oracle files; it never generates either. It writes a schema-v2 manifest once and refuses overwrite. The manifest records UTC freeze time, provenance attestations, optional HTTPS source URLs, and SHA-256 digests for the dataset, each oracle, and the protected Forge baseline. The exact private bundle can then be executed with `python forge_blind_benchmark.py --manifest PATH_TO_PRIVATE_BUNDLE/manifest.json`. Provenance is auditable metadata rather than cryptographic proof, so the external producer remains responsible for keeping inputs hidden until freeze.
 
 If no human producer is available, create and freeze a fresh bundle through the
 isolated one-shot OpenAI producer. It uses separate stateless generation requests
@@ -457,8 +483,8 @@ for requirements and black-box oracles, receives no Forge source, stages all
 outputs privately, and publishes only after the schema-v2 freeze succeeds:
 
 ```bash
-python forge_blind_produce.py benchmarks/blind_v3/external_001 \
-  --bundle-id forge-blind-v3-external-001
+python forge_blind_produce.py PATH_TO_PRIVATE_BUNDLE \
+  --bundle-id forge-blind-external-001
 ```
 
 This is an operational isolation mechanism, not cryptographic proof of model
