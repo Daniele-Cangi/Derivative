@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-403%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-405%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -321,7 +321,7 @@ Derivative is released under the [MIT License](LICENSE).
 
 Evidence is reported by revision and evaluation type. Targeted post-fix replays are regression evidence, never retroactively promoted to a fresh blind aggregate.
 
-- At commit `12d771b`, the full local suite reports **403 passed, 2 skipped**. GitHub Actions run [`32363781427`](https://github.com/Daniele-Cangi/Derivative/actions/runs/32363781427) is green with the Docker sandbox and the internal 30-case regression gate.
+- At commit `fcff3b5`, the full local suite reports **405 passed, 2 skipped**. GitHub Actions run [`32368423598`](https://github.com/Daniele-Cangi/Derivative/actions/runs/32368423598) is green with the Docker sandbox and the internal 30-case regression gate.
 - The 30-case gate remains useful for deterministic CI regression, but it is not presented as independent blind proof because its cases are repository-maintained.
 - Blind V5 was frozen before first execution. Its immutable baseline scored **4/12**, status accuracy **0.417**, external false-verified rate **1.000**, infeasibility detection **0.333**, 680,399 model tokens, and an estimated cost of $1.83934.
 - Structural fixes are measured through isolated, explicitly labeled post-fix replays. There is intentionally no synthetic "current V5 score" assembled from runs made at different revisions.
@@ -336,7 +336,7 @@ Evidence is reported by revision and evaluation type. Targeted post-fix replays 
 | `V5-001` | `oracle_invalid` before Forge execution | Frozen oracle supplied process-style `argv[0]` to an importable `main(argv)` contract |
 | `V5-003` | `oracle_invalid` before Forge execution | Universal Unicode case inversion contradicted the fixed-length output contract (`İ` is a finite witness) |
 | `V5-004` | `oracle_invalid` before Forge execution | Frozen invalid fixture contradicted its own explicit regex; replay used zero model calls/tokens |
-| `V5-006` | `validation_failed` after two repairs; oracle not run | Target polarity is fixed: the replay produced a library-only plan and source layout. Semantic proof recognition still rejected missing-field `None` behavior and an iterated forbidden-symbol assertion; 101,751 tokens, $0.267504 estimated cost, external false-verified rate 0.000 |
+| `V5-006` | `verified` after two repairs; independent oracle 9/9 | Library-only target, conditional requirements, missing-field `None` semantics, and forbidden CLI/service evidence are preserved end to end; 116,861 tokens, $0.304336 estimated cost, 190.22s, external false-verified rate 0.000 |
 
 The complete immutable reports are stored beside the V5 manifest as `baseline_result.json` and `post_fix_replay_*.json`. Oracle-invalid findings are exclusions with evidence, not passes.
 
@@ -392,12 +392,11 @@ The current phase is evidence closure, not feature expansion. Forge remains focu
 
 Current phase priorities:
 
-1. Recognize executable negative-capability proofs and missing-field `None` semantics without accepting textual labels as evidence.
-2. Preserve deterministic conditional clauses as hard requirement atoms instead of downgrading their premises to ambiguity.
-3. Replay `V5-006` unchanged after those structural fixes; do not add a case-specific domain template.
-4. Preserve every baseline, replay, oracle-invalid finding, token count, cost, latency, repair count, and artifact digest.
-5. Keep external false-verified rate at zero on valid post-fix evidence; never weaken validator gates to improve throughput.
-6. Freeze the current Forge phase only after the valid V5 evidence has been adjudicated without combining revisions into a fictional aggregate.
+1. Preserve every baseline, replay, oracle-invalid finding, token count, cost, latency, repair count, and artifact digest.
+2. Keep external false-verified rate at zero on valid post-fix evidence; never weaken validator gates to improve throughput.
+3. Remove residual domain-specific naming from generic universal proof-test plans without changing their verification semantics.
+4. Freeze the current Forge phase from the valid V5 evidence without combining revisions into a fictional aggregate.
+5. Start a new independent blind only after the current phase is frozen; do not expand domains to improve known-case scores.
 
 No blind V6, new software domain, or existing-repository mode is required to close this phase.
 
