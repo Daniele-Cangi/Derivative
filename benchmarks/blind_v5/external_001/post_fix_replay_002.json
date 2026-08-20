@@ -1,0 +1,186 @@
+{
+  "baseline_file_count": 60,
+  "baseline_sha256": "d7d9407bb8958f269955ec659893f62ff28a3ebc2c9933a78475406ff5a8c77a",
+  "baseline_verified": false,
+  "bundle_id": "forge-blind-v5-external-001",
+  "dataset_sha256": "a851af0942f6a097f588e35f3c2b81e29f423ac415ddbb5140809a4a38bb27a7",
+  "execution_kind": "post_fix_replay",
+  "frozen_at": "2026-08-19T20:43:03Z",
+  "manifest_sha256": "101cbff77025d554bb4798849506de72ed8365dba44d059cb28ecf46bd24ecb0",
+  "observed_baseline_file_count": 61,
+  "observed_baseline_sha256": "bd0f79ff9f2e58c3591f2f9acca7682a16b68534f7a9f8bf1b875f445ebb25a2",
+  "oracle_sha256": {
+    "V5-001": "0f0912ea182a2e0b111c8845bac8859b46f4d9b5e2f9fcec3196414f42eb8407",
+    "V5-002": "78f1d186d70e77922596a5f167b7020f22575291fccd98c81454c4cfd4453b3c",
+    "V5-003": "c0495f0bb79f333c0ff637f957881a21c265791175b4efaf743449f0a6a1ba1e",
+    "V5-004": "48ea6258b0c0b7f91e47c9e99d505e689552f740b338b9b723f471cfb6adb939",
+    "V5-005": "406780b68fcca0d4f07c72e8752454687095480f38d25cd6b637d071042da964",
+    "V5-006": "c1e33cd9f496d594b31f55515e50cf60fe52bb4806cc631fb90d088544e0ff9a"
+  },
+  "provenance": {
+    "declaration": "Requirements and black-box oracles were generated, causally checked, independently reviewed, and sealed in one transaction before any case was executed by Forge.",
+    "independent_of_forge": true,
+    "oracle_origin": "Separate stateless generation and review requests per verified requirement; no Forge source or candidate implementation was supplied.",
+    "producer": "OpenAI Responses API isolated producer (gpt-4.1)",
+    "requirements_origin": "Separate stateless generation and review requests per requirement from a domain-neutral benchmark brief; no Forge source, generated artifact, or prior blind case was supplied.",
+    "sealed_before_first_execution": true
+  },
+  "report_id": "forge-blind-v5-external-001-20260820T001423Z",
+  "schema_version": 2,
+  "source_urls": [],
+  "summary": {
+    "adjudicated_cases": 0,
+    "avg_case_runtime_seconds": 0.0022138839999996662,
+    "avg_repairs_per_case": 0,
+    "benchmark_id": "forge-heldout-20260820T001423Z",
+    "case_results": [
+      {
+        "artifact_path": "",
+        "case_id": "V5-001",
+        "error": "oracle_invalid: invocation contract contradicts the requirement",
+        "estimated_model_cost_usd": 0.0,
+        "execution_time_seconds": 0.0022138839999996662,
+        "expected_terminal_status": "verified",
+        "failure_signatures": [],
+        "forge_execution_time_seconds": 0.0,
+        "model_cost_pricing_source": "not_executed_invalid_oracle",
+        "model_input_tokens": 0,
+        "model_output_tokens": 0,
+        "model_request_count": 0,
+        "model_total_tokens": 0,
+        "observed_terminal_status": "oracle_invalid",
+        "oracle_result": {
+          "backend": "",
+          "error": "oracle_invalid: invocation contract contradicts the requirement",
+          "executed": false,
+          "execution_time_seconds": 0.0,
+          "exit_code": null,
+          "isolation": {},
+          "passed": false,
+          "sanity_failures": [
+            {
+              "argument_name": "argv",
+              "call_line": 47,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_nominal_masking",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 65,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_all_columns_masked",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 81,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_invalid_mask_index_too_high",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 96,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_empty_file",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 111,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_malformed_mask_nonint",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 124,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_missing_input_path",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 142,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_unopenable_file",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 160,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_row_with_wrong_column_count",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 175,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_missing_mask_argument",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            },
+            {
+              "argument_name": "argv",
+              "call_line": 192,
+              "contract_id": "in_process_main_argv",
+              "declared_cli_name": "pycolmask",
+              "first_argument": "pycolmask",
+              "function": "test_header_only_row",
+              "message": "oracle injects the declared CLI name as argv[0], but the requirement does not define main(argv) as full sys.argv"
+            }
+          ],
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false,
+          "valid": false
+        },
+        "passed": false,
+        "repair_count": 0,
+        "status_matched": false,
+        "success_after_repair": false,
+        "validation_attempts": 0,
+        "verified_at_1": false
+      }
+    ],
+    "external_false_verified_rate": 0.0,
+    "external_verified_at_1": 0.0,
+    "failed_cases": 1,
+    "infeasible_detection_rate": 0.0,
+    "invalid_oracle_cases": 1,
+    "median_case_runtime_seconds": 0.0022138839999996662,
+    "model_cost_coverage_rate": 1.0,
+    "oracle_pass_rate": 0.0,
+    "p95_case_runtime_seconds": 0.0022138839999996662,
+    "passed_cases": 0,
+    "status_accuracy": 0.0,
+    "success_after_repair_rate": null,
+    "total_cases": 1,
+    "total_estimated_model_cost_usd": 0.0,
+    "total_model_input_tokens": 0,
+    "total_model_output_tokens": 0,
+    "total_model_requests": 0,
+    "total_model_tokens": 0,
+    "total_repairs": 0,
+    "total_runtime_seconds": 0.002219834000001697
+  }
+}
