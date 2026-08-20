@@ -157,6 +157,59 @@ def test_shared_evidence_rejects_dynamic_getattr_alias():
     assert reasons == {path: ["missing_target_invocation"]}
 
 
+def test_shared_evidence_accepts_static_target_capability_assertions():
+    path = "tests/test_forbidden_capabilities.py"
+    content = (
+        "import pyenvlines\n"
+        "\n"
+        "def test_forbidden_capabilities():\n"
+        "    names = getattr(pyenvlines.main, '__code__').co_names\n"
+        "    assert 'socket' not in names\n"
+        "    assert 'subprocess' not in names\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"pyenvlines"},
+    )
+    report = requirement_assertion_evidence(
+        {"R015": []},
+        {"R015": [path]},
+        {path: content},
+        target_names={"main"},
+        target_modules={"pyenvlines"},
+    )
+
+    assert reasons == {}
+    assert report["R015"]["passed"] is True
+    assert {
+        assertion["kind"]
+        for assertion in report["R015"]["assertions"]
+    } == {"static_contract_assertion"}
+
+
+def test_shared_evidence_rejects_vacuous_static_target_assertion():
+    path = "tests/test_vacuous_static_contract.py"
+    content = (
+        "import pyenvlines\n"
+        "\n"
+        "def test_vacuous_static_contract():\n"
+        "    names = getattr(pyenvlines.main, '__code__').co_names\n"
+        "    assert len(names) >= 0\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"pyenvlines"},
+    )
+
+    assert reasons == {path: ["missing_target_invocation"]}
+
+
 def test_requirement_evidence_rejects_term_and_assertion_in_different_functions():
     path = "tests/test_contract.py"
     content = (

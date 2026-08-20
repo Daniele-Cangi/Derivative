@@ -708,6 +708,49 @@ def test_public_api_exists():
     )
 
 
+def test_semantic_preflight_rejects_fixture_that_contradicts_explicit_regex():
+    requirement = (
+        "Implement a CLI whose lines must match the regex: "
+        "'^[A-Z_][A-Z0-9_]*=[^\\n]*$'."
+    )
+    path = "tests/test_explicit_pattern.py"
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=requirement,
+            requirement_atoms=[],
+        ),
+        required_tests=[SimpleNamespace(test_name="test_explicit_pattern", required=True)],
+        interfaces=[],
+        requirement_coverage={},
+    )
+    content = (
+        "INVALID_LINES = ['FOO=bar extra\\n']\n"
+        "\n"
+        "def test_explicit_pattern():\n"
+        "    assert len(INVALID_LINES) == 1\n"
+    )
+
+    result = run_semantic_preflight(
+        {path: content},
+        plan,
+        {path: {"requirements": []}},
+        {"phase": "tests", "passed": True, "failures": []},
+    )
+
+    mismatch = next(
+        failure
+        for failure in result["failures"]
+        if failure.get("kind") == "explicit_pattern_fixture_mismatch"
+    )
+    assert mismatch["sample"] == "FOO=bar extra\n"
+    assert mismatch["oracle_classification"] == "invalid"
+    assert mismatch["derived_classification"] == "valid"
+    assert any(
+        "Do not invent stricter whitespace or delimiter rules" in instruction
+        for instruction in result["correction_requirements"]
+    )
+
+
 def test_semantic_preflight_rejects_tautological_acceptance_assertion(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {

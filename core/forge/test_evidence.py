@@ -169,6 +169,18 @@ def _test_function_semantic_state(
     has_assertion = any(isinstance(node, ast.Assert) for node in ast.walk(function))
     target_invoked = bool(target_calls)
     if not target_invoked:
+        static_assertions = _static_target_assertion_records(
+            function,
+            target_names,
+            target_module_aliases,
+        )
+        if static_assertions:
+            return {
+                "semantic": True,
+                "target_invoked": False,
+                "has_assertion": True,
+                "assertions": static_assertions,
+            }
         return {
             "semantic": False,
             "target_invoked": False,
@@ -216,6 +228,92 @@ def _test_function_semantic_state(
         "has_assertion": has_assertion,
         "assertions": observable_assertions,
     }
+
+
+def _static_target_assertion_records(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    target_names: set[str],
+    target_module_aliases: set[str],
+) -> list[dict[str, object]]:
+    observable_names = {
+        name
+        for node in ast.walk(function)
+        for value, names in [_assignment_value_and_targets(node)]
+        if value is not None
+        and _is_static_target_contract_expression(
+            value,
+            target_names,
+            target_module_aliases,
+        )
+        for name in names
+    }
+    records: list[dict[str, object]] = []
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Assert) or not _is_semantic_assertion(node):
+            continue
+        if not _is_static_capability_assertion(node.test):
+            continue
+        if not (
+            _is_static_target_contract_expression(
+                node.test,
+                target_names,
+                target_module_aliases,
+            )
+            or bool(_loaded_names(node.test) & observable_names)
+        ):
+            continue
+        records.append(
+            {
+                "line": getattr(node, "lineno", 0),
+                "kind": "static_contract_assertion",
+                "expression": ast.unparse(node.test),
+            }
+        )
+    return records
+
+
+def _is_static_capability_assertion(expression: ast.expr) -> bool:
+    return any(
+        any(isinstance(operator, (ast.In, ast.NotIn)) for operator in node.ops)
+        and any(
+            isinstance(value, ast.Constant) and isinstance(value.value, str)
+            for value in (node.left, *node.comparators)
+        )
+        for node in ast.walk(expression)
+        if isinstance(node, ast.Compare)
+    )
+
+
+def _is_static_target_contract_expression(
+    expression: ast.expr,
+    target_names: set[str],
+    target_module_aliases: set[str],
+) -> bool:
+    introspection_markers = {
+        child.attr
+        for child in ast.walk(expression)
+        if isinstance(child, ast.Attribute)
+    }
+    introspection_markers.update(
+        child.value
+        for child in ast.walk(expression)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    )
+    if not introspection_markers & {"__code__", "co_names", "co_consts"}:
+        return False
+    for child in ast.walk(expression):
+        name = _expression_name(child)
+        if not name:
+            continue
+        root = name.split(".", 1)[0]
+        tail = name.rsplit(".", 1)[-1]
+        if root in target_module_aliases and (
+            tail in target_names or any(part in target_names for part in name.split("."))
+        ):
+            return True
+        if name in target_names:
+            return True
+    return False
 
 
 def _static_target_callable_aliases(

@@ -311,11 +311,20 @@ def inspect_oracle_sanity(case: HeldoutBenchmarkCase) -> OracleResult | None:
         )
     contract_mismatches = oracle_contract_mismatches(source, case.requirement)
     if contract_mismatches:
+        pattern_mismatch = any(
+            mismatch.contract_id == "explicit_regex_fixture"
+            for mismatch in contract_mismatches
+        )
         return OracleResult(
             executed=False,
             passed=False,
             valid=False,
-            error="oracle_invalid: invocation contract contradicts the requirement",
+            error=(
+                "oracle_invalid: acceptance examples contradict an explicit "
+                "requirement pattern"
+                if pattern_mismatch
+                else "oracle_invalid: invocation contract contradicts the requirement"
+            ),
             sanity_failures=[
                 mismatch.to_evidence() for mismatch in contract_mismatches
             ],

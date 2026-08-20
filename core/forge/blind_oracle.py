@@ -99,6 +99,14 @@ def oracle_contract_sanity_error(source: str, requirement: str) -> str | None:
     if not mismatches:
         return None
     mismatch = mismatches[0]
+    if mismatch.contract_id == "explicit_regex_fixture":
+        return (
+            "oracle explicit pattern contract contradicts the requirement in "
+            f"{mismatch.function}: fixture {mismatch.fixture_name} classifies "
+            f"{mismatch.sample!r} as {mismatch.oracle_classification}, but "
+            f"{mismatch.declared_pattern!r} classifies it as "
+            f"{mismatch.derived_classification}"
+        )
     return (
         "oracle invocation contract contradicts the requirement in "
         f"{mismatch.function}: main({mismatch.argument_name}) passes declared CLI name "
@@ -141,6 +149,7 @@ def oracle_preflight_failure_class(error: str) -> str:
         ("no causal behavioral assertion", "causal_assertion"),
         ("discards the return value", "discarded_entrypoint_result"),
         ("fixture expectation contradicts", "fixture_oracle_mismatch"),
+        ("explicit pattern contract contradicts", "explicit_pattern_mismatch"),
         ("invocation contract contradicts", "oracle_contract_mismatch"),
     )
     return next(
@@ -181,6 +190,8 @@ requirement through its public interface, invokes the target causally, and makes
 exit code, or side effect. Reject contradictory expectations, over-specified behavior, discarded entrypoint return values, fixtures that
 manufacture success independently of the target, tests that cannot capture the claimed output, and assumptions absent from the requirement.
 For main(argv), reject injection of an executable name as argv[0] unless the requirement explicitly defines a full sys.argv contract.
+When the requirement declares an exact regex or regular expression, classify every literal valid/invalid fixture by that expression and
+reject examples whose expected classification contradicts it.
 Also reject nondeterministic, platform-specific, networked, private-implementation, or vacuous checks. Findings must be concise and empty
 when approved. For deterministic transformations, independently recompute every literal fixture expectation rather than trusting its
 transcription. Return only the requested structured object."""

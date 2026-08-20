@@ -234,6 +234,22 @@ def test_normative_must_not_clause_remains_a_hard_requirement():
     assert atom.strength == "hard"
 
 
+def test_forbidden_runtime_capabilities_use_static_verification():
+    spec = RequirementCompiler().compile(
+        "Implement a CLI named 'pyenvlines'. No network, socket, or subprocess "
+        "usage is allowed in the contract."
+    )
+
+    atom = next(
+        item
+        for item in spec.requirement_atoms
+        if "no network, socket, or subprocess" in item.text.lower()
+    )
+
+    assert atom.strength == "hard"
+    assert atom.verification_method == "static_analysis"
+
+
 def test_universal_proof_scope_distinguishes_open_guarantees_from_properties():
     open_guarantee = RequirementCompiler().compile(
         "Build a parser that guarantees support for every possible external encoding."

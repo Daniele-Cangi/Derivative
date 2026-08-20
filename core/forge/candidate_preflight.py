@@ -6,6 +6,7 @@ from core.forge.fixture_oracle import (
     fixture_oracle_capability,
     fixture_oracle_mismatches,
 )
+from core.forge.oracle_contract import explicit_pattern_fixture_mismatches
 from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
@@ -148,6 +149,21 @@ def _test_contract_failures(
         if path not in mapped_test_paths:
             continue
         content = candidate_files.get(path, "")
+        pattern_mismatches = explicit_pattern_fixture_mismatches(
+            content,
+            plan.build_spec.normalized_requirement,
+        )
+        for mismatch in pattern_mismatches:
+            if path not in failed_paths:
+                failed_paths.append(path)
+            failures.append(
+                {
+                    "path": path,
+                    "kind": "explicit_pattern_fixture_mismatch",
+                    "requirement_id": "",
+                    **mismatch.to_evidence(),
+                }
+            )
         for requirement in contract.get("requirements", []):
             requirement_id = str(requirement.get("id", ""))
             atom = atoms_by_id.get(requirement_id)
@@ -393,6 +409,15 @@ def correction_requirements(
     requirements: list[str] = []
     for failure in test_failures:
         path = str(failure.get("path", ""))
+        if failure.get("kind") == "explicit_pattern_fixture_mismatch":
+            requirements.append(
+                f"{path}: classify fixture {failure.get('sample')!r} with the "
+                f"requirement's exact pattern {failure.get('declared_pattern')!r}; "
+                f"the fixture is {failure.get('derived_classification')}, not "
+                f"{failure.get('oracle_classification')}. Do not invent stricter "
+                "whitespace or delimiter rules than the declared expression."
+            )
+            continue
         if failure.get("kind") in {
             "lossy_observation_api",
             "missing_byte_exact_observation",

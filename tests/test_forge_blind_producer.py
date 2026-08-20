@@ -400,6 +400,33 @@ def test_oracle_preflight_rejects_injected_cli_name_in_main_argv():
     assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
 
 
+def test_oracle_preflight_rejects_fixture_that_contradicts_explicit_regex():
+    requirement = (
+        "Implement a CLI named 'pyenvlines'. A line must match the regex: "
+        "'^[A-Z_][A-Z0-9_]*=[^\\n]*$'. The main(argv) contract is importable."
+    )
+    source = (
+        "from pyenvlines import main\n\n"
+        "INVALID_LINES = ['FOO=bar extra\\n']\n\n"
+        "def test_one():\n"
+        "    rc = main([])\n"
+        "    assert rc == 1\n\n"
+        "def test_two():\n"
+        "    rc = main([])\n"
+        "    assert rc == 1\n\n"
+        "def test_three():\n"
+        "    rc = main([])\n"
+        "    assert rc == 1\n"
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is not None
+    assert "explicit pattern contract contradicts" in error
+    assert "FOO=bar extra" in error
+    assert oracle_preflight_failure_class(error) == "explicit_pattern_mismatch"
+
+
 def test_requirement_preflight_rejects_verified_unicode_cardinality_conflict():
     requirement = (
         "Implement a function returning a string of the same length as input where "

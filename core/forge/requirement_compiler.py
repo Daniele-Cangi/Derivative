@@ -892,6 +892,12 @@ class RequirementCompiler:
             lowered,
         ):
             return "interface_contract"
+        if re.search(
+            r"\b(?:no|without|must\s+not|may\s+not|is\s+not\s+allowed)\b"
+            r".{0,100}\b(?:network|socket|subprocess|http\s+client)\b",
+            lowered,
+        ):
+            return "static_analysis"
         if "standard library" in lowered or "stdlib" in lowered:
             return "static_analysis"
         return "behavioral_test"

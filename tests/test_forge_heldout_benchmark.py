@@ -404,6 +404,44 @@ def test_frozen_v5_001_oracle_is_rejected_by_invocation_contract_gate():
     }
 
 
+def test_frozen_v5_004_oracle_is_rejected_by_explicit_pattern_gate():
+    dataset = (
+        Path(__file__).resolve().parents[1]
+        / "benchmarks"
+        / "blind_v5"
+        / "external_001"
+        / "cases.json"
+    )
+    case = next(
+        item for item in load_heldout_cases(str(dataset)) if item.case_id == "V5-004"
+    )
+
+    result = inspect_oracle_sanity(case)
+
+    assert result is not None
+    assert result.valid is False
+    assert result.executed is False
+    assert result.error == (
+        "oracle_invalid: acceptance examples contradict an explicit requirement pattern"
+    )
+    assert result.sanity_failures == [
+        {
+            "contract_id": "explicit_regex_fixture",
+            "function": "<module>",
+            "fixture_name": "INVALID_LINES",
+            "fixture_line": 96,
+            "declared_pattern": "^[A-Z_][A-Z0-9_]*=[^\\n]*$",
+            "sample": "FOO=bar extra\n",
+            "oracle_classification": "invalid",
+            "derived_classification": "valid",
+            "message": (
+                "fixture INVALID_LINES classifies the sample as invalid, but the "
+                "requirement's explicit pattern classifies it as valid"
+            ),
+        }
+    ]
+
+
 def test_frozen_v5_003_requirement_is_rejected_before_forge():
     dataset = (
         Path(__file__).resolve().parents[1]

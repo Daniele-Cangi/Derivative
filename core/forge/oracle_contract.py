@@ -51,27 +51,46 @@ class OracleContractMismatch:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class OraclePatternMismatch:
+    contract_id: str
+    function: str
+    fixture_name: str
+    fixture_line: int
+    declared_pattern: str
+    sample: str
+    oracle_classification: str
+    derived_classification: str
+    message: str
+
+    def to_evidence(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def oracle_contract_mismatches(
     source: str,
     requirement: str,
-) -> list[OracleContractMismatch]:
+) -> list[OracleContractMismatch | OraclePatternMismatch]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    mismatches: list[OracleContractMismatch | OraclePatternMismatch] = [
+        *explicit_pattern_fixture_mismatches(source, requirement, tree=tree)
+    ]
     cli_name = _declared_cli_name(requirement)
     if (
         cli_name is None
         or re.search(r"\bmain\s*\(\s*argv\b", requirement, re.IGNORECASE) is None
         or _requirement_allows_argv0(requirement)
     ):
-        return []
-    try:
-        tree = ast.parse(source)
-    except SyntaxError:
-        return []
+        return mismatches
 
     direct_main_names, module_aliases = _main_import_context(tree, cli_name)
     if not direct_main_names and not module_aliases:
-        return []
+        return mismatches
 
-    mismatches: list[OracleContractMismatch] = []
     for function in (
         node
         for node in tree.body
@@ -107,6 +126,140 @@ def oracle_contract_mismatches(
                 )
             )
     return mismatches
+
+
+def explicit_pattern_fixture_mismatches(
+    source: str,
+    requirement: str,
+    *,
+    tree: ast.Module | None = None,
+) -> list[OraclePatternMismatch]:
+    declared = _declared_explicit_pattern(requirement)
+    if declared is None:
+        return []
+    try:
+        compiled = re.compile(declared)
+    except re.error:
+        return []
+    if tree is None:
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+
+    parent_by_node = {
+        child: node
+        for node in ast.walk(tree)
+        for child in ast.iter_child_nodes(node)
+    }
+    mismatches: list[OraclePatternMismatch] = []
+    for node in ast.walk(tree):
+        assignment = _named_assignment(node)
+        if assignment is None:
+            continue
+        fixture_name, expression = assignment
+        oracle_classification = _fixture_classification(fixture_name)
+        if oracle_classification is None:
+            continue
+        for sample in _literal_fixture_samples(expression):
+            body = _without_one_line_ending(sample)
+            derived_classification = (
+                "valid" if compiled.fullmatch(body) is not None else "invalid"
+            )
+            if derived_classification == oracle_classification:
+                continue
+            mismatches.append(
+                OraclePatternMismatch(
+                    contract_id="explicit_regex_fixture",
+                    function=_containing_function(node, parent_by_node),
+                    fixture_name=fixture_name,
+                    fixture_line=getattr(node, "lineno", 0),
+                    declared_pattern=declared,
+                    sample=sample,
+                    oracle_classification=oracle_classification,
+                    derived_classification=derived_classification,
+                    message=(
+                        f"fixture {fixture_name} classifies the sample as "
+                        f"{oracle_classification}, but the requirement's explicit "
+                        f"pattern classifies it as {derived_classification}"
+                    ),
+                )
+            )
+    return mismatches
+
+
+def _declared_explicit_pattern(requirement: str) -> str | None:
+    patterns = (
+        re.compile(
+            r"\b(?:regex|regular\s+expression)\s*:\s*([`'\"])(.+?)\1",
+            re.IGNORECASE | re.DOTALL,
+        ),
+        re.compile(
+            r"\bmatches?\s+(?:the\s+)?pattern\s*([`'\"])(.+?)\1",
+            re.IGNORECASE | re.DOTALL,
+        ),
+    )
+    for pattern in patterns:
+        match = pattern.search(requirement)
+        if match:
+            return match.group(2)
+    return None
+
+
+def _named_assignment(node: ast.AST) -> tuple[str, ast.expr] | None:
+    if isinstance(node, ast.Assign):
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            return None
+        return node.targets[0].id, node.value
+    if (
+        isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.value is not None
+    ):
+        return node.target.id, node.value
+    return None
+
+
+def _fixture_classification(name: str) -> str | None:
+    normalized = name.casefold()
+    if re.search(r"(?:^|_)(?:invalid|bad)(?:_|$)", normalized):
+        return "invalid"
+    if re.search(r"(?:^|_)(?:valid|good)(?:_|$)", normalized):
+        return "valid"
+    return None
+
+
+def _literal_fixture_samples(expression: ast.expr) -> list[str]:
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+        return expression.value.splitlines(keepends=True) or [expression.value]
+    if not isinstance(expression, (ast.List, ast.Tuple, ast.Set)):
+        return []
+    samples: list[str] = []
+    for item in expression.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            continue
+        samples.extend(item.value.splitlines(keepends=True) or [item.value])
+    return samples
+
+
+def _without_one_line_ending(value: str) -> str:
+    if value.endswith("\r\n"):
+        return value[:-2]
+    if value.endswith(("\n", "\r")):
+        return value[:-1]
+    return value
+
+
+def _containing_function(
+    node: ast.AST,
+    parent_by_node: dict[ast.AST, ast.AST],
+) -> str:
+    current = node
+    while current in parent_by_node:
+        current = parent_by_node[current]
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return current.name
+    return "<module>"
 
 
 def _declared_cli_name(requirement: str) -> str | None:
