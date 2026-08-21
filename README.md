@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-425%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-426%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -63,16 +63,21 @@ python forge.py "Build a Python CLI that reads a CSV of contracts, extracts expi
 Forge reports one terminal status, a five-stage evidence rail, and a trace seal derived from the actual code digest, infeasibility certificate, or retained validation failures:
 
 ```text
-+- FORGE // DERIVATIVE
-|  EXECUTION-GROUNDED BUILD
-+- Evidence precedes packaging.
+       *
+  ===========
+  \====*====/  FORGE // DERIVATIVE
+      ||       EXECUTION-GROUNDED BUILD
+     /__\      REQUIREMENT > EVIDENCE > ARTIFACT
 
 EVIDENCE RAIL
-  01 / COMPILE  -> PASS   / requirement contract preserved
-  02 / PLAN     -> PASS   / feasible architecture grounded
-  03 / GENERATE -> PASS   / candidate artifact emitted
-  04 / VALIDATE -> PASS   / 3/3 evidence layers passed
-  05 / PACKAGE  -> SEALED / verified artifact packaged
+       + -------- + -------- + -------- + -------- #
+    COMPILE     PLAN     GENERATE   VALIDATE   PACKAGE
+
+  01  COMPILE   PASS    requirement contract preserved
+  02  PLAN      PASS    feasible architecture grounded
+  03  GENERATE  PASS    candidate artifact emitted
+  04  VALIDATE  PASS    3/3 evidence layers passed
+  05  PACKAGE   SEALED  verified artifact packaged
 
 Status: verified
 Requirement compiled, generated, executed and validated across all three layers.
@@ -478,6 +483,7 @@ Standard, held-out, and blind reports preserve attempt-level Forge telemetry for
 - `Verified@1` counts an expected verified build only when its first validation attempt passes. A later successful repair is not retroactively counted as first-pass success.
 - `success_after_repair_rate` measures externally valid repaired successes among expected verified cases that did not pass on the first attempt. It is `null` when no case required recovery.
 - repair count, validation attempts, total/average repair count, average/median/P95 latency, model request count, and input/output/total tokens are persisted per case and aggregated.
+- externally accepted artifact count, invalid-benchmark rejection rate, repairs per externally accepted artifact, and cost per externally accepted artifact use explicit persisted denominators rather than inferred cross-run aggregates.
 - estimated model cost is reported only when `OPENAI_INPUT_COST_PER_1M_TOKENS` and `OPENAI_OUTPUT_COST_PER_1M_TOKENS` are explicitly configured. Otherwise cost is `null` with pricing source `unconfigured`; Forge does not embed mutable provider prices or report an invented zero.
 - held-out and blind `External Verified@1` additionally require the independent acceptance oracle to pass against the packaged artifact.
 

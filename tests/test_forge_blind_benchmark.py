@@ -192,9 +192,13 @@ def test_blind_runner_exposes_requirement_only_and_persists_seal(tmp_path):
     assert payload["manifest_sha256"] == bundle.manifest_sha256
     assert "Baseline verified: true" in rendered
     assert "External Verified@1: 1.000" in rendered
+    assert "Externally accepted artifacts: 1" in rendered
     assert "External success after repair: n/a" in rendered
+    assert "Invalid benchmark rejection rate: n/a" in rendered
+    assert "Repairs per externally accepted artifact: 0.000" in rendered
     assert "P95 case runtime:" in rendered
     assert "Estimated model cost: $0.00000000" in rendered
+    assert "Cost per externally accepted artifact: $0.00000000" in rendered
 
 
 def test_post_fix_replay_is_explicit_and_cannot_be_reported_as_sealed_baseline(tmp_path):

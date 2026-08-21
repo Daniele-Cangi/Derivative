@@ -89,9 +89,11 @@ class HeldoutBenchmarkSummary:
     failed_cases: int
     status_accuracy: float
     external_verified_at_1: float
+    externally_accepted_artifacts: int
     oracle_pass_rate: float
     external_false_verified_rate: float
     infeasible_detection_rate: float
+    invalid_benchmark_rejection_rate: float | None
     avg_case_runtime_seconds: float
     median_case_runtime_seconds: float
     p95_case_runtime_seconds: float
@@ -99,11 +101,13 @@ class HeldoutBenchmarkSummary:
     success_after_repair_rate: float | None
     total_repairs: int
     avg_repairs_per_case: float
+    repairs_per_externally_accepted_artifact: float | None
     total_model_requests: int
     total_model_input_tokens: int
     total_model_output_tokens: int
     total_model_tokens: int
     total_estimated_model_cost_usd: float | None
+    cost_per_externally_accepted_artifact_usd: float | None
     model_cost_coverage_rate: float
     adjudicated_cases: int = 0
     invalid_oracle_cases: int = 0
@@ -470,6 +474,13 @@ def _summarize_results(
         and item.oracle_result is not None
         and item.oracle_result.passed
     ]
+    externally_accepted = [
+        item
+        for item in expected_verified
+        if item.observed_terminal_status == TERMINAL_VERIFIED
+        and item.oracle_result is not None
+        and item.oracle_result.passed
+    ]
     observed_verified = [
         item
         for item in adjudicable
@@ -506,6 +517,20 @@ def _summarize_results(
     costed_results = [
         item for item in results if item.estimated_model_cost_usd is not None
     ]
+    total_repairs = sum(item.repair_count for item in results)
+    total_estimated_cost = (
+        round(sum(item.estimated_model_cost_usd or 0.0 for item in results), 8)
+        if len(costed_results) == total_cases
+        else None
+    )
+    rejected_invalid = [
+        item
+        for item in invalid_oracle
+        if item.observed_terminal_status == "oracle_invalid"
+        and item.model_request_count == 0
+        and item.forge_execution_time_seconds == 0.0
+        and not item.artifact_path
+    ]
     benchmark_id = f"forge-heldout-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
     return HeldoutBenchmarkSummary(
         benchmark_id=benchmark_id,
@@ -520,6 +545,7 @@ def _summarize_results(
         external_verified_at_1=(
             len(externally_verified) / len(expected_verified) if expected_verified else 0.0
         ),
+        externally_accepted_artifacts=len(externally_accepted),
         oracle_pass_rate=(
             sum(1 for item in oracle_executed if item.oracle_result and item.oracle_result.passed)
             / len(oracle_executed)
@@ -532,6 +558,9 @@ def _summarize_results(
         infeasible_detection_rate=(
             len(correct_infeasible) / len(expected_infeasible) if expected_infeasible else 0.0
         ),
+        invalid_benchmark_rejection_rate=(
+            len(rejected_invalid) / len(invalid_oracle) if invalid_oracle else None
+        ),
         avg_case_runtime_seconds=statistics.mean(
             item.execution_time_seconds for item in results
         ),
@@ -543,15 +572,19 @@ def _summarize_results(
             if repair_eligible
             else None
         ),
-        total_repairs=sum(item.repair_count for item in results),
+        total_repairs=total_repairs,
         avg_repairs_per_case=statistics.mean(item.repair_count for item in results),
+        repairs_per_externally_accepted_artifact=(
+            total_repairs / len(externally_accepted) if externally_accepted else None
+        ),
         total_model_requests=sum(item.model_request_count for item in results),
         total_model_input_tokens=sum(item.model_input_tokens for item in results),
         total_model_output_tokens=sum(item.model_output_tokens for item in results),
         total_model_tokens=sum(item.model_total_tokens for item in results),
-        total_estimated_model_cost_usd=(
-            round(sum(item.estimated_model_cost_usd or 0.0 for item in results), 8)
-            if len(costed_results) == total_cases
+        total_estimated_model_cost_usd=total_estimated_cost,
+        cost_per_externally_accepted_artifact_usd=(
+            round(total_estimated_cost / len(externally_accepted), 8)
+            if total_estimated_cost is not None and externally_accepted
             else None
         ),
         model_cost_coverage_rate=len(costed_results) / total_cases,
@@ -615,19 +648,26 @@ def render_heldout_summary(summary: HeldoutBenchmarkSummary, output_path: str) -
             f"Failed: {summary.failed_cases}",
             f"Status accuracy: {summary.status_accuracy:.3f}",
             f"External Verified@1: {summary.external_verified_at_1:.3f}",
+            f"Externally accepted artifacts: {summary.externally_accepted_artifacts}",
             "External success after repair: "
             + _format_optional_rate(summary.success_after_repair_rate),
             f"Oracle pass rate: {summary.oracle_pass_rate:.3f}",
             f"Invalid oracle cases: {summary.invalid_oracle_cases}",
+            "Invalid benchmark rejection rate: "
+            + _format_optional_rate(summary.invalid_benchmark_rejection_rate),
             f"External false-verified rate: {summary.external_false_verified_rate:.3f}",
             f"Infeasible detection rate: {summary.infeasible_detection_rate:.3f}",
             f"Repairs: {summary.total_repairs} total, {summary.avg_repairs_per_case:.2f} per case",
+            "Repairs per externally accepted artifact: "
+            + _format_optional_number(summary.repairs_per_externally_accepted_artifact),
             f"Average case runtime: {summary.avg_case_runtime_seconds:.2f}s",
             f"Median case runtime: {summary.median_case_runtime_seconds:.2f}s",
             f"P95 case runtime: {summary.p95_case_runtime_seconds:.2f}s",
             f"Total runtime: {summary.total_runtime_seconds:.2f}s",
             f"Model tokens: {summary.total_model_tokens}",
             "Estimated model cost: " + _format_optional_cost(summary.total_estimated_model_cost_usd),
+            "Cost per externally accepted artifact: "
+            + _format_optional_cost(summary.cost_per_externally_accepted_artifact_usd),
             f"Model cost coverage: {summary.model_cost_coverage_rate:.3f}",
             f"Report: {output_path}",
         ]
@@ -642,6 +682,10 @@ def _nearest_rank_percentile(values: List[float], percentile: float) -> float:
 
 
 def _format_optional_rate(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def _format_optional_number(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.3f}"
 
 

@@ -331,6 +331,7 @@ def test_oracle_sanity_rejects_injected_cli_name_before_forge(tmp_path):
 
     assert forge_calls == []
     assert summary.invalid_oracle_cases == 1
+    assert summary.invalid_benchmark_rejection_rate == 1.0
     assert summary.case_results[0].observed_terminal_status == "oracle_invalid"
     assert summary.case_results[0].model_request_count == 0
     assert summary.case_results[0].oracle_result is not None
@@ -555,7 +556,11 @@ def test_heldout_metrics_distinguish_repaired_external_success():
         "first": _forge_result(
             TERMINAL_VERIFIED,
             "pkg-first",
-            ForgeRunMetrics(validation_attempts=1, verified_at_1=True),
+            ForgeRunMetrics(
+                validation_attempts=1,
+                verified_at_1=True,
+                estimated_model_cost_usd=0.04,
+            ),
         ),
         "repaired": _forge_result(
             TERMINAL_VERIFIED,
@@ -564,6 +569,7 @@ def test_heldout_metrics_distinguish_repaired_external_success():
                 validation_attempts=2,
                 repair_count=1,
                 success_after_repair=True,
+                estimated_model_cost_usd=0.06,
             ),
         ),
     }
@@ -579,9 +585,34 @@ def test_heldout_metrics_distinguish_repaired_external_success():
     )
 
     assert summary.external_verified_at_1 == 0.5
+    assert summary.externally_accepted_artifacts == 2
     assert summary.success_after_repair_rate == 1.0
     assert summary.total_repairs == 1
+    assert summary.repairs_per_externally_accepted_artifact == 0.5
+    assert summary.cost_per_externally_accepted_artifact_usd == 0.05
+    assert summary.invalid_benchmark_rejection_rate is None
     assert summary.case_results[1].success_after_repair is True
+
+
+def test_heldout_closure_metrics_are_null_without_an_external_success():
+    oracle = OracleSpec(path="oracle.py")
+    summary = run_heldout_cases(
+        [HeldoutBenchmarkCase("A", "candidate", TERMINAL_VERIFIED, oracle=oracle)],
+        run_case=lambda requirement: _forge_result(
+            TERMINAL_VALIDATION_FAILED,
+            run_metrics=ForgeRunMetrics(
+                validation_attempts=2,
+                repair_count=1,
+                estimated_model_cost_usd=0.03,
+            ),
+        ),
+        run_oracle=lambda spec, package: OracleResult(executed=True, passed=True),
+    )
+
+    assert summary.externally_accepted_artifacts == 0
+    assert summary.cost_per_externally_accepted_artifact_usd is None
+    assert summary.repairs_per_externally_accepted_artifact is None
+    assert summary.invalid_benchmark_rejection_rate is None
 
 
 def test_heldout_summary_persistence_and_thresholds(tmp_path):
@@ -606,4 +637,8 @@ def test_heldout_summary_persistence_and_thresholds(tmp_path):
 
     assert Path(report_path).is_file()
     assert "External Verified@1: 1.000" in rendered
+    assert "Externally accepted artifacts: 1" in rendered
+    assert "Invalid benchmark rejection rate: n/a" in rendered
+    assert "Repairs per externally accepted artifact: 0.000" in rendered
+    assert "Cost per externally accepted artifact: $0.00000000" in rendered
     assert failures == []
