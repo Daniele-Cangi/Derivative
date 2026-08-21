@@ -1,0 +1,633 @@
+{
+  "bundle": {
+    "baseline_sha256": "dc4a73724fae003822d8678de2a918b9512b9238300fce3d579bd1f2e70ea2fe",
+    "baseline_verified": true,
+    "bundle_id": "forge-blind-v6-external-001",
+    "dataset_sha256": "86dcdbabf6201d52f40664efe5bd7ab1ac14e9990625bf25855debfa955be23d",
+    "manifest_sha256": "8e821d76ae4fe29da06061da013fb606da3506812238b59bd15aa69395835c4b"
+  },
+  "consensus": [
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-001",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The parsing, error handling, output, return-code rules, and examples define a satisfiable executable CLI contract."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "All I/O behavior, exit codes, and error handling are precisely defined for every input, including empty and malformed files.",
+            "Examples are consistent with the general rules (e.g., overlapping ranges allowed, malformed lines reported and skipped, no-valid-range case returns 1).",
+            "The contract is executable and deterministic with no ambiguity or contradiction."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-002",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The replacement, trimming, uppercasing, and empty-input rules are deterministic and consistent with the examples."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Normalization rules (collapse spaces/tabs/dashes to underscore, trim underscores, uppercase) are fully specified and deterministic.",
+            "Behavioral examples match the stated transformation rules, including empty/whitespace-only inputs mapping to empty string.",
+            "No conflicting constraints or underdefined behavior remain."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-003",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Unicode whitespace is objectively defined through str.isspace(), and the validation and transformation rules are complete."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Whitespace definition is tied to str.isspace(), and replacement with single ASCII space plus stripping is fully specified.",
+            "Type checking and TypeError conditions are clearly defined; all inputs are covered deterministically.",
+            "Behavioral tests agree with the stated rules, and there is no internal contradiction."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-004",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Per-group integer summation, validation, ordering, and non-mutation requirements are mutually consistent and executable."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Input types and error conditions (non-list groups or non-int elements) are clearly defined and lead to TypeError with no partial output.",
+            "Sum semantics for each group, including empty lists and negatives, are fully specified and match examples.",
+            "The requirement that input is not modified is implementable and does not conflict with other constraints."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-005",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The accepted opening brackets, matching closing brackets, and one-pair removal behavior are explicitly defined and consistent with the examples."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Accepted bracket characters and their matching closers are explicitly listed; other brackets cause ValueError.",
+            "The rule for stripping exactly one leading opener and one trailing matching closer, otherwise leaving the string unchanged, is precise and deterministic.",
+            "All edge examples (nested brackets, only pair, empty string) are consistent with the general rule."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-006",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The group rotation algorithm, partial-group behavior, and invalid-input handling are objective and satisfiable."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Rotation is clearly defined groupwise with right-cyclic shift within each (possibly partial) group.",
+            "Type and value checks for group_size and for strings elements are precise (ValueError vs TypeError).",
+            "Examples align with the group rotation rule, and the contract is deterministic and executable with no ambiguity."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-007",
+      "claimed_status": "validation_failed",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Strict and casefold adjacency semantics, mode validation, and type validation are explicitly specified and objectively testable."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The deduplication rule for 'strict' vs 'casefold' modes is fully specified and deterministic.",
+            "Type constraints for inputs and mode, and corresponding TypeError/ValueError conditions, are clear and cover all invalid inputs.",
+            "There is no ambiguity about behavior for any list of strings and allowed modes; the requirement is objectively checkable."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-008",
+      "claimed_status": "validation_failed",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The empty-delimiter case is expressly defined: the entire phrase is returned as one trimmed uppercase token, so no material ambiguity remains."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Behavior for empty delimiter is explicitly defined: return the entire phrase as a single uppercase string, so no use of Python\u2019s native split on empty delimiter is required.",
+            "Splitting behavior for nonempty delimiters, trimming whitespace, and uppercasing tokens are all fully specified and deterministic, including empty tokens from consecutive delimiters.",
+            "Type errors for phrases and delimiter types are clearly defined; there is no remaining under-specification preventing objective certification."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V6-009",
+      "claimed_status": "validation_failed",
+      "reviewer_findings": [
+        {
+          "classification_basis": "internal_contract_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "For input 'a, b,#ignore', the general rule requires reversing all three comma-separated fields with content preserved, while the required example omits the '#ignore' field and outputs only two fields."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Fields are clearly defined as segments between commas, and the requirement to preserve field content exactly (including spaces) makes handling of empty/whitespace-only fields unambiguous.",
+            "Lines with no commas but not empty/comment are explicitly malformed; error handling and exit codes are fully specified.",
+            "The claimed ambiguity about empty fields is resolved by the stated preservation rule, so the contract is executable and objectively testable."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V6-010",
+      "claimed_status": "infeasible_proven",
+      "reviewer_findings": [
+        {
+          "classification_basis": "finite_constraint_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "For n=3, the contract requires all involutions but explicitly requires only [[0,1,2]]; permutations [0,2,1], [1,0,2], and [2,1,0] are also involutions."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The function domain is finite for each call (fixed n), and returning all involutive permutations is computationally large but mathematically well-defined and implementable for any given n.",
+            "Deterministic lexicographic ordering and edge-case examples are consistent with the definition of involutions.",
+            "No logical contradiction exists; unbounded growth in output size does not make the contract infeasible in principle."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V6-011",
+      "claimed_status": "infeasible_proven",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The zero-occurrence condition simply yields [[]] when b=0 and [] when b>0; a valid empty result makes the contract satisfiable."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "finite_constraint_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "For a>0 and b>0, any b-length list with elements restricted to 0..a-1 must contain at least one such integer at least once, contradicting the requirement that each appear exactly zero times.",
+            "The requirement nonetheless demands returning all such lists for general a,b, leading to an empty feasible set for all a>0,b>0.",
+            "This is a direct logical contradiction in the constraints, so only trivial empty-length cases can satisfy, proving general infeasibility."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-012",
+      "claimed_status": "infeasible_proven",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The reverse-pair condition can be applied as a filter over the finite bounded candidate pairs; inputs with no qualifying pairs validly return an empty list."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "For any given a,b,total, the set of (x,y) with 0<=x<a,0<=y<b,x+y=total and x\u2260y is finite and well-defined; the extra requirement is simply to filter to those pairs whose reverse also satisfies the same constraints and include both.",
+            "Cases where no such symmetric pairs exist (e.g., a=2,b=2,total=1) are correctly handled by returning an empty list; this is not a contradiction but a valid outcome.",
+            "The contract does not require the existence of pairs for all parameters, only that all valid symmetric ones be returned without duplicates in deterministic order."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    }
+  ],
+  "created_at": "2026-08-21T17:44:37.373259+00:00",
+  "method": {
+    "blind_to_forge_results": true,
+    "forge_results_supplied": false,
+    "independent_models": true,
+    "raw_benchmark_metrics_modified": false,
+    "reviewer_models": [
+      "gpt-5.6-terra",
+      "gpt-5.1"
+    ]
+  },
+  "receipt_id": "forge-blind-v6-external-001-requirement-label-adjudication",
+  "reviewers": [
+    {
+      "estimated_cost_usd": 0.028886,
+      "input_tokens": 4933,
+      "model": "gpt-5.6-terra",
+      "output_tokens": 1585,
+      "pricing_source": "explicit_cli",
+      "request_count": 1,
+      "reviews": [
+        {
+          "case_id": "V6-001",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The parsing, error handling, output, return-code rules, and examples define a satisfiable executable CLI contract."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-002",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The replacement, trimming, uppercasing, and empty-input rules are deterministic and consistent with the examples."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-003",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Unicode whitespace is objectively defined through str.isspace(), and the validation and transformation rules are complete."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-004",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Per-group integer summation, validation, ordering, and non-mutation requirements are mutually consistent and executable."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-005",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The accepted opening brackets, matching closing brackets, and one-pair removal behavior are explicitly defined and consistent with the examples."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-006",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The group rotation algorithm, partial-group behavior, and invalid-input handling are objective and satisfiable."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-007",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Strict and casefold adjacency semantics, mode validation, and type validation are explicitly specified and objectively testable."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-008",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The empty-delimiter case is expressly defined: the entire phrase is returned as one trimmed uppercase token, so no material ambiguity remains."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-009",
+          "claimed_status": "validation_failed",
+          "classification_basis": "internal_contract_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "For input 'a, b,#ignore', the general rule requires reversing all three comma-separated fields with content preserved, while the required example omits the '#ignore' field and outputs only two fields."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-010",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "finite_constraint_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "For n=3, the contract requires all involutions but explicitly requires only [[0,1,2]]; permutations [0,2,1], [1,0,2], and [2,1,0] are also involutions."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-011",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The zero-occurrence condition simply yields [[]] when b=0 and [] when b>0; a valid empty result makes the contract satisfiable."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-012",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The reverse-pair condition can be applied as a filter over the finite bounded candidate pairs; inputs with no qualifying pairs validly return an empty list."
+          ],
+          "label_valid": false
+        }
+      ],
+      "total_tokens": 6518
+    },
+    {
+      "estimated_cost_usd": 0.02010625,
+      "input_tokens": 4933,
+      "model": "gpt-5.1",
+      "output_tokens": 1394,
+      "pricing_source": "explicit_cli",
+      "request_count": 1,
+      "reviews": [
+        {
+          "case_id": "V6-001",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "All I/O behavior, exit codes, and error handling are precisely defined for every input, including empty and malformed files.",
+            "Examples are consistent with the general rules (e.g., overlapping ranges allowed, malformed lines reported and skipped, no-valid-range case returns 1).",
+            "The contract is executable and deterministic with no ambiguity or contradiction."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-002",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Normalization rules (collapse spaces/tabs/dashes to underscore, trim underscores, uppercase) are fully specified and deterministic.",
+            "Behavioral examples match the stated transformation rules, including empty/whitespace-only inputs mapping to empty string.",
+            "No conflicting constraints or underdefined behavior remain."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-003",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Whitespace definition is tied to str.isspace(), and replacement with single ASCII space plus stripping is fully specified.",
+            "Type checking and TypeError conditions are clearly defined; all inputs are covered deterministically.",
+            "Behavioral tests agree with the stated rules, and there is no internal contradiction."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-004",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Input types and error conditions (non-list groups or non-int elements) are clearly defined and lead to TypeError with no partial output.",
+            "Sum semantics for each group, including empty lists and negatives, are fully specified and match examples.",
+            "The requirement that input is not modified is implementable and does not conflict with other constraints."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-005",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Accepted bracket characters and their matching closers are explicitly listed; other brackets cause ValueError.",
+            "The rule for stripping exactly one leading opener and one trailing matching closer, otherwise leaving the string unchanged, is precise and deterministic.",
+            "All edge examples (nested brackets, only pair, empty string) are consistent with the general rule."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-006",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Rotation is clearly defined groupwise with right-cyclic shift within each (possibly partial) group.",
+            "Type and value checks for group_size and for strings elements are precise (ValueError vs TypeError).",
+            "Examples align with the group rotation rule, and the contract is deterministic and executable with no ambiguity."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-007",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The deduplication rule for 'strict' vs 'casefold' modes is fully specified and deterministic.",
+            "Type constraints for inputs and mode, and corresponding TypeError/ValueError conditions, are clear and cover all invalid inputs.",
+            "There is no ambiguity about behavior for any list of strings and allowed modes; the requirement is objectively checkable."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-008",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Behavior for empty delimiter is explicitly defined: return the entire phrase as a single uppercase string, so no use of Python\u2019s native split on empty delimiter is required.",
+            "Splitting behavior for nonempty delimiters, trimming whitespace, and uppercasing tokens are all fully specified and deterministic, including empty tokens from consecutive delimiters.",
+            "Type errors for phrases and delimiter types are clearly defined; there is no remaining under-specification preventing objective certification."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-009",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Fields are clearly defined as segments between commas, and the requirement to preserve field content exactly (including spaces) makes handling of empty/whitespace-only fields unambiguous.",
+            "Lines with no commas but not empty/comment are explicitly malformed; error handling and exit codes are fully specified.",
+            "The claimed ambiguity about empty fields is resolved by the stated preservation rule, so the contract is executable and objectively testable."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-010",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The function domain is finite for each call (fixed n), and returning all involutive permutations is computationally large but mathematically well-defined and implementable for any given n.",
+            "Deterministic lexicographic ordering and edge-case examples are consistent with the definition of involutions.",
+            "No logical contradiction exists; unbounded growth in output size does not make the contract infeasible in principle."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V6-011",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "finite_constraint_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "For a>0 and b>0, any b-length list with elements restricted to 0..a-1 must contain at least one such integer at least once, contradicting the requirement that each appear exactly zero times.",
+            "The requirement nonetheless demands returning all such lists for general a,b, leading to an empty feasible set for all a>0,b>0.",
+            "This is a direct logical contradiction in the constraints, so only trivial empty-length cases can satisfy, proving general infeasibility."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V6-012",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "For any given a,b,total, the set of (x,y) with 0<=x<a,0<=y<b,x+y=total and x\u2260y is finite and well-defined; the extra requirement is simply to filter to those pairs whose reverse also satisfies the same constraints and include both.",
+            "Cases where no such symmetric pairs exist (e.g., a=2,b=2,total=1) are correctly handled by returning an empty list; this is not a contradiction but a valid outcome.",
+            "The contract does not require the existence of pairs for all parameters, only that all valid symmetric ones be returned without duplicates in deterministic order."
+          ],
+          "label_valid": false
+        }
+      ],
+      "total_tokens": 6327
+    }
+  ],
+  "schema_version": 1,
+  "summary": {
+    "label_invalid": 3,
+    "label_valid": 6,
+    "total_cases": 12,
+    "total_estimated_cost_usd": 0.04899225,
+    "total_model_requests": 2,
+    "total_model_tokens": 12845,
+    "unresolved": 3
+  }
+}
