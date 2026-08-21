@@ -1,0 +1,609 @@
+{
+  "bundle": {
+    "baseline_sha256": "9ea720203b0fc6d07831f4dead08a351dc94c2991e04e280fd1541596bd45e22",
+    "baseline_verified": true,
+    "bundle_id": "forge-blind-v7-external-001",
+    "dataset_sha256": "de39e16364468f727c7685823359b3945448ac82bb8a3c50a1e47ee27eba7920",
+    "manifest_sha256": "f84222978a21dc38c2534be7bef29a7a2f94be0be36caa8e2aa6b8df761cc80e"
+  },
+  "consensus": [
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-001",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The adjacent-line deduplication behavior, CLI modes, error handling, and import contract are objectively specified and satisfiable."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "All behaviors (CLI args, file-not-found exit 2, adjacent-duplicate removal, Unicode handling) are precisely defined and executable.",
+            "No contradictory constraints or unbounded quality requirements are present; empty input behavior is clear."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-002",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Reversing only non-empty lines while retaining empty-line positions is a deterministic, executable transformation."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Reversing only non-empty lines while preserving empty-line positions is well-defined and feasible.",
+            "CLI interface, error handling, and Unicode requirements are concrete and consistent; no contradictions identified."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-003",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Comma field separation, palindrome testing, empty-field treatment, and output preservation are sufficiently defined."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Definition of palindromic fields (including empty fields) is precise and case-sensitive; line filtering is straightforward.",
+            "CLI contract, stderr behavior, and Unicode support are clearly specified and compatible with an implementation."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-004",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The specified str.split()-equivalent whitespace processing, rotation, and canonical examples define an executable contract."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Word rotation, whitespace normalization, and edge cases are explicitly and consistently defined with concrete examples.",
+            "All CLI, error, and Unicode behaviors are deterministic and implementable without ambiguity."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-005",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Uniqueness among non-whitespace-only lines and preservation of the selected original line are objectively defined."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "\"First unique non-empty line\" is clearly defined, with whitespace-only lines excluded from uniqueness and output.",
+            "Preserving exact formatting and line endings is implementable; CLI and error semantics are precise and consistent."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V7-006",
+      "claimed_status": "verified",
+      "reviewer_findings": [
+        {
+          "classification_basis": "finite_constraint_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "The general rule requires every pair of consecutive alphabetic characters to alternate case, so the two uppercase alphabetic characters in required input 'N/A' fail; the canonical test simultaneously requires that line to be output."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Alternation is explicitly restricted to alphabetic characters per str.isalpha, making the check objectively defined for a given Python runtime.",
+            "Lines with fewer than two alphabetic characters are explicitly accepted, and original formatting is preserved; CLI and error semantics are consistent."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-007",
+      "claimed_status": "validation_failed",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The predicate explicitly distinguishes only the code points '0' and 'O'; visually similar Unicode characters are unambiguously other characters and therefore satisfy the output condition."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The core rule is purely syntactic: treat only ASCII '0' and 'O' specially and accept any other non-whitespace character; visually similar Unicode characters are outside the exclusion set and thus unambiguous.",
+            "All required behaviors (filter condition, Unicode I/O, CLI, file-not-found handling) are precisely and consistently defined, so the contract is objectively certifiable."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-008",
+      "claimed_status": "validation_failed",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Words and vowels are explicitly defined as non-whitespace runs and membership in a fixed Latin-character set, including for non-Latin text."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Vowels are explicitly fixed to the 10 Latin characters listed; for any word, checking membership in this set is deterministic regardless of script.",
+            "The requirement does not depend on a linguistic notion of vowels beyond this set, so the line filter, CLI, and error behaviors are all objectively defined and implementable."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-009",
+      "claimed_status": "validation_failed",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The contract expressly delegates alphabetic classification to Python str.isalpha, making the unique-character count and Fibonacci predicate executable in the target runtime."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Alphabetic status is defined via Python's str.isalpha, which is a deterministic predicate in the target environment; Fibonacci membership of the resulting count is objectively checkable.",
+            "All other behaviors (line preservation, empty-line handling, CLI, file-not-found) are precise and feasible."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-010",
+      "claimed_status": "infeasible_proven",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Although no line can satisfy the conjunction, always emitting the valid empty result satisfies the complete filtering contract."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The filter condition is logically unsatisfiable for any line, but the resulting behavior\u2014always producing empty output for any input\u2014is well-defined and implementable.",
+            "Impossibility of any line passing the predicate does not prevent implementation of the specified CLI contract with universally empty output."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-011",
+      "claimed_status": "infeasible_proven",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "No word count is both odd and even, but this merely makes the specified filter select no lines; empty output is a valid executable result."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "No line can have a word count that is both odd and even, but a program can still implement the specified rule by never outputting any line.",
+            "The CLI, argument validation, and error-handling behaviors are precise and compatible with this always-empty-output semantics."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-012",
+      "claimed_status": "infeasible_proven",
+      "reviewer_findings": [
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "No uppercase-character count is both prime and a perfect square, but universally empty output remains a valid implementation of the filter."
+          ],
+          "model": "gpt-5.6-terra"
+        },
+        {
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "A count of uppercase alphabetic characters cannot be both a nontrivial perfect square and a prime, but this simply yields a deterministic always-empty filter.",
+            "All other requirements (Unicode handling, CLI arguments, file-not-found semantics) are consistent and executable, so the overall contract is satisfiable."
+          ],
+          "model": "gpt-5.1"
+        }
+      ],
+      "verdict": "label_invalid"
+    }
+  ],
+  "created_at": "2026-08-21T23:00:02.796866+00:00",
+  "method": {
+    "blind_to_forge_results": true,
+    "forge_results_supplied": false,
+    "independent_models": true,
+    "raw_benchmark_metrics_modified": false,
+    "reviewer_models": [
+      "gpt-5.6-terra",
+      "gpt-5.1"
+    ]
+  },
+  "receipt_id": "forge-blind-v7-external-001-requirement-label-adjudication",
+  "reviewers": [
+    {
+      "estimated_cost_usd": 0.02312,
+      "input_tokens": 3934,
+      "model": "gpt-5.6-terra",
+      "output_tokens": 1271,
+      "pricing_source": "explicit_cli",
+      "request_count": 1,
+      "reviews": [
+        {
+          "case_id": "V7-001",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The adjacent-line deduplication behavior, CLI modes, error handling, and import contract are objectively specified and satisfiable."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-002",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Reversing only non-empty lines while retaining empty-line positions is a deterministic, executable transformation."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-003",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Comma field separation, palindrome testing, empty-field treatment, and output preservation are sufficiently defined."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-004",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The specified str.split()-equivalent whitespace processing, rotation, and canonical examples define an executable contract."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-005",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Uniqueness among non-whitespace-only lines and preservation of the selected original line are objectively defined."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-006",
+          "claimed_status": "verified",
+          "classification_basis": "finite_constraint_contradiction",
+          "defensible_status": "infeasible_proven",
+          "findings": [
+            "The general rule requires every pair of consecutive alphabetic characters to alternate case, so the two uppercase alphabetic characters in required input 'N/A' fail; the canonical test simultaneously requires that line to be output."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-007",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The predicate explicitly distinguishes only the code points '0' and 'O'; visually similar Unicode characters are unambiguously other characters and therefore satisfy the output condition."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-008",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Words and vowels are explicitly defined as non-whitespace runs and membership in a fixed Latin-character set, including for non-Latin text."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-009",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The contract expressly delegates alphabetic classification to Python str.isalpha, making the unique-character count and Fibonacci predicate executable in the target runtime."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-010",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Although no line can satisfy the conjunction, always emitting the valid empty result satisfies the complete filtering contract."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-011",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "No word count is both odd and even, but this merely makes the specified filter select no lines; empty output is a valid executable result."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-012",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "No uppercase-character count is both prime and a perfect square, but universally empty output remains a valid implementation of the filter."
+          ],
+          "label_valid": false
+        }
+      ],
+      "total_tokens": 5205
+    },
+    {
+      "estimated_cost_usd": 0.0158875,
+      "input_tokens": 3934,
+      "model": "gpt-5.1",
+      "output_tokens": 1097,
+      "pricing_source": "explicit_cli",
+      "request_count": 1,
+      "reviews": [
+        {
+          "case_id": "V7-001",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "All behaviors (CLI args, file-not-found exit 2, adjacent-duplicate removal, Unicode handling) are precisely defined and executable.",
+            "No contradictory constraints or unbounded quality requirements are present; empty input behavior is clear."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-002",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Reversing only non-empty lines while preserving empty-line positions is well-defined and feasible.",
+            "CLI interface, error handling, and Unicode requirements are concrete and consistent; no contradictions identified."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-003",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Definition of palindromic fields (including empty fields) is precise and case-sensitive; line filtering is straightforward.",
+            "CLI contract, stderr behavior, and Unicode support are clearly specified and compatible with an implementation."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-004",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Word rotation, whitespace normalization, and edge cases are explicitly and consistently defined with concrete examples.",
+            "All CLI, error, and Unicode behaviors are deterministic and implementable without ambiguity."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-005",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "\"First unique non-empty line\" is clearly defined, with whitespace-only lines excluded from uniqueness and output.",
+            "Preserving exact formatting and line endings is implementable; CLI and error semantics are precise and consistent."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-006",
+          "claimed_status": "verified",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Alternation is explicitly restricted to alphabetic characters per str.isalpha, making the check objectively defined for a given Python runtime.",
+            "Lines with fewer than two alphabetic characters are explicitly accepted, and original formatting is preserved; CLI and error semantics are consistent."
+          ],
+          "label_valid": true
+        },
+        {
+          "case_id": "V7-007",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The core rule is purely syntactic: treat only ASCII '0' and 'O' specially and accept any other non-whitespace character; visually similar Unicode characters are outside the exclusion set and thus unambiguous.",
+            "All required behaviors (filter condition, Unicode I/O, CLI, file-not-found handling) are precisely and consistently defined, so the contract is objectively certifiable."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-008",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Vowels are explicitly fixed to the 10 Latin characters listed; for any word, checking membership in this set is deterministic regardless of script.",
+            "The requirement does not depend on a linguistic notion of vowels beyond this set, so the line filter, CLI, and error behaviors are all objectively defined and implementable."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-009",
+          "claimed_status": "validation_failed",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "Alphabetic status is defined via Python's str.isalpha, which is a deterministic predicate in the target environment; Fibonacci membership of the resulting count is objectively checkable.",
+            "All other behaviors (line preservation, empty-line handling, CLI, file-not-found) are precise and feasible."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-010",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "The filter condition is logically unsatisfiable for any line, but the resulting behavior\u2014always producing empty output for any input\u2014is well-defined and implementable.",
+            "Impossibility of any line passing the predicate does not prevent implementation of the specified CLI contract with universally empty output."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-011",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "No line can have a word count that is both odd and even, but a program can still implement the specified rule by never outputting any line.",
+            "The CLI, argument validation, and error-handling behaviors are precise and compatible with this always-empty-output semantics."
+          ],
+          "label_valid": false
+        },
+        {
+          "case_id": "V7-012",
+          "claimed_status": "infeasible_proven",
+          "classification_basis": "objective_satisfiable_contract",
+          "defensible_status": "verified",
+          "findings": [
+            "A count of uppercase alphabetic characters cannot be both a nontrivial perfect square and a prime, but this simply yields a deterministic always-empty filter.",
+            "All other requirements (Unicode handling, CLI arguments, file-not-found semantics) are consistent and executable, so the overall contract is satisfiable."
+          ],
+          "label_valid": false
+        }
+      ],
+      "total_tokens": 5031
+    }
+  ],
+  "schema_version": 1,
+  "summary": {
+    "label_invalid": 6,
+    "label_valid": 5,
+    "total_cases": 12,
+    "total_estimated_cost_usd": 0.0390075,
+    "total_model_requests": 2,
+    "total_model_tokens": 10236,
+    "unresolved": 1
+  }
+}
