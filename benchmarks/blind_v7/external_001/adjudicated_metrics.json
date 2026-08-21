@@ -1,0 +1,223 @@
+{
+  "case_decisions": [
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-001",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": true,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-002",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": true,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-003",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": true,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-004",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": true,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-005",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": true,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V7-006",
+      "claimed_status": "verified",
+      "effective_expected_status": null,
+      "exclusion_reason": "reviewer_disagreement",
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": false,
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-007",
+      "claimed_status": "validation_failed",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-008",
+      "claimed_status": "validation_failed",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-009",
+      "claimed_status": "validation_failed",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-010",
+      "claimed_status": "infeasible_proven",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-011",
+      "claimed_status": "infeasible_proven",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "infeasible_proven",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V7-012",
+      "claimed_status": "infeasible_proven",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    }
+  ],
+  "created_at": "2026-08-21T23:00:52.961139+00:00",
+  "metrics": {
+    "external_false_verified_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "external_success_after_repair": {
+      "denominator": 5,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "external_verified_at_1": {
+      "denominator": 5,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "infeasible_detection_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "oracle_pass_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "status_accuracy": {
+      "denominator": 11,
+      "numerator": 0,
+      "value": 0.0
+    }
+  },
+  "policy": {
+    "consensus_label_corrections_applied": true,
+    "deterministic_contract_conflicts_excluded": true,
+    "external_metrics_require_frozen_oracle": true,
+    "external_metrics_require_typed_public_contract": true,
+    "raw_benchmark_metrics_modified": false,
+    "undefined_rates_are_null": true,
+    "unresolved_excluded": true
+  },
+  "receipt_id": "forge-blind-v7-external-001-adjudicated-definitive-metrics",
+  "resource_metrics": {
+    "cost_per_externally_accepted_artifact_usd": null,
+    "included_case_runtime_seconds": 1471.51352446,
+    "median_case_runtime_seconds": 126.932221147,
+    "p95_case_runtime_seconds": 245.61635901900001,
+    "total_estimated_model_cost_usd": 2.037514,
+    "total_model_requests": 53,
+    "total_model_tokens": 757058,
+    "total_repairs": 17
+  },
+  "schema_version": 1,
+  "sources": {
+    "adjudication_receipt_sha256": "1461b0719315ee41244b271c0c2371e5bb46a53af5bf5e1797b1bc2c45b0a8cb",
+    "baseline_report_sha256": "c571b8e4891c9cc45b69baf63dace6a00fb8b9a2dcb468dbe4bc107451fc2f9d",
+    "bundle_id": "forge-blind-v7-external-001",
+    "dataset_sha256": "de39e16364468f727c7685823359b3945448ac82bb8a3c50a1e47ee27eba7920",
+    "forge_baseline_sha256": "9ea720203b0fc6d07831f4dead08a351dc94c2991e04e280fd1541596bd45e22",
+    "manifest_sha256": "f84222978a21dc38c2534be7bef29a7a2f94be0be36caa8e2aa6b8df761cc80e"
+  },
+  "summary": {
+    "corrected_label_cases": 6,
+    "definitive_status_cases": 11,
+    "excluded_cases": 1,
+    "externally_accepted_artifacts": 0,
+    "invalid_adjudication_cases": 0,
+    "invalid_oracle_cases": 0,
+    "observed_verified_without_definitive_external_judge": 0,
+    "raw_total_cases": 12,
+    "unresolved_cases": 1,
+    "verified_cases_without_definitive_external_contract": 6
+  },
+  "terminal_status": "adjudicated_metrics_derived"
+}

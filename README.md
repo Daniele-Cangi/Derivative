@@ -392,6 +392,19 @@ V6 predates the typed public import contract introduced in blind schema v3. Cons
 
 The derived receipt SHA-256 is `8D7CF76BF927CC86CA3523762C920B8489D631888F2F7260974AA49135AEF96C`; its embedded baseline-report and adjudication-receipt hashes both match the immutable source files.
 
+### Blind V7 evidence
+
+Blind V7 is the first schema-v3 evaluation. An isolated `gpt-4.1` producer created 12 new cases with exact typed public import contracts, separate requirement and oracle reviews, and no Forge source or prior blind case in its prompts. The bundle was sealed before execution with manifest SHA-256 `F84222978A21DC38C2534BE7BEF29A7A2F94BE0BE36CAA8E2AA6B8DF761CC80E`, dataset SHA-256 `DE39E16364468F727C7685823359B3945448AC82BB8A3C50A1E47EE27EBA7920`, and protected Forge baseline SHA-256 `9EA720203B0FC6D07831F4DEAD08A351DC94C2991E04E280FD1541596BD45E22`.
+
+The [first and only baseline run](https://github.com/Daniele-Cangi/Derivative/actions/runs/32532939841) completed in Docker against the verified baseline. The immutable raw report records 4/12 matching claimed statuses, status accuracy 0.333, external `Verified@1` 0.000, success after repair 0.000, external false-verified rate 0.000, and infeasibility detection 0.333. It used 54 model requests, 761,049 tokens, 17 repairs, and $2.048034 estimated model cost; median case latency was 124.91 seconds and P95 was 245.62 seconds. Workflow success means the measurement completed, not that Forge passed the benchmark.
+
+The independent requirement-label adjudication received no Forge outputs, generated code, failure signatures, oracle results, or baseline report. Two reviewers agreed that five labels were valid, six were invalid, and one was unresolved. All six corrected labels are `verified`: three supposed Unicode ambiguities were objectively specified by the requirement, while three impossible filtering predicates still define feasible programs whose valid result is always empty. The append-only derived receipt therefore includes 11 cases, excludes the unresolved case, and reports adjudicated status accuracy 0/11. External `Verified@1` and external success after repair are both 0/5. External false-verified rate, oracle pass rate, and infeasibility detection are `null` because their adjudicated denominators are zero; they are not reported as synthetic zeros.
+
+The dominant structural failure is not the schema-v3 public contract. In five objectively feasible CLI cases, module imports and generated tests passed, but ValidatorStage's generic smoke invocation supplied both input and output file arguments to a declared `main(argv)` contract that allowed zero or one positional filename. The entrypoints correctly rejected the extra argument, and the validator classified the run as `import_failure` even though `imports_ok=true`. This is a verification-contract mismatch and failure-signature classification defect. V7 is now frozen as evidence; any correction is measured only as an explicitly labeled replay and must generalize from the declared interface rather than special-case these tasks.
+
+The raw [baseline report](benchmarks/blind_v7/external_001/baseline_result.json), independent [label adjudication](benchmarks/blind_v7/external_001/requirement_adjudication.json), and [adjudicated metrics](benchmarks/blind_v7/external_001/adjudicated_metrics.json) remain separate linked receipts. Their SHA-256 values are respectively `C571B8E4891C9CC45B69BAF63DACE6A00FB8B9A2DCB468DBE4BC107451FC2F9D`, `1461B0719315EE41244B271C0C2371E5BB46A53AF5BF5E1797B1BC2C45B0A8CB`, and `F11218B6B3B41CC0D3BDE191BEE6579EF97BD14F676F89D537935EC15BBD51E6`.
+
+
 ### Blind V5 regression ledger
 
 | Evidence | Result | Interpretation |
@@ -454,13 +467,13 @@ Current boundaries:
 
 ## Development Roadmap
 
-Blind V6 is frozen as an evidence snapshot, not retained as an optimization target. Forge remains focused on its existing Python CLI, service, pipeline, and library surface until a future independently authored schema-v3 blind establishes how well the current system transfers.
+Blind V7 is frozen as the first schema-v3 evidence snapshot and is not retained as an optimization target. Forge remains focused on its existing Python CLI, service, pipeline, and library surface while structural replay work addresses only verification-contract defects exposed by independent evidence.
 
 Post-freeze priorities:
 
-1. Preserve every V5/V6 baseline, replay, adjudication, invalid-benchmark finding, token count, cost, latency, repair count, and artifact digest without rewriting raw evidence.
+1. Preserve every V5/V6/V7 baseline, replay, adjudication, invalid-benchmark finding, token count, cost, latency, repair count, and artifact digest without rewriting raw evidence.
 2. Keep raw metrics, model-based label adjudication, deterministic sanity checks, and derived definitive metrics as separate linked receipts.
-3. Freeze any future blind with schema v3 before Forge sees its requirements or oracles; every case must declare a typed public import contract and every oracle must import it exactly.
+3. Keep future blinds on schema v3, frozen before Forge sees their requirements or oracles; every case must declare a typed public import contract and every oracle must import it exactly.
 4. Report Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, latency, tokens, cost per externally accepted artifact, and repairs per successful build with explicit numerators and denominators.
 5. Correct only structural mechanisms exposed by independent evidence; do not add one-off templates for known cases.
 
