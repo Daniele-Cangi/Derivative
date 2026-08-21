@@ -1,0 +1,293 @@
+[
+  {
+    "case_id": "V6-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V6-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "CLI: Implement a CLI tool 'expand_ranges' that reads a text file containing one integer range per line, in the format 'start-end' (where start and end are non-negative integers, start <= end), and outputs to stdout each integer in all ranges, one per line, in ascending order (with duplicates from overlapping ranges preserved). Lines starting with '#' or containing only whitespace are ignored. Malformed lines (violating 'start-end' format, negative numbers, or start > end) are reported to stderr with the line's 1-based number, and skipped. The CLI must operate via an importable main(argv: list[str] | None = None) -> int accepting one required positional argument (input file path). The file is opened as UTF-8 text. Output is to sys.stdout, errors to sys.stderr. On success, return code 0; on any read error or no valid ranges, return 1. Deterministic behavior is required for all input. Edge cases: an empty file or all-comment/blank/malformed lines must exit with code 1 and produce no output. Tests: (1) File contains '1-3\\n#foo\\n5-5\\n', outputs 1\\n2\\n3\\n5, code 0. (2) File contains '0-0\\n2-1\\n', outputs 0, stderr reports line 2 error, code 0. (3) File contains 'foo\\n', outputs nothing, stderr reports line 1 error, code 1. (4) Blank file: outputs nothing, code 1.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "cli",
+      "file-io",
+      "integer-range-expansion",
+      "input-validation",
+      "python-stdlib-only",
+      "verified-contract"
+    ]
+  },
+  {
+    "case_id": "V6-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V6-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Library: Provide a function normalize_sections(sections: list[str]) -> list[str] which takes a list of strings representing section headers\u2014each containing zero or more words separated by spaces, tabs, or dashes (e.g., 'Section-1', 'Appendix   B', '  Summary'). The function must return a new list of the same length, where each output string is a normalized version of the input string: (1) All runs of whitespace and dashes (space, tab, dash) in the input are replaced by a single underscore ('_'). (2) All leading and trailing underscores are removed. (3) All letters are converted to uppercase. (4) Empty or all-whitespace/dash input strings become the empty string in output. Deterministic output must be guaranteed. Behavioral tests: (1) ['Introduction', 'Summary  ', 'Appendix-B'] returns ['INTRODUCTION', 'SUMMARY', 'APPENDIX_B']. (2) ['  section--3 ', '\\tAnnex--A', '--', ''] returns ['SECTION_3', 'ANNEX_A', '', '']. (3) ['  ', 'TABLE 1-2-3'] returns ['', 'TABLE_1_2_3'].",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "verified",
+      "python",
+      "string-transformation",
+      "normalization"
+    ]
+  },
+  {
+    "case_id": "V6-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V6-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Library: Provide a function collapse_whitespace_runs(texts: list[str]) -> list[str] which takes a list of strings and returns a new list of the same length, where in each output string all maximal runs of Unicode whitespace characters (as defined by str.isspace()) are replaced by a single ASCII space (' '), and any leading or trailing whitespace is removed entirely. All input strings must be processed independently. If the input string is empty or contains only whitespace, the output is the empty string. Deterministic output is required. Malformed input (non-list or non-str elements) must raise TypeError. Behavioral tests: (1) ['foo\\t\\tbar', ' a\\nb\\r\\tc '] returns ['foo bar', 'a b c']. (2) ['   ', '','foo','bar\\tbaz'] returns ['', '', 'foo', 'bar baz']. (3) Input ['\\u2003A\\u2009B'] returns ['A B']. (4) Input ['foo', 123, 'bar'] raises TypeError.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "python",
+      "string-normalization",
+      "whitespace",
+      "verified",
+      "terminal-status"
+    ]
+  },
+  {
+    "case_id": "V6-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V6-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Library: Provide a function stable_digit_group_sum(groups: list[list[int]]) -> list[int] that takes a list of integer lists, each representing a 'group', and returns a list of group sums, each corresponding to the sum of the integers in the respective group. The input is guaranteed to be a list of zero or more lists, each containing zero or more integers (any valid Python int, including negatives and zero).\n\nDeterministic output is required for all input. The returned list must have the same length as the input list.\n\nBehavioral requirements:\n(1) Each output element is exactly the sum of the integers in the corresponding group, preserving input order.\n(2) If a group is an empty list, sum is 0 for that group.\n(3) Non-list or non-integer elements in any group must raise TypeError, with no partial output allowed.\n(4) The original input must not be modified.\n\nEdge cases:\n- If groups is the empty list, return [].\n- Nested non-list elements (such as a string or None instead of a group) raise TypeError.\n- Groups containing empty lists (e.g., [[], []]) output [0, 0].\n- Groups such as [[5, -2, 8], [0], [], [-1, -1]] produce [11, 0, 0, -2].\n\nBehavioral tests:\n(1) stable_digit_group_sum([[1, 2], [3], [], [-4, 4, 0]]) returns [3, 3, 0, 0].\n(2) stable_digit_group_sum([]) returns [].\n(3) stable_digit_group_sum([[42], []]) returns [42, 0].\n(4) stable_digit_group_sum([[1, 'x'], [0]]) raises TypeError.\n(5) stable_digit_group_sum([None]) raises TypeError.\nInput is not to be modified.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "grouped-sum",
+      "error-handling",
+      "verified"
+    ]
+  },
+  {
+    "case_id": "V6-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V6-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Library: Provide a function def strip_balanced_brackets(texts: list[str], bracket: str) -> list[str] that takes a list of strings and a single bracket character (an ASCII punctuation symbol such as '(', '[', '{', '<') and returns a new list, where each output string is produced from the corresponding input by removing one leading instance of 'bracket' and one trailing instance of its ASCII-matching closing bracket, only if they are both present and properly matched (e.g., '(' pairs with ')', '[' with ']', '{' with '}', '<' with '>'). If either is missing, not in the correct position, or mismatched, the string is returned unchanged. The function must raise ValueError if 'bracket' is not one of '(', '[', '{', '<'. Input strings containing only the bracketed pair (e.g., '()') result in the empty string. All input strings must be processed independently. An empty input string is unaffected. Deterministic output is required for all inputs. Input list and its elements must not be modified. Behavioral tests: (1) strip_balanced_brackets(['(foo)', '(bar'], '(') returns ['foo', '(bar']. (2) strip_balanced_brackets(['[abc]', '[abc]]', 'abc]'], '[') returns ['abc', '[abc]]', 'abc]']. (3) strip_balanced_brackets(['{x}', '{{x}}'], '{') returns ['x', '{x}']. (4) strip_balanced_brackets(['<a>', '<a>>'], '<') returns ['a', '<a>>']. (5) strip_balanced_brackets([''], '[') returns ['']. (6) strip_balanced_brackets(['foo'], 'x') raises ValueError.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "string",
+      "bracket manipulation",
+      "input validation",
+      "verified"
+    ]
+  },
+  {
+    "case_id": "V6-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V6-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "requirement": "Library: Provide a function groupwise_rotate(strings: list[str], group_size: int) -> list[str] that takes a list of strings and a positive integer group_size, and returns a new list of strings of the same length as input, where each consecutive group of group_size elements is cyclically rotated right by one position. The last element of each group moves to the group's start, all others shift right. Partial groups (at the end) are rotated similarly if their length < group_size. Each string is rotated only within its group. The function must not modify its input. If group_size is not a positive integer, raise ValueError; if strings is not a list of only str values, raise TypeError. Deterministic output is required. Behavioral tests:\n(1) groupwise_rotate(['a','b','c','d','e','f'], 2) returns ['b','a','d','c','f','e']. (2) groupwise_rotate(['foo','bar','baz'], 2) returns ['bar','foo','baz']. (3) groupwise_rotate([], 3) returns []. (4) groupwise_rotate(['x'], 5) returns ['x']. (5) groupwise_rotate(['m','n','o','p'], 3) returns ['o','m','n','p']. (6) groupwise_rotate(['a', None], 2) raises TypeError. (7) groupwise_rotate(['a','b','c'], 0) raises ValueError.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "list transformation",
+      "group rotate",
+      "verified",
+      "no input mutation",
+      "python standard library"
+    ]
+  },
+  {
+    "case_id": "V6-007",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Service-module: Provide a callable Python module interface deduplicate_consecutive(inputs: list[str], *, mode: str = 'strict') -> list[str] that returns a new list of the same length as inputs by deduplicating adjacent repeated elements according to the given mode. The 'inputs' parameter must be a list of strings; non-list inputs or lists with non-str elements raise TypeError. If 'mode' is 'strict', exactly consecutive identical strings are collapsed to a single instance (from left to right); if 'mode' is 'casefold', adjacent elements are considered duplicates if their str.casefold() values match. The output retains the order of first occurrences. If 'mode' is not 'strict' or 'casefold', raise ValueError. An empty input returns an empty list. Deterministic output is required for all valid inputs. Behavioral tests: (1) ['a','a','b','B','b'] with mode='strict' returns ['a','b','B','b']. (2) ['A','a','A'] with mode='casefold' returns ['A']. (3) ['foo'] returns ['foo']. (4) [] returns []. (5) ['a', 1] raises TypeError. (6) ['x','x'] with mode='ignore' raises ValueError.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "service-module",
+      "deduplication",
+      "adjacent",
+      "casefold",
+      "ambiguity:definition-exhaustiveness"
+    ]
+  },
+  {
+    "case_id": "V6-008",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "Library: Provide a function tokenize_upper_phrases(phrases: list[str], delimiter: str) -> list[list[str]] that takes a list of strings ('phrases') and a delimiter string, and returns a new list of lists of strings, where each output list contains the tokens produced by splitting the corresponding input phrase by the delimiter. Each token must be converted to uppercase and leading/trailing whitespace removed. If the delimiter is the empty string, the entire phrase must be returned as a single uppercase string. The function must raise TypeError if 'phrases' is not a list of strings, or if 'delimiter' is not a string. Output must have the same length as the input list. Edge cases: Input phrases containing empty strings, or phrases with only delimiters, or phrases containing only whitespace must be handled by returning a list of the resulting tokens (which may include empty strings after splitting). An empty input list returns an empty list. Deterministic output required. Behavioral tests: (1) tokenize_upper_phrases(['foo,bar', 'baz'], ',') returns [['FOO','BAR'],['BAZ']]. (2) tokenize_upper_phrases([' A - B - C ', 'd'], '-') returns [['A','B','C'],['D']]. (3) tokenize_upper_phrases([' ', ''], ',') returns [[''],['']]. (4) tokenize_upper_phrases([], ',') returns []. (5) tokenize_upper_phrases(['a','b'], 1) raises TypeError. (6) tokenize_upper_phrases([None], '-') raises TypeError. However, this requirement is validation_failed because the behavior when the delimiter is the empty string is underdefined: splitting on an empty string is not universally well-defined for arbitrary phrases in Python standard library, and may result in different behaviors (e.g., error vs no tokenization) or ambiguity for input phrases with mixed whitespace or empty input, making objective certification impossible.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "validation_failed",
+      "string processing",
+      "split",
+      "uppercase",
+      "tokenization"
+    ]
+  },
+  {
+    "case_id": "V6-009",
+    "expected_terminal_status": "validation_failed",
+    "requirement": "CLI: Implement a CLI tool 'reverse_fields' that reads from a UTF-8 text file, with each line containing one or more fields separated by commas. For each non-empty, non-comment line (lines not starting with '#'), output to stdout the same line with the order of its fields reversed and all field content preserved exactly, including leading/trailing spaces within fields. Output lines must be separated by newline characters. Lines containing only whitespace or starting with '#' are ignored. Malformed lines (those with no commas and not empty or commented) are reported on stderr with their 1-based line number and echoed content, and skipped. The CLI must operate via an importable main(argv: list[str] | None = None) -> int contract, accepting one required positional argument (input file path). On any file read error, return 1. If every non-empty, non-comment line is skipped or malformed, return 1. Otherwise, return 0. Deterministic behavior is required. Behavioral tests: (1) A file with 'foo, bar, baz\\n', outputs 'baz, bar, foo' and code 0. (2) A file with 'foo\\n', outputs nothing, stderr reports line 1 error, code 1. (3) A file with only comments and blanks, outputs nothing, code 1. (4) A file with 'a, b,#ignore\\nc, d\\n' outputs 'b, a' and 'd, c', code 0. This requirement is validation_failed because it is ambiguous whether the output must preserve the original number and exact placement of whitespace-only fields between commas (e.g., lines like 'a, ,b') and whether trailing or leading empty fields should be preserved after reversal, which prevents objective certification.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "cli",
+      "file-processing",
+      "string-transformation",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V6-010",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Library: Provide a function def find_self_reversing_bijections(n: int) -> list[list[int]] that takes a positive integer n (n > 0) and returns a list of all bijective mappings (permutations) of the integers 0 to n-1 such that their composition with themselves is the identity permutation (i.e., applying the mapping twice restores the original order). The output must be a list of all such permutations, each represented as a list of length n of the integers 0 to n-1 (each appearing exactly once). The order of the output list and the order of integers within each permutation must be deterministic and lexicographic. The function must raise ValueError if n <= 0 or not an integer.\n\nEdge cases and constraints:\n - For n = 1, the function returns [[0]].\n - For n = 2, the function returns [[0,1],[1,0]].\n - For n = 3, the function returns [[0,1,2]].\n - For all n, every permutation returned is its own inverse (so, is an involution of [0,...,n-1]).\n - Output must be deterministic for every n.\n - If n is not a positive integer, raise ValueError.\n\nDeterministic output and behavioral tests are required.\n\nThis requirement is infeasible_proven because the requirement demands returning a list of all such permutations for arbitrary n>0, but the set of involutive permutations grows superexponentially with n (specifically, sum_{k=0}^{floor(n/2)} n!/(k!*(n-2k)!*2^k)), which cannot be computed or represented for unbounded n using the Python standard library function as required, forming a precise and general contradiction between mathematical constraints and feasible finite computation.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "permutation",
+      "bijection",
+      "contradiction",
+      "infeasible_proven",
+      "standard-library-only"
+    ]
+  },
+  {
+    "case_id": "V6-011",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Library: Provide a function assign_unique_zeroes(a: int, b: int) -> list[list[int]] that returns all possible b-length lists of integers from 0 to a-1 (inclusive), such that every integer from 0 to a-1 appears in the list exactly zero times. The function must return a list of lists, each list being a valid assignment as described. The order of output lists and values within must be deterministic. If 'a' or 'b' is negative or not integer, raise ValueError. If 'a' == 0 and b == 0, return [[]]. If 'a' == 0 and b > 0, or 'a' > 0 and b == 0, both are allowed and should reflect constraints. Deterministic output is required for all valid inputs. Behavioral tests: (1) assign_unique_zeroes(2, 0) returns [[]]. (2) assign_unique_zeroes(0, 0) returns [[]]. (3) assign_unique_zeroes(2, 1) returns [] (since neither 0 nor 1 can appear exactly zero times in a nonempty list). (4) assign_unique_zeroes(0, 1) returns []. (5) assign_unique_zeroes(-1, 0) raises ValueError. (6) assign_unique_zeroes(3, 2) returns [].\n\nThis requirement is infeasible_proven because the unique zero appearance constraint for positive a and b > 0 is inherently contradictory: it is impossible to construct any nonempty list of integers from 0 to a-1 where each such integer appears exactly zero times (since every value either appears or not, but in a nonempty list of those values, some must appear). For b == 0, only the empty list can satisfy the constraint with no values. Thus, no implementation exists beyond these trivial empty cases.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "library",
+      "infeasible_proven",
+      "mathematical-contradiction",
+      "finite-constraint"
+    ]
+  },
+  {
+    "case_id": "V6-012",
+    "expected_terminal_status": "infeasible_proven",
+    "requirement": "Library: Provide a function def mutual_fixed_sum_pairings(a: int, b: int, total: int) -> list[tuple[int, int]] which returns all tuples of integers (x, y) such that 0 <= x < a, 0 <= y < b, and x + y = total, with the additional constraint that for each returned (x, y), there must also exist (y, x) in the result set, and x \u2260 y. If any parameter is negative or not an integer, raise ValueError. The output list must be deterministic and not contain duplicate pairs. Behavioral tests: (1) mutual_fixed_sum_pairings(3, 3, 3) must contain all valid antisymmetric pairs. (2) mutual_fixed_sum_pairings(2, 2, 4) returns []. (3) mutual_fixed_sum_pairings(1, 1, 0) returns []. (4) mutual_fixed_sum_pairings(2, 3, 1) returns pairs only where both (x, y) and (y, x) are present and x \u2260 y. (5) Negative or non-integer values for a, b, or total raise ValueError. This requirement is infeasible_proven because for arbitrary integral 'a' and 'b', whenever a \u2260 b or 'total' is odd, or if total < 1 or total >= a+b-1, it is generally impossible to ensure every returned pair is matched by its reverse, both are within respective bounds, and x \u2260 y, while simultaneously populating the output with all such pairs without contradiction emerging for certain (a, b, total) tuples (such as a=2, b=2, total=1, which would require both (0,1) and (1,0), but '1' is not in [0,2)), and even for (a, b, total) where a \u2260 b, symmetric coverage cannot always be achieved. Therefore, for general input, a correct implementation for all cases is impossible under the stated constraints.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v6",
+      "infeasible_proven",
+      "finite-constraint-contradiction",
+      "deterministic",
+      "mathematical-impossibility",
+      "edge-cases-specified",
+      "function-signature-specified"
+    ]
+  }
+]
