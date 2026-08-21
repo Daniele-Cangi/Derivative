@@ -1,0 +1,2 @@
+# Formal satisfiability and contradiction witnesses.
+z3-solver>=4.12

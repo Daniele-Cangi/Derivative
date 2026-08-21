@@ -1,0 +1,3 @@
+# Scientific and unit-aware physical lens.
+scipy>=1.11
+pint>=0.23

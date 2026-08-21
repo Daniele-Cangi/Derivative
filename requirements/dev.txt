@@ -1,0 +1,2 @@
+# Repository test runner.
+pytest>=8.0

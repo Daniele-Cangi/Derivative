@@ -1,0 +1,2 @@
+# Exact graph enumeration and topology checks.
+networkx>=3.0

@@ -1,0 +1,2 @@
+# Deterministic local-only Forge host.
+-r base.txt

@@ -1,0 +1,2 @@
+# Model-backed hybrid and remote-only execution.
+openai>=1.82,<2

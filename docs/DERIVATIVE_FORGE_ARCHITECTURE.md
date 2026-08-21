@@ -72,20 +72,22 @@ The shared model provider no longer imports the OpenAI SDK at module load. Local
 
 On the same environment, constructing the default local-only `PlannerStage` measured approximately 0.488 seconds, loaded 156 modules, preserved all seven lenses, and loaded none of the observed OpenAI or scientific runtime roots. Constructing a hybrid `ReasoningKernel` with a live-form key started with OpenAI absent, imported it, and created the client without making a provider request.
 
-The remaining dependency work is installation metadata. Optional installation groups must preserve explicit failure when a selected capability is unavailable.
+The remaining dependency work at that checkpoint was installation metadata. Optional installation groups had to preserve explicit failure when a selected capability was unavailable.
 
-## Post-V5 dependency objective
+## Fifth post-V5 boundary improvement
 
-The remaining dependency objective is optional installation groups, not separation into a parallel truth system.
+Installation metadata now mirrors the runtime capability boundary without introducing wheel or distribution packaging. `requirements/forge.txt` supplies only the deterministic Forge host. Model, symbolic, topology, formal, probabilistic, causal, quantum, and physical/scientific runtimes have explicit profiles. `requirements/research.txt` composes the complete local-only Derivative substrate, while `requirements/all.txt` adds model and development dependencies.
 
-The intended change is:
+The repository-root `requirements.txt` remains a backward-compatible alias of the complete profile, so archived blind workflows retain their original environment. The primary CI workflow installs `requirements/all.txt` directly, making the new aggregate an enforced path rather than documentation only.
+
+The resulting boundary is:
 
 1. keep the existing typed `CognitiveSubstrate` and `ReasoningKernel` contracts;
 2. represent lenses and deterministic solvers through lightweight capability descriptors;
 3. import a scientific runtime only after requirement classification selects the corresponding capability;
 4. construct model-backed candidate and repair components only in modes that can use them;
-5. split installation metadata into a minimal Forge/runtime group plus explicit symbolic, topology, probabilistic, causal, quantum, and scientific extras;
-6. retain an `all` installation path for the complete Derivative research substrate;
+5. install a minimal Forge/runtime group or explicit model, symbolic, topology, formal, probabilistic, causal, quantum, and physical extras;
+6. retain `research` and `all` installation paths for the complete Derivative substrate and development environment;
 7. fail explicitly when a selected required capability is unavailable, rather than silently replacing it with narration.
 
 This work must preserve infeasibility routing, obligation semantics, audit evidence, and fail-closed validation. Startup improvements are not allowed to create a second planner or weaken the reason Derivative and Forge are connected.

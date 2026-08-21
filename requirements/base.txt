@@ -1,0 +1,3 @@
+# Minimal host runtime shared by Forge entry points.
+typer>=0.12
+python-dotenv>=1.0.0

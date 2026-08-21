@@ -1,0 +1,2 @@
+# Symbolic lens and recurrence solver.
+sympy>=1.12

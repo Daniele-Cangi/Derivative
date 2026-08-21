@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-414%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-418%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -50,7 +50,7 @@ Prerequisites: Python 3.11 and Docker. Docker is mandatory for production verifi
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements/forge.txt
 docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
 ```
 
@@ -72,9 +72,10 @@ Packaged artifact: generated_artifacts/forge_packages/pkg-...
 Execution time: ...s
 ```
 
-For model-backed candidate compilation and repair, copy `.env.example` to `.env`, set `OPENAI_API_KEY`, then use `--mode hybrid`. Secrets are used by the host orchestrator and are not inherited by generated-code sandboxes.
+For model-backed candidate compilation and repair, install the model profile, copy `.env.example` to `.env`, set `OPENAI_API_KEY`, then use `--mode hybrid`. Secrets are used by the host orchestrator and are not inherited by generated-code sandboxes.
 
 ```bash
+python -m pip install -r requirements/model.txt
 python forge.py "Build a Python REST service with tests." --mode hybrid
 ```
 
@@ -149,6 +150,33 @@ Libraries are permanent computational lenses at substrate level, not names place
 | `bcrypt` | Certified sandbox dependency for hashed-auth service contracts |
 
 Missing solver libraries degrade or block the corresponding lens; Forge does not silently replace a required deterministic capability with model narration.
+
+## Dependency Profiles
+
+Dependencies follow the same capability boundary as the runtime. Install only the profiles needed by the selected execution path:
+
+| Profile | Installs |
+| --- | --- |
+| `requirements/forge.txt` | Minimal deterministic Forge host: Typer and environment loading |
+| `requirements/model.txt` | OpenAI-backed `hybrid` and `remote-only` execution |
+| `requirements/symbolic.txt` | SymPy symbolic capability |
+| `requirements/topology.txt` | NetworkX topology capability |
+| `requirements/formal.txt` | Z3 formal capability |
+| `requirements/probabilistic.txt` | pgmpy probabilistic capability |
+| `requirements/causal.txt` | DoWhy causal capability |
+| `requirements/quantum.txt` | Qiskit circuit and simulator capability |
+| `requirements/physical.txt` | SciPy/Pint physical and unit-aware capability |
+| `requirements/research.txt` | Complete local-only Derivative substrate and CLI |
+| `requirements/dev.txt` | Repository test runner |
+| `requirements/all.txt` | Complete research, model, and development environment |
+
+Profiles are composable. For example, a local Forge installation with exact symbolic support uses:
+
+```bash
+python -m pip install -r requirements/forge.txt -r requirements/symbolic.txt
+```
+
+`requirements.txt` remains a backward-compatible alias of `requirements/all.txt`. Missing selected runtimes fail explicitly at their execution boundary; importing or constructing unrelated capabilities does not install, import, or emulate them.
 
 ## Requirement Preservation and Coverage Gate
 
@@ -302,7 +330,7 @@ OPENAI_MODEL="gpt-4.1-mini"
 
 - [Contributing guide](CONTRIBUTING.md): development workflow and acceptance expectations.
 - [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md): requirements for adding capabilities without weakening `verified`.
-- [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md): why Forge uses the Derivative substrate and how capability-driven lazy loading will reduce startup dependencies after the V5 freeze.
+- [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md): why Forge uses the Derivative substrate and how capability-driven lazy loading reduces startup and installation dependencies after the V5 freeze.
 - [Forge Evidence Closure - Blind V5](docs/FORGE_V5_EVIDENCE_CLOSURE.md): immutable baseline semantics, attributable replay receipts, and the next independent evaluation contract.
 - [Blind evaluation protocol](benchmarks/blind_v3/README.md): freeze, provenance and replay rules for independent evaluation.
 - [Blind-v5 manifest](benchmarks/blind_v5/external_001/manifest.json): current frozen requirements, oracle digests, provenance, and protected baseline.
