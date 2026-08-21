@@ -19,8 +19,8 @@ from core.forge.heldout_benchmark import (
 )
 
 
-BLIND_BENCHMARK_SCHEMA_VERSION = 2
-SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2})
+BLIND_BENCHMARK_SCHEMA_VERSION = 3
+SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2, 3})
 FORGE_BASELINE_DIGEST_MODE = "canonical_lf_v1"
 BLIND_EXECUTION_KIND_BASELINE = "sealed_baseline"
 BLIND_EXECUTION_KIND_POST_FIX_REPLAY = "post_fix_replay"
@@ -30,6 +30,7 @@ _EXCLUDED_BASELINE_FILES = {
     "core/forge/blind_freeze.py",
     "core/forge/heldout_benchmark.py",
     "core/forge/blind_adjudication.py",
+    "core/forge/public_contract.py",
 }
 
 
@@ -156,7 +157,10 @@ def load_blind_bundle(
             f"expected={expected_dataset_sha256}, actual={actual_dataset_sha256}."
         )
 
-    cases = load_heldout_cases(str(dataset_path))
+    cases = load_heldout_cases(
+        str(dataset_path),
+        require_public_contract=schema_version >= 3,
+    )
     expected_oracles = {
         case.case_id: case
         for case in cases

@@ -1,3 +1,5 @@
+import ast
+import re
 from typing import Any
 
 from core.constraint_witnesses import finite_witness_contradictions
@@ -7,6 +9,12 @@ def requirement_preflight_error(
     requirement: str,
     expected_terminal_status: str,
 ) -> str | None:
+    example_error = _same_length_example_error(requirement)
+    if example_error is not None and expected_terminal_status != "infeasible_proven":
+        return (
+            f"expected {expected_terminal_status} requirement has a behavioral "
+            f"example contradiction: {example_error}"
+        )
     contradictions = finite_witness_contradictions(requirement)
     if not contradictions or expected_terminal_status == "infeasible_proven":
         return None
@@ -14,6 +22,81 @@ def requirement_preflight_error(
         f"expected {expected_terminal_status} requirement has a finite witness "
         f"contradiction: {contradictions[0].message}"
     )
+
+
+def requirement_preflight_failure_class(error: str) -> str:
+    if "behavioral example contradiction" in error:
+        return "requirement_behavioral_example"
+    return "requirement_finite_witness"
+
+
+def _same_length_example_error(requirement: str) -> str | None:
+    if re.search(r"\bsame\s+length\b", requirement, re.IGNORECASE) is None:
+        return None
+    literals = _list_literals(requirement)
+    for match in re.finditer(r"\breturns?\b", requirement, re.IGNORECASE):
+        preceding = [
+            item
+            for item in literals
+            if item[1] <= match.start() and match.start() - item[1] <= 180
+        ]
+        following = [
+            item
+            for item in literals
+            if item[0] >= match.end() and item[0] - match.end() <= 180
+        ]
+        if not preceding or not following:
+            continue
+        source = max(preceding, key=lambda item: item[1])
+        result = min(following, key=lambda item: item[0])
+        if len(source[2]) != len(result[2]):
+            return (
+                f"a {len(source[2])}-item input returns a {len(result[2])}-item "
+                "list despite the same-length contract"
+            )
+    return None
+
+
+def _list_literals(text: str) -> list[tuple[int, int, list[Any]]]:
+    literals: list[tuple[int, int, list[Any]]] = []
+    for start, character in enumerate(text):
+        if character != "[":
+            continue
+        end = _balanced_list_end(text, start)
+        if end is None:
+            continue
+        try:
+            value = ast.literal_eval(text[start:end])
+        except (SyntaxError, ValueError):
+            continue
+        if isinstance(value, list):
+            literals.append((start, end, value))
+    return literals
+
+
+def _balanced_list_end(text: str, start: int) -> int | None:
+    depth = 0
+    quote = ""
+    escaped = False
+    for index in range(start, len(text)):
+        character = text[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = ""
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character == "[":
+            depth += 1
+        elif character == "]":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
 
 
 def requirement_review_error(review: dict[str, Any]) -> str | None:

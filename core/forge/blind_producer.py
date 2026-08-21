@@ -23,8 +23,15 @@ from core.forge.blind_oracle import (
 )
 from core.forge.blind_requirement import (
     requirement_preflight_error,
+    requirement_preflight_failure_class,
     requirement_review_error,
     requirement_reviewer_instructions,
+)
+from core.forge.public_contract import (
+    PublicImportContract,
+    load_public_import_contract,
+    public_import_contract_schema,
+    requirement_public_import_error,
 )
 from core.model_provider import (
     create_openai_client,
@@ -212,6 +219,7 @@ def _generate_requirement_case(
                 "type": "object",
                 "properties": {
                     "requirement": {"type": "string"},
+                    "public_contract": public_import_contract_schema(),
                     "tags": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -219,7 +227,7 @@ def _generate_requirement_case(
                         "maxItems": 6,
                     },
                 },
-                "required": ["requirement", "tags"],
+                "required": ["requirement", "public_contract", "tags"],
                 "additionalProperties": False,
             }
         },
@@ -284,7 +292,9 @@ def _generate_requirement_case(
                 rejection_classes.append("independent_review")
                 error = review_error
             else:
-                rejection_classes.append("finite_witness")
+                rejection_classes.append(
+                    requirement_preflight_failure_class(preflight_error)
+                )
                 error = preflight_error
         else:
             rejection_classes.append("static_case")
@@ -358,6 +368,12 @@ def _materialize_cases_and_oracles(
             "tags": [config.benchmark_tag, *item_tags],
             "requirement_validation": dict(requirement_validation),
         }
+        public_contract = load_public_import_contract(
+            item.get("public_contract"),
+            label=f"Produced case '{case_id}'",
+            required=True,
+        )
+        case["public_contract"] = public_contract.to_payload()
         if status == TERMINAL_VERIFIED:
             relative_oracle = Path("oracles") / case_id / "oracle.py"
             oracle_source, oracle_validation = _generate_oracle(
@@ -365,6 +381,7 @@ def _materialize_cases_and_oracles(
                 model=model,
                 case_id=case_id,
                 requirement=case["requirement"],
+                public_contract=public_contract,
                 max_attempts=config.max_generation_attempts,
                 schema_namespace=config.schema_namespace,
             )
@@ -388,6 +405,7 @@ def _generate_oracle(
     requirement: str,
     max_attempts: int,
     schema_namespace: str,
+    public_contract: PublicImportContract | None = None,
 ) -> tuple[str, dict[str, Any]]:
     schema = {
         "type": "object",
@@ -412,7 +430,11 @@ def _generate_oracle(
         )
         payload = _parse_json_object(response, f"oracle producer {case_id}")
         source = str(payload.get("oracle_py", ""))
-        error = oracle_preflight_error(source, requirement)
+        error = oracle_preflight_error(
+            source,
+            requirement,
+            public_contract=public_contract,
+        )
         if error is None:
             review = _review_oracle(
                 generator=generator,
@@ -519,6 +541,9 @@ def _case_set_error(cases: object, config: BlindProducerConfig) -> str | None:
         tags = item.get("tags")
         if not isinstance(tags, list) or len(tags) < 2:
             return "every case requires at least two tags"
+        contract_error = _case_public_contract_error(item, requirement)
+        if contract_error is not None:
+            return contract_error
     if observed_counts != expected_counts:
         return f"terminal status distribution {observed_counts} != {expected_counts}"
     return None
@@ -543,7 +568,22 @@ def _single_case_error(
     tags = case.get("tags")
     if not isinstance(tags, list) or len(tags) < 2:
         return "case requires at least two tags"
+    contract_error = _case_public_contract_error(case, requirement)
+    if contract_error is not None:
+        return contract_error
     return None
+
+
+def _case_public_contract_error(case: dict[str, Any], requirement: str) -> str | None:
+    try:
+        contract = load_public_import_contract(
+            case.get("public_contract"),
+            label="Produced case",
+            required=True,
+        )
+    except ValueError as exc:
+        return str(exc)
+    return requirement_public_import_error(requirement, contract)
 
 
 def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
@@ -585,6 +625,8 @@ allocation, sensor aggregation, or idempotent event creation. Prefer less common
 Every verified CLI must also declare an importable main(argv: list[str] | None = None) -> int contract whose output is capturable in-process;
 do not define a verified contract that requires subprocess, network, socket, or HTTP-client execution for acceptance. Service-module cases
 must expose callable module interfaces rather than requiring a live server.
+Every case must include one canonical sentence exactly shaped as "Public import contract: from <module> import <symbol>." The structured
+public_contract module and symbol must match that sentence exactly; use kind=function, cli_entrypoint, or callable as appropriate.
 Do not label an environmental limitation as formal infeasibility and do not weaken impossible constraints. Do not include solutions,
 implementation hints, test code, oracle details, Markdown, or references to Forge internals.
 Return only the requested structured object."""

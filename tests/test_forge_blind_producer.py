@@ -24,27 +24,45 @@ def _case_payload() -> dict:
                 "requirement": (
                     "Build a Python library module code_policy exposing classify_code(code: str) -> str. "
                     "Return 'internal' for codes beginning INT-, return 'external' for EXT-, reject empty "
-                    "or unknown codes with ValueError, preserve deterministic behavior, and include tests."
+                    "or unknown codes with ValueError, preserve deterministic behavior, and include tests. "
+                    "Public import contract: from code_policy import classify_code."
                 ),
                 "expected_terminal_status": "verified",
+                "public_contract": {
+                    "module": "code_policy",
+                    "symbol": "classify_code",
+                    "kind": "function",
+                },
                 "tags": ["library", "classification"],
             },
             {
                 "requirement": (
                     "Build a production tool that identifies every meaningful risk in arbitrary customer "
                     "documents with perfect accuracy, without defining risk, document formats, or acceptance "
-                    "criteria, and include exhaustive proof that every result is correct."
+                    "criteria, and include exhaustive proof that every result is correct. "
+                    "Public import contract: from risk_tool import analyze_risk."
                 ),
                 "expected_terminal_status": "validation_failed",
+                "public_contract": {
+                    "module": "risk_tool",
+                    "symbol": "analyze_risk",
+                    "kind": "function",
+                },
                 "tags": ["ambiguity", "universal"],
             },
             {
                 "requirement": (
                     "Build a reversible encoder mapping every possible 24-bit input to one 8-bit output, "
                     "recover every original input exactly, and use no metadata, external state, rejection, "
-                    "randomness, or additional storage under any circumstances."
+                    "randomness, or additional storage under any circumstances. "
+                    "Public import contract: from impossible_encoder import encode."
                 ),
                 "expected_terminal_status": "infeasible_proven",
+                "public_contract": {
+                    "module": "impossible_encoder",
+                    "symbol": "encode",
+                    "kind": "function",
+                },
                 "tags": ["contradiction", "information"],
             },
         ]
@@ -108,6 +126,7 @@ class _RecordingGenerator:
                 {
                     "case": {
                         "requirement": item["requirement"],
+                        "public_contract": item["public_contract"],
                         "tags": item["tags"],
                     }
                 }
@@ -186,6 +205,11 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert set(manifest["oracle_sha256"]) == {"V4-001"}
     cases = json.loads((output_root / "cases.json").read_text(encoding="utf-8"))
     assert cases[0]["tags"][0] == "blind-v4"
+    assert cases[0]["public_contract"] == {
+        "kind": "function",
+        "module": "code_policy",
+        "symbol": "classify_code",
+    }
     assert cases[0]["requirement_validation"] == {
         "findings": [],
         "independent_review_passed": True,
@@ -438,6 +462,21 @@ def test_requirement_preflight_rejects_verified_unicode_cardinality_conflict():
     assert error is not None
     assert "finite witness contradiction" in error
     assert "U+0130" in error
+    assert requirement_preflight_error(requirement, "infeasible_proven") is None
+
+
+def test_requirement_preflight_rejects_same_length_behavioral_example_conflict():
+    requirement = (
+        "Return a new list of the same length as inputs after processing adjacent "
+        "values. Behavioral tests: ['a','a','b','B','b'] with mode='strict' "
+        "returns ['a','b','B','b']."
+    )
+
+    error = requirement_preflight_error(requirement, "validation_failed")
+
+    assert error is not None
+    assert "behavioral example contradiction" in error
+    assert "5-item input returns a 4-item list" in error
     assert requirement_preflight_error(requirement, "infeasible_proven") is None
 
 

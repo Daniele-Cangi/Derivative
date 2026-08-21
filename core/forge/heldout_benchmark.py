@@ -23,6 +23,11 @@ from core.forge.execution import (
 )
 from core.forge.fixture_oracle import fixture_oracle_mismatches
 from core.forge.oracle_contract import oracle_contract_mismatches
+from core.forge.public_contract import (
+    PublicImportContract,
+    load_public_import_contract,
+    requirement_public_import_error,
+)
 
 
 @dataclass(frozen=True)
@@ -38,6 +43,7 @@ class HeldoutBenchmarkCase:
     expected_terminal_status: str
     tags: List[str] = field(default_factory=list)
     oracle: OracleSpec | None = None
+    public_contract: PublicImportContract | None = None
 
 
 @dataclass
@@ -127,7 +133,11 @@ def bundled_heldout_dataset_path() -> str:
     return str((root / "benchmarks" / "forge_heldout_benchmark.json").resolve())
 
 
-def load_heldout_cases(path: str) -> List[HeldoutBenchmarkCase]:
+def load_heldout_cases(
+    path: str,
+    *,
+    require_public_contract: bool = False,
+) -> List[HeldoutBenchmarkCase]:
     dataset_path = Path(path).resolve()
     payload = json.loads(dataset_path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
@@ -156,6 +166,18 @@ def load_heldout_cases(path: str) -> List[HeldoutBenchmarkCase]:
         oracle = _load_oracle_spec(dataset_path, case_id, item.get("oracle"))
         if expected == TERMINAL_VERIFIED and oracle is None:
             raise ValueError(f"Held-out verified case '{case_id}' requires an external oracle.")
+        public_contract = load_public_import_contract(
+            item.get("public_contract"),
+            label=f"Held-out case '{case_id}'",
+            required=require_public_contract,
+        )
+        if public_contract is not None:
+            contract_error = requirement_public_import_error(
+                requirement,
+                public_contract,
+            )
+            if contract_error is not None:
+                raise ValueError(f"Held-out case '{case_id}' {contract_error}.")
         cases.append(
             HeldoutBenchmarkCase(
                 case_id=case_id,
@@ -163,6 +185,7 @@ def load_heldout_cases(path: str) -> List[HeldoutBenchmarkCase]:
                 expected_terminal_status=expected,
                 tags=tags,
                 oracle=oracle,
+                public_contract=public_contract,
             )
         )
     if not cases:

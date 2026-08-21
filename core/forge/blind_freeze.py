@@ -16,8 +16,12 @@ from core.forge.blind_oracle import (
     oracle_preflight_failure_class,
     oracle_semantic_sanity_error,
 )
-from core.forge.blind_requirement import requirement_preflight_error
+from core.forge.blind_requirement import (
+    requirement_preflight_error,
+    requirement_preflight_failure_class,
+)
 from core.forge.heldout_benchmark import HeldoutBenchmarkCase, load_heldout_cases
+from core.forge.public_contract import oracle_public_import_error
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,7 @@ def freeze_blind_bundle(
             f"Blind benchmark manifest already exists and cannot be overwritten: {manifest_path}"
         )
     dataset = _resolve_input_file(root, dataset_path, "dataset")
-    cases = load_heldout_cases(str(dataset))
+    cases = load_heldout_cases(str(dataset), require_public_contract=True)
     _validate_oracle_semantic_sanity(cases)
 
     oracle_digests = {
@@ -105,9 +109,10 @@ def _validate_oracle_semantic_sanity(cases: List[HeldoutBenchmarkCase]) -> None:
             case.expected_terminal_status,
         )
         if requirement_error is not None:
+            failure_class = requirement_preflight_failure_class(requirement_error)
             raise ValueError(
                 f"Blind benchmark requirement for {case.case_id} failed semantic sanity; "
-                f"rejection_classes=requirement_finite_witness; {requirement_error}"
+                f"rejection_classes={failure_class}; {requirement_error}"
             )
         if case.oracle is None:
             continue
@@ -117,6 +122,16 @@ def _validate_oracle_semantic_sanity(cases: List[HeldoutBenchmarkCase]) -> None:
             raise ValueError(
                 f"Blind benchmark oracle for {case.case_id} is not readable as UTF-8."
             ) from exc
+        public_import_error = oracle_public_import_error(
+            source,
+            case.public_contract,
+        )
+        if public_import_error is not None:
+            raise ValueError(
+                f"Blind benchmark oracle for {case.case_id} failed semantic sanity; "
+                "rejection_classes=public_import_mismatch; "
+                f"{public_import_error}"
+            )
         error = oracle_semantic_sanity_error(source, case.requirement)
         if error is not None:
             failure_class = oracle_preflight_failure_class(error)

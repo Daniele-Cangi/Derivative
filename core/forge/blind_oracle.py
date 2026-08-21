@@ -4,10 +4,18 @@ from typing import Any
 
 from core.forge.fixture_oracle import fixture_oracle_mismatches
 from core.forge.oracle_contract import oracle_contract_mismatches
+from core.forge.public_contract import (
+    PublicImportContract,
+    oracle_public_import_error,
+)
 from core.forge.test_evidence import analyze_test_functions
 
 
-def oracle_preflight_error(source: str, requirement: str = "") -> str | None:
+def oracle_preflight_error(
+    source: str,
+    requirement: str = "",
+    public_contract: PublicImportContract | None = None,
+) -> str | None:
     if not source.strip():
         return "oracle source is empty"
     try:
@@ -51,6 +59,11 @@ def oracle_preflight_error(source: str, requirement: str = "") -> str | None:
         overlap = names & forbidden_imports
         if overlap:
             return "oracle imports forbidden module(s): " + ", ".join(sorted(overlap))
+
+    if public_contract is not None:
+        public_import_error = oracle_public_import_error(source, public_contract)
+        if public_import_error is not None:
+            return public_import_error
 
     target_names, target_modules = _public_target_context(tree)
     if not target_names and not target_modules:
@@ -143,6 +156,7 @@ def oracle_preflight_failure_class(error: str) -> str:
         ("semantic assertions", "insufficient_assertions"),
         ("contains pass", "placeholder"),
         ("forbidden module", "forbidden_import"),
+        ("import the declared public target exactly", "public_import_mismatch"),
         ("import the public target", "missing_target_import"),
         ("could not be analyzed", "evidence_analysis"),
         ("does not directly invoke", "missing_target_invocation"),

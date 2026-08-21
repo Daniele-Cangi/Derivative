@@ -22,8 +22,16 @@ def _write_external_bundle(root: Path) -> Path:
             [
                 {
                     "case_id": "V3001",
-                    "requirement": "Build a Python library exposing identity(value). Include tests.",
+                    "requirement": (
+                        "Build a Python library exposing identity(value). Include tests. "
+                        "Public import contract: from library.core import identity."
+                    ),
                     "expected_terminal_status": "verified",
+                    "public_contract": {
+                        "module": "library.core",
+                        "symbol": "identity",
+                        "kind": "function",
+                    },
                     "tags": ["blind-v3", "externally-authored"],
                     "oracle": {
                         "path": "oracles/V3001/oracle.py",
@@ -59,7 +67,7 @@ def _freeze(bundle_root: Path, repository_root: Path):
     )
 
 
-def test_freeze_writes_loadable_schema_v2_manifest_with_provenance_and_digests(tmp_path):
+def test_freeze_writes_loadable_schema_v3_manifest_with_provenance_and_digests(tmp_path):
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
     _write_external_bundle(bundle_root)
@@ -68,7 +76,7 @@ def test_freeze_writes_loadable_schema_v2_manifest_with_provenance_and_digests(t
     bundle = _freeze(bundle_root, repository_root)
     manifest = json.loads((bundle_root / "manifest.json").read_text(encoding="utf-8"))
 
-    assert bundle.schema_version == 2
+    assert bundle.schema_version == 3
     assert bundle.baseline_verified is True
     assert bundle.provenance is not None
     assert bundle.provenance.independent_of_forge is True
@@ -87,6 +95,36 @@ def test_freeze_is_one_shot_and_refuses_manifest_overwrite(tmp_path):
     _freeze(bundle_root, repository_root)
 
     with pytest.raises(FileExistsError, match="cannot be overwritten"):
+        _freeze(bundle_root, repository_root)
+
+
+def test_freeze_requires_public_import_contract_for_new_schema(tmp_path):
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    dataset = _write_external_bundle(bundle_root)
+    payload = json.loads(dataset.read_text(encoding="utf-8"))
+    payload[0].pop("public_contract")
+    dataset.write_text(json.dumps(payload), encoding="utf-8")
+    repository_root = _write_baseline(tmp_path / "repository")
+
+    with pytest.raises(ValueError, match="requires a public_contract object"):
+        _freeze(bundle_root, repository_root)
+
+
+def test_freeze_rejects_oracle_import_outside_declared_contract(tmp_path):
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    _write_external_bundle(bundle_root)
+    oracle = bundle_root / "oracles" / "V3001" / "oracle.py"
+    oracle.write_text(
+        "from another_module import identity\n\n"
+        "def test_identity_contract():\n"
+        "    assert identity('external') == 'external'\n",
+        encoding="utf-8",
+    )
+    repository_root = _write_baseline(tmp_path / "repository")
+
+    with pytest.raises(ValueError, match="rejection_classes=public_import_mismatch"):
         _freeze(bundle_root, repository_root)
 
 
@@ -200,7 +238,7 @@ def test_frozen_bundle_rejects_forge_baseline_change(tmp_path):
         (lambda payload: payload.update(frozen_at="not-utc"), "UTC timestamp"),
     ],
 )
-def test_schema_v2_loader_enforces_freeze_attestations(tmp_path, mutation, message):
+def test_current_schema_loader_enforces_freeze_attestations(tmp_path, mutation, message):
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir()
     _write_external_bundle(bundle_root)
@@ -240,6 +278,7 @@ def test_freeze_refuses_external_oracle_with_fixture_contradiction(tmp_path):
     oracle_root = bundle_root / "oracles" / "V5-001"
     oracle_root.mkdir(parents=True)
     (oracle_root / "oracle.py").write_text(
+        "from text_reverse import transform\n\n"
         "def test_stdin_to_file():\n"
         "    input_content = 'x yz\\n'\n"
         "    expected = 'x z y\\n'\n",
@@ -252,9 +291,15 @@ def test_freeze_refuses_external_oracle_with_fixture_contradiction(tmp_path):
                     "case_id": "V5-001",
                     "requirement": (
                         "Reverse every word defined as a sequence of non-whitespace "
-                        "characters separated by ASCII whitespace, with word order preserved."
+                        "characters separated by ASCII whitespace, with word order preserved. "
+                        "Public import contract: from text_reverse import transform."
                     ),
                     "expected_terminal_status": "verified",
+                    "public_contract": {
+                        "module": "text_reverse",
+                        "symbol": "transform",
+                        "kind": "function",
+                    },
                     "tags": ["blind-v5", "text-processing"],
                     "oracle": {
                         "path": "oracles/V5-001/oracle.py",
@@ -294,9 +339,14 @@ def test_freeze_refuses_external_oracle_with_main_argv_contract_mismatch(tmp_pat
                     "requirement": (
                         "Implement a verified CLI utility named 'pycolmask'. "
                         "The main(argv: list[str] | None = None) -> int contract "
-                        "must be importable."
+                        "must be importable. Public import contract: from pycolmask import main."
                     ),
                     "expected_terminal_status": "verified",
+                    "public_contract": {
+                        "module": "pycolmask",
+                        "symbol": "main",
+                        "kind": "cli_entrypoint",
+                    },
                     "tags": ["blind-v5", "cli"],
                     "oracle": {
                         "path": "oracles/V5-001/oracle.py",
@@ -333,9 +383,15 @@ def test_freeze_refuses_verified_unicode_case_cardinality_conflict(tmp_path):
                     "case_id": "V5-003",
                     "requirement": (
                         "Return a string of the same length as input where each "
-                        "Unicode letter has its case inverted."
+                        "Unicode letter has its case inverted. Public import contract: "
+                        "from pyutfinvert import invert_case_preserve_nonletters."
                     ),
                     "expected_terminal_status": "verified",
+                    "public_contract": {
+                        "module": "pyutfinvert",
+                        "symbol": "invert_case_preserve_nonletters",
+                        "kind": "function",
+                    },
                     "tags": ["blind-v5", "unicode"],
                     "oracle": {
                         "path": "oracles/V5-003/oracle.py",
