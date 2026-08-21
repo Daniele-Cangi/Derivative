@@ -1,6 +1,5 @@
 # Complete local-only Derivative research substrate.
 -r base.txt
-rich>=13.0
 -r symbolic.txt
 -r topology.txt
 -r formal.txt

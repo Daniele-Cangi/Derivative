@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-420%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-425%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -60,14 +60,25 @@ Run the deterministic, no-API path:
 python forge.py "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
 ```
 
-Forge reports one terminal status and the evidence location:
+Forge reports one terminal status, a five-stage evidence rail, and a trace seal derived from the actual code digest, infeasibility certificate, or retained validation failures:
 
 ```text
-Forge
-Status: verified
++- FORGE // DERIVATIVE
+|  EXECUTION-GROUNDED BUILD
++- Evidence precedes packaging.
 
+EVIDENCE RAIL
+  01 / COMPILE  -> PASS   / requirement contract preserved
+  02 / PLAN     -> PASS   / feasible architecture grounded
+  03 / GENERATE -> PASS   / candidate artifact emitted
+  04 / VALIDATE -> PASS   / 3/3 evidence layers passed
+  05 / PACKAGE  -> SEALED / verified artifact packaged
+
+Status: verified
 Requirement compiled, generated, executed and validated across all three layers.
 
+Trace seal: code:...
+Attempts: planner 1 | validation 1 | repairs 0
 Packaged artifact: generated_artifacts/forge_packages/pkg-...
 Execution time: ...s
 ```
@@ -157,7 +168,7 @@ Dependencies follow the same capability boundary as the runtime. Install only th
 
 | Profile | Installs |
 | --- | --- |
-| `requirements/forge.txt` | Minimal deterministic Forge host: Typer and environment loading |
+| `requirements/forge.txt` | Minimal deterministic Forge host: Typer, Rich presentation, and environment loading |
 | `requirements/model.txt` | OpenAI-backed `hybrid` and `remote-only` execution |
 | `requirements/symbolic.txt` | SymPy symbolic capability |
 | `requirements/topology.txt` | NetworkX topology capability |

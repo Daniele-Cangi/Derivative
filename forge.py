@@ -456,34 +456,9 @@ def run_forge(
 
 
 def render_cli_output(result: ForgeResult) -> str:
-    lines = ["Forge", f"Status: {result.terminal_status}", ""]
-    if result.terminal_status == TERMINAL_VERIFIED:
-        lines.append(result.summary)
-        lines.append("")
-        lines.append(f"Packaged artifact: {result.artifact_path}")
-        lines.append(f"Execution time: {result.execution_time_seconds:.2f}s")
-        return "\n".join(lines)
+    from core.forge.cli_presenter import render_cli_output as render
 
-    if result.terminal_status == TERMINAL_INFEASIBLE_PROVEN:
-        lines.append(result.summary)
-        lines.append("")
-        lines.append(f"Certificate artifacts: {result.artifact_path}")
-        lines.append(f"Execution time: {result.execution_time_seconds:.2f}s")
-        return "\n".join(lines)
-
-    if result.terminal_status == TERMINAL_VALIDATION_FAILED:
-        lines.append(result.summary)
-        lines.append(f"Validation failures: {_concise_validation_failures(result.validation)}")
-        lines.append("")
-        lines.append(f"Artifacts: {result.artifact_path}")
-        lines.append(f"Execution time: {result.execution_time_seconds:.2f}s")
-        return "\n".join(lines)
-
-    lines.append(result.summary)
-    lines.append("")
-    lines.append(f"Artifacts: {result.artifact_path}")
-    lines.append(f"Execution time: {result.execution_time_seconds:.2f}s")
-    return "\n".join(lines)
+    return render(result)
 
 
 @app.command()
@@ -533,7 +508,9 @@ def main(
         execution_backend=execution_backend,
         sandbox_image=sandbox_image,
     )
-    typer.echo(render_cli_output(result))
+    from core.forge.cli_presenter import print_cli_output
+
+    print_cli_output(result)
 
 
 def _persist_run_artifacts(
@@ -583,20 +560,6 @@ def _to_jsonable(payload: Any) -> Any:
     if isinstance(payload, list):
         return [_to_jsonable(value) for value in payload]
     return payload
-
-
-def _concise_validation_failures(validation: ValidationArtifact | None, limit: int = 5) -> str:
-    if validation is None:
-        return "none"
-    failures = list(validation.failure_signatures or [])
-    if not failures:
-        failures = list(validation.failures or [])
-    if not failures:
-        return "none"
-    trimmed = failures[:limit]
-    if len(failures) > limit:
-        trimmed.append("...")
-    return ", ".join(trimmed)
 
 
 def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:

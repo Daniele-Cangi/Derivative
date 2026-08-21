@@ -68,7 +68,7 @@ def test_dependency_profile_files_are_explicit_and_complete():
 
 
 def test_forge_profile_contains_only_the_minimal_host_runtime():
-    expected_base = {"python-dotenv", "typer"}
+    expected_base = {"python-dotenv", "rich", "typer"}
 
     assert _resolve_requirements(REQUIREMENTS_ROOT / "base.txt") == expected_base
     assert _resolve_requirements(REQUIREMENTS_ROOT / "forge.txt") == expected_base
