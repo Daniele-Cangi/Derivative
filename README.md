@@ -8,7 +8,7 @@
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-418%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-420%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V5-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -177,6 +177,8 @@ python -m pip install -r requirements/forge.txt -r requirements/symbolic.txt
 ```
 
 `requirements.txt` remains a backward-compatible alias of `requirements/all.txt`. Missing selected runtimes fail explicitly at their execution boundary; importing or constructing unrelated capabilities does not install, import, or emulate them.
+
+CI enforces both sides of this boundary independently: one clean job installs only `requirements/forge.txt` and executes import, local planning, and CLI-startup smoke checks; the full gate installs `requirements/all.txt` before running the complete suite and benchmark thresholds.
 
 ## Requirement Preservation and Coverage Gate
 

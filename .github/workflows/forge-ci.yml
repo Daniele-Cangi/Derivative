@@ -7,6 +7,32 @@ on:
   pull_request:
 
 jobs:
+  minimal-forge-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements/forge.txt
+
+      - name: Install minimal Forge profile
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/forge.txt
+
+      - name: Run minimal local planning smoke
+        run: python -B .github/scripts/minimal_forge_smoke.py
+
+      - name: Verify CLI startup
+        run: python -B forge.py --help
+
   test-and-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 45

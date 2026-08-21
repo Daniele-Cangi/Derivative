@@ -78,7 +78,7 @@ The remaining dependency work at that checkpoint was installation metadata. Opti
 
 Installation metadata now mirrors the runtime capability boundary without introducing wheel or distribution packaging. `requirements/forge.txt` supplies only the deterministic Forge host. Model, symbolic, topology, formal, probabilistic, causal, quantum, and physical/scientific runtimes have explicit profiles. `requirements/research.txt` composes the complete local-only Derivative substrate, while `requirements/all.txt` adds model and development dependencies.
 
-The repository-root `requirements.txt` remains a backward-compatible alias of the complete profile, so archived blind workflows retain their original environment. The primary CI workflow installs `requirements/all.txt` directly, making the new aggregate an enforced path rather than documentation only.
+The repository-root `requirements.txt` remains a backward-compatible alias of the complete profile, so archived blind workflows retain their original environment. CI enforces both boundaries independently: a clean minimal job installs only `requirements/forge.txt` and proves import, local planning, and CLI startup without optional runtimes; the full job installs `requirements/all.txt` before the complete suite and benchmark gate.
 
 The resulting boundary is:
 
