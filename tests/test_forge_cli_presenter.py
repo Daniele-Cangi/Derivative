@@ -105,6 +105,7 @@ def _infeasible_result() -> ForgeResult:
 def test_verified_presentation_exposes_the_complete_evidence_rail_and_code_seal():
     rendered = render_cli_output(_verified_result())
 
+    assert "\\====*====/" in rendered
     assert "FORGE // DERIVATIVE" in rendered
     assert "01 / COMPILE" in rendered and "-> PASS" in rendered
     assert "04 / VALIDATE -> PASS" in rendered
@@ -151,7 +152,9 @@ def test_rich_terminal_renderer_adds_color_without_changing_terminal_semantics()
 
     rendered = stream.getvalue()
     assert "\x1b[" in rendered
-    assert "FORGE" in rendered
+    assert "F O R G E" in rendered
+    assert "◆" in rendered
+    assert "REQUIREMENT" in rendered and "EVIDENCE" in rendered and "ARTIFACT" in rendered
     assert "EVIDENCE RAIL" in rendered
     assert "Status:" in rendered and "verified" in rendered
     assert "code:abcdef0123456789" in rendered
@@ -172,6 +175,7 @@ def test_rich_terminal_renderer_is_safe_on_legacy_windows_encoding():
     rendered = buffer.getvalue().decode("cp1252")
     stream.detach()
 
-    assert "FORGE // DERIVATIVE" in rendered
+    assert "\\====*====/" in rendered
+    assert "F O R G E" in rendered
     assert "Status: validation_failed" in rendered
     assert "PACKAGE" in rendered and "BLOCK" in rendered

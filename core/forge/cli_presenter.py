@@ -57,9 +57,11 @@ def build_cli_presentation(result: ForgeResult) -> CliPresentation:
 def render_cli_output(result: ForgeResult) -> str:
     presentation = build_cli_presentation(result)
     lines = [
-        "+- FORGE // DERIVATIVE",
-        "|  EXECUTION-GROUNDED BUILD",
-        "+- Evidence precedes packaging.",
+        "       *",
+        "  ===========",
+        "  \\====*====/  FORGE // DERIVATIVE",
+        "      ||       EXECUTION-GROUNDED BUILD",
+        "     /__\\      Evidence precedes packaging.",
         "",
         "EVIDENCE RAIL",
     ]
@@ -98,47 +100,154 @@ def print_cli_output(result: ForgeResult, console: Any | None = None) -> None:
     from rich import box
     from rich.console import Console
     from rich.panel import Panel
-    from rich.rule import Rule
+    from rich.table import Table
     from rich.text import Text
 
     target = console or Console(highlight=False)
     presentation = build_cli_presentation(result)
+    unicode_capable = _supports_unicode(target)
 
-    heading = Text()
-    heading.append("FORGE", style="bold bright_cyan")
-    heading.append(" // DERIVATIVE", style="dim cyan")
-    heading.append("\nEXECUTION-GROUNDED BUILD", style="bold white")
-    heading.append("\nEvidence precedes packaging.", style="dim")
-    target.print(Panel(heading, box=box.ROUNDED, border_style="cyan", padding=(0, 2)))
+    identity = Text()
+    identity.append("F O R G E", style="bold bright_cyan")
+    identity.append("\nDERIVATIVE / BUILD ENGINE", style="bold white")
+    identity.append("\n\nREQUIREMENT", style="dim cyan")
+    identity.append("  >  " if not unicode_capable else "  ›  ", style="bright_yellow")
+    identity.append("EVIDENCE", style="bold bright_cyan")
+    identity.append("  >  " if not unicode_capable else "  ›  ", style="bright_yellow")
+    identity.append("ARTIFACT", style="dim cyan")
 
-    target.print(Text("EVIDENCE RAIL", style="bold cyan"))
+    header = Table.grid(expand=True, padding=(0, 2))
+    header.add_column(width=14, justify="center", vertical="middle")
+    header.add_column(ratio=1, vertical="middle")
+    header.add_row(_brand_mark(unicode_capable), identity)
+    target.print(
+        Panel(
+            header,
+            box=box.ROUNDED,
+            border_style="bright_cyan",
+            padding=(1, 2),
+            title=Text(" FORGE RUNTIME ", style="bold bright_cyan"),
+            subtitle=Text(" EVIDENCE PRECEDES PACKAGING ", style="dim cyan"),
+        )
+    )
+
+    target.print(Text("EVIDENCE RAIL", style="bold bright_cyan"), justify="center")
+    track, labels = _stage_track(presentation.stages, unicode_capable)
+    target.print(track, justify="center")
+    target.print(labels, justify="center")
+    target.print()
+
+    evidence = Table.grid(expand=True, padding=(0, 1))
+    evidence.add_column(width=4, justify="right", style="dim cyan")
+    evidence.add_column(width=10, style="bold white")
+    evidence.add_column(width=8)
+    evidence.add_column(ratio=1, style="dim")
     for stage in presentation.stages:
-        line = Text()
-        line.append(f" {stage.sequence:02d} ", style="dim cyan")
-        line.append(f"{stage.name:<8}", style="bold white")
-        line.append("  ")
-        line.append(f"{stage.state:<6}", style=_state_style(stage.state))
-        line.append(f"  {stage.detail}", style="dim")
-        target.print(line)
+        evidence.add_row(
+            f"{stage.sequence:02d}",
+            stage.name,
+            Text(stage.state, style=_state_style(stage.state)),
+            stage.detail,
+        )
+    target.print(evidence)
 
-    target.print(Rule(characters="-", style="grey37"))
-    status_line = Text("Status: ", style="bold")
-    status_line.append(presentation.status, style=_status_style(presentation.status))
-    target.print(status_line)
-    target.print(Text(presentation.summary))
+    terminal = Text()
+    terminal.append("Status: ", style="bold")
+    terminal.append(presentation.status, style=_status_style(presentation.status))
+    terminal.append(f"\n{presentation.summary}")
 
     if presentation.failures:
-        failure_line = Text("Validation failures: ", style="bold red")
-        failure_line.append(presentation.failures, style="red")
-        target.print(failure_line)
+        terminal.append("\n\nFailure signatures: ", style="bold red")
+        terminal.append(presentation.failures, style="red")
+    target.print(
+        Panel(
+            terminal,
+            box=box.ROUNDED,
+            border_style=_status_border(presentation.status),
+            title=Text(" TERMINAL RESULT ", style="bold"),
+            padding=(0, 1),
+        )
+    )
 
-    target.print()
-    _print_fact(target, "Trace seal", presentation.trace_seal, "bright_cyan")
-    _print_fact(target, "Attempts", presentation.attempts)
+    receipt = Table.grid(expand=True, padding=(0, 1))
+    receipt.add_column(width=19, style="bold")
+    receipt.add_column(ratio=1)
+    _add_receipt_row(receipt, "Trace seal", presentation.trace_seal, "bright_cyan")
+    _add_receipt_row(receipt, "Attempts", presentation.attempts)
     if presentation.model_usage:
-        _print_fact(target, "Model usage", presentation.model_usage)
-    _print_fact(target, presentation.artifact_label, presentation.artifact_path, "cyan")
-    _print_fact(target, "Execution time", presentation.execution_time)
+        _add_receipt_row(receipt, "Model usage", presentation.model_usage)
+    _add_receipt_row(receipt, presentation.artifact_label, presentation.artifact_path, "cyan")
+    _add_receipt_row(receipt, "Execution time", presentation.execution_time)
+    target.print(
+        Panel(
+            receipt,
+            box=box.SQUARE,
+            border_style="grey37",
+            title=Text(" RUN RECEIPT ", style="bold bright_cyan"),
+            padding=(0, 1),
+        )
+    )
+
+
+def _supports_unicode(console: Any) -> bool:
+    encoding = str(getattr(console, "encoding", "") or "").lower().replace("-", "")
+    return not encoding or "utf" in encoding
+
+
+def _brand_mark(unicode_capable: bool) -> Any:
+    from rich.text import Text
+
+    mark = Text(justify="center")
+    if unicode_capable:
+        mark.append("·      ✦\n", style="yellow")
+        mark.append("━━━━━━━━━━━\n", style="bright_yellow")
+        mark.append("╲━━━━", style="bright_yellow")
+        mark.append("◆", style="bold bright_yellow")
+        mark.append("━━━━╱\n", style="bright_yellow")
+        mark.append("    ┃┃\n", style="yellow")
+        mark.append("   ╱━━╲", style="yellow")
+        return mark
+
+    mark.append(".      *\n", style="yellow")
+    mark.append("===========\n", style="bright_yellow")
+    mark.append("\\====", style="bright_yellow")
+    mark.append("*", style="bold bright_yellow")
+    mark.append("====/\n", style="bright_yellow")
+    mark.append("    ||\n", style="yellow")
+    mark.append("   /__\\", style="yellow")
+    return mark
+
+
+def _stage_track(
+    stages: tuple[StageView, ...], unicode_capable: bool
+) -> tuple[Any, Any]:
+    from rich.text import Text
+
+    track = Text()
+    labels = Text()
+    connector = "━━" if unicode_capable else "--"
+    markers = {
+        "PASS": "●" if unicode_capable else "+",
+        "SEALED": "◆" if unicode_capable else "#",
+        "PROVEN": "◆" if unicode_capable else "#",
+        "FAIL": "×" if unicode_capable else "x",
+        "BLOCK": "■" if unicode_capable else "!",
+        "SKIP": "○" if unicode_capable else "-",
+    }
+    for index, stage in enumerate(stages):
+        marker = markers.get(stage.state, "?")
+        track.append(f"{marker:^9}", style=_state_style(stage.state))
+        labels.append(f"{stage.name:^9}", style="dim white")
+        if index < len(stages) - 1:
+            track.append(connector, style="grey37")
+            labels.append("  ")
+    return track, labels
+
+
+def _add_receipt_row(table: Any, label: str, value: str, style: str = "white") -> None:
+    from rich.text import Text
+
+    table.add_row(f"{label}:", Text(value, style=style, overflow="fold"))
 
 
 def _stage_views(result: ForgeResult) -> tuple[StageView, ...]:
@@ -268,10 +377,9 @@ def _state_style(state: str) -> str:
     }.get(state, "dim")
 
 
-def _print_fact(console: Any, label: str, value: str, value_style: str = "white") -> None:
-    from rich.text import Text
-
-    line = Text()
-    line.append(f"{label}: ", style="bold")
-    line.append(value, style=value_style)
-    console.print(line)
+def _status_border(status: str) -> str:
+    return {
+        VERIFIED: "green",
+        INFEASIBLE_PROVEN: "yellow",
+        VALIDATION_FAILED: "red",
+    }.get(status, "white")
