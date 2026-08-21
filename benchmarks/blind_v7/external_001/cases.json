@@ -1,0 +1,359 @@
+[
+  {
+    "case_id": "V7-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V7-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_dedupe_adjacent",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of input (from a specified file or stdin), removes all adjacent duplicate lines (case-sensitive, preserving only the first occurrence of each consecutive set), and writes the result to stdout. On empty input, output must also be empty. Any Unicode text is valid input/output. If a non-existent input file is requested, exit with status 2 and print a clear error to stderr. The CLI must support exactly one positional argument (the filename) or none (for stdin). The importable function signature is main(argv: list[str] | None = None) -> int and must be idempotent for equivalent argv. Output must be capturable in-process. Public import contract: from forge_blind_v7.cli_dedupe_adjacent import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "text",
+      "deduplication",
+      "stdin",
+      "file-io",
+      "edge-case"
+    ]
+  },
+  {
+    "case_id": "V7-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V7-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_reverse_nonempty",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of input (from a specified file or stdin), reverses the order of non-empty lines but preserves the exact sequence and positions of all empty lines, and writes the result to stdout. The CLI must accept either exactly one positional argument (input file) or none (for stdin). If the input file does not exist, it must exit with status 2 and print a clear error to stderr. All input and output must support arbitrary Unicode. On zero lines of input, output must also be zero lines. If all lines are empty, the output must be unchanged. The CLI must provide an importable main(argv: list[str] | None = None) -> int that is deterministic and whose output can be captured in-process. Public import contract: from forge_blind_v7.cli_reverse_nonempty import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "text-transformation",
+      "verified",
+      "reverse-nonempty",
+      "slot-2"
+    ]
+  },
+  {
+    "case_id": "V7-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V7-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_palindromic_fields",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads delimited records from a specified file or stdin and outputs only those records where all fields are palindromes (case-sensitive, Unicode supported). Fields are separated by commas. Each line is a record. Output preserves the input order and formatting, writing matching lines to stdout. On empty input, output must also be empty. If all lines have at least one non-palindromic field, no output is produced. An empty field is considered a palindrome. If the input file does not exist, exit with status 2 and print a clear error to stderr. CLI must accept exactly one positional argument (the filename) or none (for stdin). The importable function signature is main(argv: list[str] | None = None) -> int and must be deterministic and output capturable in-process. Public import contract: from forge_blind_v7.cli_filter_palindromic_fields import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "palindrome",
+      "filter",
+      "unicode",
+      "csv",
+      "stdin-stdout"
+    ]
+  },
+  {
+    "case_id": "V7-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V7-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_rotate_words",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of Unicode text from a specified file or standard input, and for each non-empty line formats it as a 'rotated word list': split the line into whitespace-separated words (preserving order), then rotate the words rightward by one position (so the last word moves to the front). Write each transformed line to stdout; output empty lines as-is. Whitespace between words in input must be reduced to a single space in the output, and leading/trailing whitespace must be stripped from each processed line. If a line contains only whitespace, output a blank line. Combine all forms of Unicode whitespace for splitting, matching str.split() behavior. If the input file does not exist, exit with status 2 and write a message to stderr. The CLI must accept zero or one positional arguments (filename) and default to stdin if omitted. Input and output must handle arbitrary Unicode. The entry point must be main(argv: list[str] | None = None) -> int, output must be capturable in-process, and the function must be deterministic for equivalent inputs. Edge cases: on a line with a single word, output must be identical to the input word stripped of leading/trailing whitespace; empty input yields empty output; lines with only whitespace yield empty lines in the output. Canonical behavioral tests:\n- Input: (line) 'the quick brown' \u2192 Output: 'brown the quick'\n- Input: (line) '   sp ace  ' \u2192 Output: 'ace sp'\n- Input: (line) ' m\u00e5ne \u00f8l sol ' \u2192 Output: 'sol m\u00e5ne \u00f8l'\n- Input: (line) 'word' \u2192 Output: 'word'\n- Input: (line) '   ' \u2192 Output: ''\n- Input: (zero lines) \u2192 Output: (zero lines)\n- Input: (lines) '' and '   ' and 'abc' \u2192 Output: '', '', 'abc'\nOn file not found, must exit status 2 and print a clear message to stderr. Public import contract: from forge_blind_v7.cli_rotate_words import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "text-processing",
+      "unicode",
+      "rotated-word-list",
+      "edge-cases",
+      "deterministic"
+    ]
+  },
+  {
+    "case_id": "V7-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V7-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_first_unique_nonempty_line",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads Unicode text from either a specified file or from stdin, and outputs the first non-empty line that differs from every other non-empty line in the input (i.e., the earliest unique non-empty line), preserving its original formatting and content. If there are multiple lines that are unique, output only the first such line; if no non-empty line is unique, output nothing. All lines consisting only of whitespace are treated as empty and ignored for uniqueness and output, but input and output must handle arbitrary Unicode text. Output exactly as in the input (do not strip or modify whitespace or line endings). On empty input or if no unique non-empty line is found, output is empty. If a non-existent input file is provided, exit with status 2 and print a clear error to stderr. The CLI must accept exactly one positional argument (input file) or none (for stdin) and must not accept more than one. The importable entry point is main(argv: list[str] | None = None) -> int, and the function must produce deterministic output capturable in-process for equivalent input. Examples: If input is 'a\\nb\\na\\n' output is 'b\\n'; if input is 'one\\ntwo\\none\\nthree\\n' output is 'two\\n'; if input is 'abc\\nabc\\nabc\\n' output is ''; if input is '' output is ''. Public import contract: from forge_blind_v7.cli_first_unique_nonempty_line import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "text-processing",
+      "deduplication",
+      "deterministic",
+      "unicode",
+      "edge-cases"
+    ]
+  },
+  {
+    "case_id": "V7-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V7-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_alternating_case",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of Unicode text from a specified file or standard input, and outputs only those lines which alternate strictly between uppercase and lowercase alphabetic Unicode characters for every pair of consecutive alphabetic characters on the line. Matching considers only pairs of alphabetic characters as determined by str.isalpha(); non-alphabetic characters are ignored for alternation checking, but lines are output in their original form. Case alternation must continue uninterrupted across all alphabetic characters, regardless of script or language. The check is performed only among alphabetic characters appearing on the line, which may be of any length. Lines with fewer than two alphabetic characters are considered to satisfy the alternation rule and must be output as-is. Input and output lines must preserve their original line endings. The CLI must accept exactly one positional argument (input filename) or none (for stdin). If a non-existent input file is provided, exit with status 2 and print to stderr the message: 'Error: file not found: <filename>'. Output must be written to stdout and support arbitrary Unicode content. The entry point signature is main(argv: list[str] | None = None) -> int, output and errors must be capturable in-process, and all behavior must be deterministic for a given input. Canonical behavioral tests: (1) For input lines 'AbCdEf', 'abC', 'A-b', 'ab', '', 'C', '--', 'aB!cD', 'A1b2C3', only lines where all consecutive alphabetic character pairs alternate strictly in upper/lowercase (per above rules) are output in their original form, including edge cases of empty and non-alphabetic-only lines. (2) On input containing only 'N/A', output is 'N/A' (as it contains only two alphabetic characters, which is treated as alternation satisfied). Public import contract: from forge_blind_v7.cli_filter_alternating_case import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "stdin",
+      "file",
+      "unicode",
+      "alphabetic alternation",
+      "case pairing"
+    ]
+  },
+  {
+    "case_id": "V7-007",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_not_0_O",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads Unicode text from a specified file or standard input, and outputs all lines containing at least one non-whitespace character that is not the digit zero ('0') or the uppercase letter 'O'. All other lines are omitted from the output. Whitespace-only lines must be ignored (not output). Input and output must support arbitrary Unicode. If the input contains no non-whitespace characters other than the digit zero or 'O', output must be empty. If a non-existent filename is specified, the CLI must exit with status 2 and print an error to stderr. The CLI must accept zero or one positional arguments (filename) and default to stdin if no filename is given. The importable function signature must be main(argv: list[str] | None = None) -> int and output must be deterministic and capturable in-process. There is an inherent ambiguity in the requirement because it universally excludes any line with only '0' or 'O', but does not specify what to do for lines containing Unicode characters that visually resemble '0' or 'O' (such as '\u041e', '\u0966', '\u039f', etc.), making the behavior for those cases non-objectively certifiable. Public import contract: from forge_blind_v7.cli_filter_not_0_O import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "unicode",
+      "validation_failed",
+      "filter",
+      "line-processing",
+      "ambiguity-visual-unicode"
+    ]
+  },
+  {
+    "case_id": "V7-008",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_lines_all_words_have_vowel",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of Unicode text from either a specified file (via single positional argument) or standard input (if no filename is given), and outputs lines only if every word on that line contains at least one vowel. A word is any contiguous sequence of non-whitespace characters, and vowels are any of 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U' as recognized by Python's str membership; input and output must support arbitrary Unicode text. A line containing no words must not be output. On empty input, output must be empty. If a non-existent input file is given, the CLI must exit with status 2 and print a clear error message to stderr. The importable entry point must be main(argv: list[str] | None = None) -> int, and output must be capturable in-process. There is a fundamental ambiguity for lines containing words formed from alphabets or scripts where the concept of 'vowel' is undefined or not represented as Latin characters, making objective validation of the universal clause \"every word\" impossible for all Unicode text. Public import contract: from forge_blind_v7.cli_lines_all_words_have_vowel import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "validation_failed",
+      "unicode",
+      "text filter",
+      "ambiguous universal claim",
+      "vowel-matching"
+    ]
+  },
+  {
+    "case_id": "V7-009",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_fibonacci_unique_alpha",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads Unicode lines from a given file or stdin and outputs all lines where the number of unique alphabetic characters (per line, str.isalpha applied to each codepoint) is a Fibonacci number (e.g., 1, 2, 3, 5, 8, 13, ...). Each output line must be identical to its input form, including whitespace and line endings. On empty input, output must be empty. If a line contains no alphabetic characters, it is never output. The CLI must accept zero or one positional arguments (filename), defaulting to stdin if none. On requesting a non-existent input file, exit status must be 2 and a clear error printed to stderr. The main contract is main(argv: list[str] | None = None) -> int, and output must be capturable in-process. Edge case: Unicode whose alphabetic status is ambiguous across implementations (e.g., codepoints that may or may not satisfy isalpha in all environments) can lead to inconsistent results, making objective certification of the Fibonacci condition impossible universally. Public import contract: from forge_blind_v7.cli_filter_fibonacci_unique_alpha import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "validation_failed",
+      "text-filter",
+      "isalpha",
+      "unicode",
+      "fibonacci"
+    ]
+  },
+  {
+    "case_id": "V7-010",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_strictly_longer_and_shorter_than_total_lines",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of input (from a specified UTF-8 file or stdin), and outputs only those lines whose length (number of Unicode code points) is both strictly greater than the total number of lines in the input and at the same time strictly less than the total number of lines in the input. Output lines must preserve exact input formatting, including all whitespace and line endings. On empty input, output is empty. If a non-existent input file is specified, exit with status 2 and print a clear error message to stderr. CLI must accept zero or one positional arguments (filename) and default to stdin if omitted. The importable function signature must be main(argv: list[str] | None = None) -> int and output must be deterministic and capturable in-process. For any concrete input, it is provable that no line can satisfy the simultaneous constraint of being strictly longer and strictly shorter than the same total, so correct output is always empty. Public import contract: from forge_blind_v7.cli_filter_strictly_longer_and_shorter_than_total_lines import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "text",
+      "lines",
+      "unicode",
+      "contradictory-constraint",
+      "infeasible_proven"
+    ]
+  },
+  {
+    "case_id": "V7-011",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_odd_and_even_words",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of Unicode text from a provided filename (single positional argument) or standard input (if no filename is provided), and outputs only the lines where the number of words on the line (delimited by runs of whitespace as per str.split()) is simultaneously an odd integer and an even integer. Each output line must be written exactly as it appears in the input, preserving all original spacing and line endings. If the input is empty, the output must be empty. If a non-existent input file is specified, the CLI must exit with status 2 and emit a clear error message to stderr. The CLI must accept only zero or one positional argument and reject extra arguments with exit status 2. The required function signature is main(argv: list[str] | None = None) -> int, and all output must be deterministically capturable in-process for any valid input. For any input line, it is mathematically impossible for a count of words to be both odd and even simultaneously, so no line can satisfy the constraint and correct output is universally empty. Public import contract: from forge_blind_v7.cli_filter_odd_and_even_words import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "infeasible_proven",
+      "mathematical_contradiction",
+      "finite_constraint"
+    ]
+  },
+  {
+    "case_id": "V7-012",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v7.cli_filter_square_and_prime_uppercase",
+      "symbol": "main"
+    },
+    "requirement": "Implement a CLI and importable function that reads lines of Unicode text from a specified file or from stdin, and outputs only those lines for which the number of uppercase alphabetic characters is both a perfect square and a prime number. Line output must exactly match input, preserving original formatting and line endings. The CLI must accept zero or one positional argument (input filename), defaulting to stdin if omitted. If the specified file does not exist, exit with status 2 and report a clear error to stderr. For all valid inputs, main(argv: list[str] | None = None) -> int must produce deterministic, capturable output. For any input, no count of uppercase alphabetic characters can be both a perfect square (greater than 1: 4, 9, 16, ...) and a prime number (greater than 1: 2, 3, 5, ...), so no line can ever satisfy the requirement, and correct output is always empty. Public import contract: from forge_blind_v7.cli_filter_square_and_prime_uppercase import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v7",
+      "cli",
+      "unicode",
+      "infeasible_proven",
+      "impossible-intersection",
+      "perfect-square",
+      "prime-number"
+    ]
+  }
+]
