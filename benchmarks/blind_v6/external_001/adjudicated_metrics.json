@@ -1,0 +1,224 @@
+{
+  "case_decisions": [
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-001",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-002",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-003",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "verified",
+      "status_matched": true,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-004",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-005",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-006",
+      "claimed_status": "verified",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "verified",
+      "status_matched": true,
+      "status_metric_included": true,
+      "verdict": "label_valid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-007",
+      "claimed_status": "validation_failed",
+      "deterministic_evidence": "expected verified requirement has a behavioral example contradiction: a 5-item input returns a 4-item list despite the same-length contract",
+      "effective_expected_status": null,
+      "exclusion_reason": "deterministic_contract_conflict",
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": false,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-008",
+      "claimed_status": "validation_failed",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "verified",
+      "status_matched": true,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V6-009",
+      "claimed_status": "validation_failed",
+      "effective_expected_status": null,
+      "exclusion_reason": "reviewer_disagreement",
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": false,
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V6-010",
+      "claimed_status": "infeasible_proven",
+      "effective_expected_status": null,
+      "exclusion_reason": "reviewer_disagreement",
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": false,
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": null,
+      "case_id": "V6-011",
+      "claimed_status": "infeasible_proven",
+      "effective_expected_status": null,
+      "exclusion_reason": "reviewer_disagreement",
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": false,
+      "verdict": "unresolved"
+    },
+    {
+      "adjudicated_status": "verified",
+      "case_id": "V6-012",
+      "claimed_status": "infeasible_proven",
+      "effective_expected_status": "verified",
+      "exclusion_reason": null,
+      "external_contract_ready": false,
+      "observed_terminal_status": "validation_failed",
+      "status_matched": false,
+      "status_metric_included": true,
+      "verdict": "label_invalid"
+    }
+  ],
+  "created_at": "2026-08-21T20:35:14.677211+00:00",
+  "metrics": {
+    "external_false_verified_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "external_success_after_repair": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "external_verified_at_1": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "infeasible_detection_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "oracle_pass_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "status_accuracy": {
+      "denominator": 8,
+      "numerator": 3,
+      "value": 0.375
+    }
+  },
+  "policy": {
+    "consensus_label_corrections_applied": true,
+    "deterministic_contract_conflicts_excluded": true,
+    "external_metrics_require_frozen_oracle": true,
+    "external_metrics_require_typed_public_contract": true,
+    "raw_benchmark_metrics_modified": false,
+    "undefined_rates_are_null": true,
+    "unresolved_excluded": true
+  },
+  "receipt_id": "forge-blind-v6-external-001-adjudicated-definitive-metrics",
+  "resource_metrics": {
+    "cost_per_externally_accepted_artifact_usd": null,
+    "included_case_runtime_seconds": 925.47385526,
+    "median_case_runtime_seconds": 114.6554835085,
+    "p95_case_runtime_seconds": 248.5280284150001,
+    "total_estimated_model_cost_usd": 1.181978,
+    "total_model_requests": 32,
+    "total_model_tokens": 468385,
+    "total_repairs": 9
+  },
+  "schema_version": 1,
+  "sources": {
+    "adjudication_receipt_sha256": "3437d1a257cc8f2a7d616412ddc179edfcb0ef6ed7e45d31b8984b14c61bac04",
+    "baseline_report_sha256": "224cf15cb34ba90ba15ebf27ba791be65d7ba1bde75aba1125e77d62f6ae98a4",
+    "bundle_id": "forge-blind-v6-external-001",
+    "dataset_sha256": "86dcdbabf6201d52f40664efe5bd7ab1ac14e9990625bf25855debfa955be23d",
+    "forge_baseline_sha256": "dc4a73724fae003822d8678de2a918b9512b9238300fce3d579bd1f2e70ea2fe",
+    "manifest_sha256": "8e821d76ae4fe29da06061da013fb606da3506812238b59bd15aa69395835c4b"
+  },
+  "summary": {
+    "corrected_label_cases": 3,
+    "definitive_status_cases": 8,
+    "excluded_cases": 4,
+    "externally_accepted_artifacts": 0,
+    "invalid_adjudication_cases": 1,
+    "invalid_oracle_cases": 0,
+    "observed_verified_without_definitive_external_judge": 3,
+    "raw_total_cases": 12,
+    "unresolved_cases": 3,
+    "verified_cases_without_definitive_external_contract": 8
+  },
+  "terminal_status": "adjudicated_metrics_derived"
+}

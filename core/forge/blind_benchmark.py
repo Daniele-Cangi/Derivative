@@ -30,6 +30,7 @@ _EXCLUDED_BASELINE_FILES = {
     "core/forge/blind_freeze.py",
     "core/forge/heldout_benchmark.py",
     "core/forge/blind_adjudication.py",
+    "core/forge/blind_metrics.py",
     "core/forge/public_contract.py",
 }
 

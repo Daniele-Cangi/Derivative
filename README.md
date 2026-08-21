@@ -353,6 +353,10 @@ OPENAI_MODEL="gpt-4.1-mini"
 - [Blind evaluation protocol](benchmarks/blind_v3/README.md): freeze, provenance and replay rules for independent evaluation.
 - [Blind-v5 manifest](benchmarks/blind_v5/external_001/manifest.json): current frozen requirements, oracle digests, provenance, and protected baseline.
 - [Blind-v5 immutable baseline](benchmarks/blind_v5/external_001/baseline_result.json): first-run result before regression work.
+- [Blind-v6 manifest](benchmarks/blind_v6/external_001/manifest.json): independently produced schema-v2 bundle sealed before its only baseline execution.
+- [Blind-v6 immutable baseline](benchmarks/blind_v6/external_001/baseline_result.json): unadjusted first-run metrics and case evidence.
+- [Blind-v6 label adjudication](benchmarks/blind_v6/external_001/requirement_adjudication.json): two-model review performed without Forge results.
+- [Blind-v6 adjudicated metrics](benchmarks/blind_v6/external_001/adjudicated_metrics.json): append-only derived receipt with explicit exclusions and denominators.
 - [Forge CI workflow](.github/workflows/forge-ci.yml): the Linux/Docker test and benchmark gate executed on every push and pull request.
 - [Release v0.1.0](https://github.com/Daniele-Cangi/Derivative/releases/tag/v0.1.0): first public release snapshot.
 - [MIT License](LICENSE): usage and redistribution terms.
@@ -373,10 +377,20 @@ Derivative is released under the [MIT License](LICENSE).
 
 Evidence is reported by revision and evaluation type. Targeted post-fix replays are regression evidence, never retroactively promoted to a fresh blind aggregate.
 
-- The V5 evidence-closure snapshot reports **407 passed, 2 skipped** locally. Its release is published only after the same commit passes the GitHub Actions Docker sandbox and internal 30-case regression gate.
+- The current adjudicated-metrics checkpoint reports **442 passed, 2 skipped** locally and passes the GitHub Actions Docker sandbox and internal regression gate.
 - The 30-case gate remains useful for deterministic CI regression, but it is not presented as independent blind proof because its cases are repository-maintained.
 - Blind V5 was frozen before first execution. Its immutable baseline scored **4/12**, status accuracy **0.417**, external false-verified rate **1.000**, infeasibility detection **0.333**, 680,399 model tokens, and an estimated cost of $1.83934.
 - Structural fixes are measured through isolated, explicitly labeled post-fix replays. There is intentionally no synthetic "current V5 score" assembled from runs made at different revisions.
+
+### Blind V6 evidence
+
+Blind V6 was produced outside the Forge execution path, frozen before its first run, and executed once against its sealed baseline. The immutable raw report remains unchanged: 12 cases, status accuracy 0.333, external `Verified@1` 0.000, external false-verified rate 1.000, infeasibility detection 0.000, 743,949 model tokens, and $1.885866 estimated model cost.
+
+The later requirement-label adjudication did not receive Forge output, generated code, failure signatures, oracle results, or the baseline report. Two distinct models agreed on six valid labels and three corrected labels, and disagreed on three cases. A deterministic post-check independently rejects the reviewer consensus for V6-007 because its five-item input example returns four items despite a same-length requirement. The append-only adjudicated receipt therefore includes eight cases in status metrics, excludes three unresolved cases plus V6-007, and reports adjudicated status accuracy 3/8 (0.375).
+
+V6 predates the typed public import contract introduced in blind schema v3. Consequently none of its verified cases has both a frozen oracle and a schema-v3 `public_contract`; definitive external `Verified@1`, oracle pass, repair success, false-verified, and infeasibility rates are recorded as `null`, not zero. This prevents a legacy oracle import assumption from being reported as either Forge success or Forge failure. The raw report, adjudication receipt, and derived metrics remain separate hashed evidence sources.
+
+The derived receipt SHA-256 is `8D7CF76BF927CC86CA3523762C920B8489D631888F2F7260974AA49135AEF96C`; its embedded baseline-report and adjudication-receipt hashes both match the immutable source files.
 
 ### Blind V5 regression ledger
 
@@ -440,15 +454,15 @@ Current boundaries:
 
 ## Development Roadmap
 
-Blind V5 is frozen as an evidence snapshot, not retained as an optimization target. Forge remains focused on its existing Python CLI, service, pipeline, and library surface until a newly authored independent blind establishes how well the current system transfers.
+Blind V6 is frozen as an evidence snapshot, not retained as an optimization target. Forge remains focused on its existing Python CLI, service, pipeline, and library surface until a future independently authored schema-v3 blind establishes how well the current system transfers.
 
 Post-freeze priorities:
 
-1. Preserve every V5 baseline, replay, oracle-invalid finding, false-positive incident, token count, cost, latency, repair count, and artifact digest without assembling a fictional cross-revision aggregate.
-2. Introduce capability-driven lazy imports and optional dependency groups while preserving the shared Derivative truth substrate and fail-closed behavior.
-3. Freeze a genuinely new blind bundle before Forge sees its requirements or oracles.
-4. Report Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, latency, tokens, cost per externally accepted artifact, and repairs per successful build together.
-5. Correct only structural mechanisms exposed by the new blind; do not add one-off templates for known cases.
+1. Preserve every V5/V6 baseline, replay, adjudication, invalid-benchmark finding, token count, cost, latency, repair count, and artifact digest without rewriting raw evidence.
+2. Keep raw metrics, model-based label adjudication, deterministic sanity checks, and derived definitive metrics as separate linked receipts.
+3. Freeze any future blind with schema v3 before Forge sees its requirements or oracles; every case must declare a typed public import contract and every oracle must import it exactly.
+4. Report Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, latency, tokens, cost per externally accepted artifact, and repairs per successful build with explicit numerators and denominators.
+5. Correct only structural mechanisms exposed by independent evidence; do not add one-off templates for known cases.
 
 No new software domain or existing-repository mode is required before that independent evaluation.
 
@@ -486,6 +500,7 @@ Standard, held-out, and blind reports preserve attempt-level Forge telemetry for
 - externally accepted artifact count, invalid-benchmark rejection rate, repairs per externally accepted artifact, and cost per externally accepted artifact use explicit persisted denominators rather than inferred cross-run aggregates.
 - estimated model cost is reported only when `OPENAI_INPUT_COST_PER_1M_TOKENS` and `OPENAI_OUTPUT_COST_PER_1M_TOKENS` are explicitly configured. Otherwise cost is `null` with pricing source `unconfigured`; Forge does not embed mutable provider prices or report an invented zero.
 - held-out and blind `External Verified@1` additionally require the independent acceptance oracle to pass against the packaged artifact.
+- adjudicated definitive metrics use consensus-corrected labels, exclude reviewer disagreements and deterministic contract conflicts, and require both a frozen oracle and schema-v3 public import contract for external denominators. Undefined rates are `null`.
 
 ## Tests
 
@@ -528,12 +543,12 @@ python forge_blind_freeze.py PATH_TO_PRIVATE_BUNDLE \
   --source-url https://example.com/benchmark-spec
 ```
 
-The freezer accepts an existing `cases.json` and its referenced oracle files; it never generates either. It writes a schema-v2 manifest once and refuses overwrite. The manifest records UTC freeze time, provenance attestations, optional HTTPS source URLs, and SHA-256 digests for the dataset, each oracle, and the protected Forge baseline. The exact private bundle can then be executed with `python forge_blind_benchmark.py --manifest PATH_TO_PRIVATE_BUNDLE/manifest.json`. Provenance is auditable metadata rather than cryptographic proof, so the external producer remains responsible for keeping inputs hidden until freeze.
+The freezer accepts an existing `cases.json` and its referenced oracle files; it never generates either. It writes a schema-v3 manifest once and refuses overwrite. Each case must carry `public_contract` (`module`, `symbol`, and `kind`) matching a canonical `Public import contract: from <module> import <symbol>.` sentence, and each verified oracle must import that exact target. Historical schema-v1/v2 bundles remain loadable but cannot contribute to schema-v3 external denominators. The manifest records UTC freeze time, provenance attestations, optional HTTPS source URLs, and SHA-256 digests for the dataset, each oracle, and the protected Forge baseline. The exact private bundle can then be executed with `python forge_blind_benchmark.py --manifest PATH_TO_PRIVATE_BUNDLE/manifest.json`. Provenance is auditable metadata rather than cryptographic proof, so the external producer remains responsible for keeping inputs hidden until freeze.
 
 If no human producer is available, create and freeze a fresh bundle through the
 isolated one-shot OpenAI producer. It uses separate stateless generation requests
 for requirements and black-box oracles, receives no Forge source, stages all
-outputs privately, and publishes only after the schema-v2 freeze succeeds:
+outputs privately, and publishes only after the schema-v3 freeze succeeds:
 
 ```bash
 python forge_blind_produce.py PATH_TO_PRIVATE_BUNDLE \
@@ -543,6 +558,18 @@ python forge_blind_produce.py PATH_TO_PRIVATE_BUNDLE \
 This is an operational isolation mechanism, not cryptographic proof of model
 independence. The destination must not already exist, and the Forge baseline must
 be clean and committed before production.
+
+Derive a non-destructive adjudicated metrics receipt after a sealed baseline and a separate label-adjudication receipt exist:
+
+```bash
+python forge_blind_metrics.py \
+  --manifest PATH_TO_BUNDLE/manifest.json \
+  --baseline-report PATH_TO_BUNDLE/baseline_result.json \
+  --adjudication PATH_TO_BUNDLE/requirement_adjudication.json \
+  --output PATH_TO_BUNDLE/adjudicated_metrics.json
+```
+
+This command performs no model calls and never edits the three source artifacts. It validates their bundle hashes and case IDs, writes once, excludes unresolved or deterministically inconsistent adjudications, and persists every numerator and denominator.
 
 Key Forge tests include:
 - `tests/test_forge_planner_stage.py`
@@ -555,3 +582,6 @@ Key Forge tests include:
 - `tests/test_forge_blind_benchmark.py`
 - `tests/test_forge_blind_freeze.py`
 - `tests/test_forge_blind_producer.py`
+- `tests/test_forge_blind_adjudication.py`
+- `tests/test_forge_blind_metrics.py`
+- `tests/test_forge_public_contract.py`
