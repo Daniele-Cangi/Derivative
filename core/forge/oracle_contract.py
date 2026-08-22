@@ -148,19 +148,9 @@ def oracle_contract_mismatches(
 def context_manager_binding_mismatches(
     tree: ast.Module,
 ) -> list[OracleHarnessMismatch]:
-    invalid_context_managers: dict[
-        tuple[str, str], ast.FunctionDef | ast.AsyncFunctionDef
-    ] = {}
-    for class_node in (node for node in tree.body if isinstance(node, ast.ClassDef)):
-        for enter in (
-            node
-            for node in class_node.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name in {"__enter__", "__aenter__"}
-        ):
-            if not _returns_non_none_value(enter):
-                invalid_context_managers[(class_node.name, enter.name)] = enter
-
+    module_classes = {
+        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
+    }
     mismatches: list[OracleHarnessMismatch] = []
     for function in (
         node
@@ -168,6 +158,7 @@ def context_manager_binding_mismatches(
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name.startswith("test_")
     ):
+        local_classes = _local_class_definitions(function)
         for node in ast.walk(function):
             if not isinstance(node, (ast.With, ast.AsyncWith)):
                 continue
@@ -185,9 +176,17 @@ def context_manager_binding_mismatches(
                     or not isinstance(bound, ast.Name)
                 ):
                     continue
-                enter = invalid_context_managers.get((call.func.id, enter_name))
-                if enter is None or not _bound_attribute_is_used(
-                    function, bound, bound.id
+                class_node = _resolve_context_manager_class(
+                    call.func.id,
+                    node,
+                    module_classes,
+                    local_classes,
+                )
+                enter = _context_enter_method(class_node, enter_name)
+                if (
+                    enter is None
+                    or _returns_non_none_value(enter)
+                    or not _bound_attribute_is_used(function, bound, bound.id)
                 ):
                     continue
                 mismatches.append(
@@ -207,6 +206,57 @@ def context_manager_binding_mismatches(
                 )
     return mismatches
 
+
+def _local_class_definitions(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.ClassDef]:
+    classes: list[ast.ClassDef] = []
+    stack: list[ast.AST] = list(reversed(function.body))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.ClassDef):
+            classes.append(node)
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        stack.extend(reversed(list(ast.iter_child_nodes(node))))
+    return classes
+
+
+def _resolve_context_manager_class(
+    class_name: str,
+    context: ast.With | ast.AsyncWith,
+    module_classes: dict[str, ast.ClassDef],
+    local_classes: list[ast.ClassDef],
+) -> ast.ClassDef | None:
+    matching_local = [node for node in local_classes if node.name == class_name]
+    preceding_local = [
+        node
+        for node in matching_local
+        if _node_position(node) < _node_position(context)
+    ]
+    if preceding_local:
+        return max(preceding_local, key=_node_position)
+    if matching_local:
+        return None
+    return module_classes.get(class_name)
+
+
+def _context_enter_method(
+    class_node: ast.ClassDef | None,
+    enter_name: str,
+) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    if class_node is None:
+        return None
+    return next(
+        (
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == enter_name
+        ),
+        None,
+    )
 
 _RETURN_NON_NONE = "return_non_none"
 _RETURN_NONE = "return_none"
@@ -380,6 +430,15 @@ class _BindingUseVisitor(ast.NodeVisitor):
             self.attribute_uses.append(_node_position(node))
         self.generic_visit(node)
 
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == self.bound_name
+            and _node_position(node) > self.anchor
+        ):
+            self.attribute_uses.append(_node_position(node))
+        self.generic_visit(node)
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         return None
 
@@ -415,6 +474,8 @@ class _BindingUseVisitor(ast.NodeVisitor):
                 self.visit(generator.iter)
             if _target_binds_name(generator.target, self.bound_name):
                 shadowed = True
+            elif not shadowed:
+                self.visit(generator.target)
             if not shadowed:
                 for condition in generator.ifs:
                     self.visit(condition)
@@ -425,9 +486,12 @@ class _BindingUseVisitor(ast.NodeVisitor):
 
 def _target_binds_name(target: ast.expr, bound_name: str) -> bool:
     return any(
-        isinstance(node, ast.Name) and node.id == bound_name
+        isinstance(node, ast.Name)
+        and node.id == bound_name
+        and isinstance(node.ctx, ast.Store)
         for node in ast.walk(target)
     )
+
 
 def _bound_attribute_is_used(
     function: ast.FunctionDef | ast.AsyncFunctionDef,

@@ -696,6 +696,76 @@ def test_oracle_sanity_tracks_comprehension_capture_and_shadowing():
     assert iterable_captured[0].contract_id == "context_manager_binding"
     assert oracle_contract_mismatches(shadowed_oracle, requirement) == []
 
+def test_oracle_sanity_resolves_local_context_manager_classes():
+    local_invalid_oracle = (
+        "def test_output():\n"
+        "    class capture:\n"
+        "        def __enter__(self):\n"
+        "            pass\n"
+        "        def __exit__(self, *args):\n"
+        "            pass\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    local_shadow_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        pass\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    class capture:\n"
+        "        def __enter__(self):\n"
+        "            return self\n"
+        "        def __exit__(self, *args):\n"
+        "            pass\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    requirement = "Build an importable function and include tests."
+
+    local_invalid = oracle_contract_mismatches(
+        local_invalid_oracle, requirement
+    )
+    assert len(local_invalid) == 1
+    assert local_invalid[0].class_name == "capture"
+    assert oracle_contract_mismatches(local_shadow_oracle, requirement) == []
+
+
+def test_oracle_sanity_tracks_attribute_and_subscript_targets():
+    attribute_target_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        pass\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        values = [item for redir.stdout in items]\n"
+    )
+    subscript_target_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        pass\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        values = [item for redir[index] in items]\n"
+    )
+    requirement = "Build an importable function and include tests."
+
+    attribute_target = oracle_contract_mismatches(
+        attribute_target_oracle, requirement
+    )
+    subscript_target = oracle_contract_mismatches(
+        subscript_target_oracle, requirement
+    )
+    assert len(attribute_target) == 1
+    assert attribute_target[0].contract_id == "context_manager_binding"
+    assert len(subscript_target) == 1
+    assert subscript_target[0].contract_id == "context_manager_binding"
+
 def test_frozen_v7_001_oracle_is_rejected_by_context_binding_gate():
     dataset = (
         Path(__file__).resolve().parents[1]
