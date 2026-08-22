@@ -6,7 +6,13 @@ import pytest
 
 import core.forge.validator_stage as validator_stage_module
 from core.forge.coder_stage import CoderStage
-from core.forge.contracts import CodeArtifact, FeasiblePlan, PlanInterface, ValidationArtifact
+from core.forge.contracts import (
+    CodeArtifact,
+    FeasiblePlan,
+    GeneratedFile,
+    PlanInterface,
+    ValidationArtifact,
+)
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.semantic_contracts import (
@@ -1147,3 +1153,137 @@ def test_non_cli_workflow_cannot_be_replaced_by_click_command(forge_pipeline):
 
     assert result.passed is False
     assert "interface_contract_mismatch" in result.failure_signatures
+
+
+def _validate_runtime_cli_source(tmp_path, requirement, source):
+    build_spec = RequirementCompiler().compile(requirement)
+    plan = FeasiblePlan(
+        plan_id="plan-runtime-cli",
+        build_spec=build_spec,
+        architecture_summary="Python CLI with an importable main entrypoint.",
+        interfaces=[
+            PlanInterface(
+                name="main",
+                interface_type="cli_entrypoint",
+                signature="main(argv: list[str] | None = None) -> int",
+                module_path="cli",
+            )
+        ],
+    )
+    artifact = CodeArtifact(
+        artifact_id="artifact-runtime-cli",
+        plan_id=plan.plan_id,
+        files=[GeneratedFile("src/cli.py", source, "python_module")],
+        runnable_entrypoints=["src/cli.py"],
+    )
+    workspace = tmp_path / "workspace"
+    materialized = _materialize_artifact(artifact, workspace)
+    return RuntimeValidationLayer("python", timeout_seconds=30).validate(
+        artifact,
+        plan,
+        build_spec,
+        materialized,
+        workspace,
+    )
+
+
+def test_runtime_smoke_respects_optional_single_file_cli_contract(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        (
+            "Build a Python CLI exposing main(argv) that reads text from exactly one positional "
+            "filename or from stdin when omitted, writes transformed text to stdout, "
+            "and includes tests."
+        ),
+        '''import argparse
+from pathlib import Path
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("filename", nargs="?")
+    args = parser.parse_args(argv)
+    if args.filename:
+        print(Path(args.filename).read_text(encoding="utf-8"), end="")
+    return 0
+''',
+    )
+
+    assert result.passed is True
+    entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
+    smoke = entrypoint["smoke_contract"]
+    assert smoke["source"] == "argparse_ast"
+    assert smoke["cli_arguments"] == ["validator_input.csv"]
+    assert smoke["cli_argument_count"] == 1
+    assert "validator_output.csv" not in smoke["cli_arguments"]
+
+
+def test_runtime_smoke_preserves_explicit_input_output_cli_contract(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        (
+            "Build a Python CLI exposing main(argv) that reads an input CSV path and writes an "
+            "output CSV path, and includes tests."
+        ),
+        '''import argparse
+from pathlib import Path
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_path")
+    parser.add_argument("output_path")
+    args = parser.parse_args(argv)
+    Path(args.output_path).write_text(
+        Path(args.input_path).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    return 0
+''',
+    )
+
+    assert result.passed is True
+    smoke = result.evidence["entrypoint_results"]["src/cli.py"]["smoke_contract"]
+    assert smoke["cli_arguments"] == [
+        "validator_input.csv",
+        "validator_output.csv",
+    ]
+    assert smoke["cli_argument_count"] == 2
+
+
+def test_runtime_entrypoint_exception_is_not_mislabeled_as_import_failure(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        "Build a Python CLI exposing main(argv) that includes tests.",
+        '''def main(argv=None):
+    raise RuntimeError("workflow failed")
+''',
+    )
+
+    assert result.passed is False
+    assert result.evidence["failure_signatures"] == [
+        "entrypoint_execution_failure"
+    ]
+    entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
+    assert entrypoint["failure_phase"] == "execution"
+    assert entrypoint["execution_status"]["error_type"] == "RuntimeError"
+
+
+def test_runtime_real_import_error_retains_import_failure_signature(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        "Build a Python CLI exposing main(argv) that includes tests.",
+        '''import dependency_that_does_not_exist
+
+
+def main(argv=None):
+    return 0
+''',
+    )
+
+    assert result.passed is False
+    assert "import_failure" in result.evidence["failure_signatures"]
+    assert "entrypoint_execution_failure" not in result.evidence["failure_signatures"]
+    entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
+    assert entrypoint["failure_phase"] == "import"
+    assert entrypoint["execution_status"]["error_type"] == "ModuleNotFoundError"

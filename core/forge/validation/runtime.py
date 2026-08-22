@@ -5,7 +5,13 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.contracts import (
+    BuildSpec,
+    CodeArtifact,
+    FeasiblePlan,
+    PlanInterface,
+    ValidationLayerResult,
+)
 from core.forge.execution import (
     LocalProcessExecutor,
     ProcessExecutor,
@@ -81,14 +87,13 @@ class RuntimeValidationLayer(ValidationLayerBase):
             failures.append("Entrypoint interface declared but no runnable_entrypoints were provided.")
             self._append_unique(signatures, "missing_entrypoint")
 
-        entrypoint_names = [interface.name for interface in declared_entrypoint_interfaces]
         for entrypoint in code_artifact.runnable_entrypoints:
             result = self._execute_entrypoint(
                 workspace,
                 materialized,
                 entrypoint,
                 build_spec,
-                entrypoint_names,
+                declared_entrypoint_interfaces,
             )
             entrypoint_evidence[entrypoint] = result
             if not result.get("exists", False):
@@ -99,10 +104,13 @@ class RuntimeValidationLayer(ValidationLayerBase):
                 self._append_unique(signatures, "missing_entrypoint")
             elif not result.get("executed", False):
                 failures.append(f"Entrypoint execution failed for {entrypoint}.")
-                self._append_unique(
-                    signatures,
-                    "sandbox_unavailable" if result.get("launch_error") else "import_failure",
-                )
+                if result.get("launch_error"):
+                    signature = "sandbox_unavailable"
+                elif result.get("failure_phase") == "import":
+                    signature = "import_failure"
+                else:
+                    signature = "entrypoint_execution_failure"
+                self._append_unique(signatures, signature)
         evidence["entrypoint_results"] = entrypoint_evidence
         evidence["failure_signatures"] = signatures
 
@@ -166,7 +174,7 @@ class RuntimeValidationLayer(ValidationLayerBase):
         materialized: Dict[str, Path],
         entrypoint: str,
         build_spec: BuildSpec,
-        declared_entrypoint_names: List[str],
+        declared_entrypoint_interfaces: List[PlanInterface],
     ) -> Dict[str, object]:
         result = {
             "exists": False,
@@ -194,55 +202,51 @@ class RuntimeValidationLayer(ValidationLayerBase):
         }
         function_names = set(function_nodes)
         candidate = next(
-            (name for name in declared_entrypoint_names if name in function_names),
+            (
+                interface.name
+                for interface in declared_entrypoint_interfaces
+                if interface.name in function_names
+            ),
             "",
         )
         if not candidate:
-            candidate = "main" if "main" in function_names else ("run" if "run" in function_names else "")
+            candidate = (
+                "main"
+                if "main" in function_names
+                else ("run" if "run" in function_names else "")
+            )
         if not candidate:
             return result
         result["function_present"] = True
+        declared_interface = next(
+            (
+                interface
+                for interface in declared_entrypoint_interfaces
+                if interface.name == candidate
+            ),
+            None,
+        )
 
         module_name = self._module_name_for_src_path(entrypoint)
-        is_jsonl_input = self._is_jsonl_input(build_spec)
-        is_jsonl_pipeline = self._is_jsonl_pipeline(build_spec)
-        is_json_merge_cli = self._is_json_merge_cli(build_spec)
         input_format = self._input_format(build_spec)
         output_format = self._output_format(build_spec)
         input_path = workspace / f"validator_input.{input_format}"
         output_path = workspace / f"validator_output.{output_format}"
         input_path.write_text(self._sample_input_content(build_spec), encoding="utf-8")
         invocation_args: list[object] = []
+        invocation_evidence: Dict[str, object] = {
+            "source": "function_signature",
+            "cli_arguments": [],
+            "cli_argument_count": 0,
+        }
         if candidate == "main":
-            if is_jsonl_pipeline:
-                quarantine_jsonl = workspace / "validator_quarantine.jsonl"
-                invocation_args = [[
-                    self._workspace_path(input_path, workspace),
-                    self._workspace_path(quarantine_jsonl, workspace),
-                    self._workspace_path(output_path, workspace),
-                ]]
-            elif is_json_merge_cli:
-                base_json = workspace / "validator_base.json"
-                override_json = workspace / "validator_override.json"
-                output_json = workspace / "validator_output.json"
-                base_json.write_text(
-                    '{"service":{"host":"localhost","ports":[80]},"enabled":true}',
-                    encoding="utf-8",
-                )
-                override_json.write_text(
-                    '{"service":{"ports":[443]},"enabled":false}',
-                    encoding="utf-8",
-                )
-                invocation_args = [[
-                    self._workspace_path(base_json, workspace),
-                    self._workspace_path(override_json, workspace),
-                    self._workspace_path(output_json, workspace),
-                ]]
-            elif entrypoint.lower().endswith(("src/cli.py", "src/main.py")):
-                invocation_args = [[
-                    self._workspace_path(input_path, workspace),
-                    self._workspace_path(output_path, workspace),
-                ]]
+            cli_arguments, invocation_evidence = self._main_cli_arguments(
+                tree,
+                workspace,
+                input_path,
+                output_path,
+            )
+            invocation_args = [cli_arguments]
         elif candidate == "run":
             invocation_args = self._run_invocation_arguments(
                 function_nodes[candidate],
@@ -256,7 +260,12 @@ class RuntimeValidationLayer(ValidationLayerBase):
             "input_path": str(input_path),
             "output_path": str(output_path),
             "argument_count": len(invocation_args),
+            "interface_signature": declared_interface.signature if declared_interface else "",
+            **invocation_evidence,
         }
+
+        status_path = workspace / ".forge_entrypoint_status.json"
+        status_path.unlink(missing_ok=True)
         script = (
             "import importlib\n"
             "import json\n"
@@ -264,22 +273,207 @@ class RuntimeValidationLayer(ValidationLayerBase):
             "from pathlib import Path\n"
             "workspace = Path.cwd()\n"
             "sys.path.insert(0, str(workspace / 'src'))\n"
-            f"module = importlib.import_module({module_name!r})\n"
-            f"fn = getattr(module, {candidate!r})\n"
+            "status_path = workspace / '.forge_entrypoint_status.json'\n"
+            "def write_status(payload):\n"
+            "    status_path.write_text(json.dumps(payload, sort_keys=True), encoding='utf-8')\n"
+            "try:\n"
+            f"    module = importlib.import_module({module_name!r})\n"
+            f"    fn = getattr(module, {candidate!r})\n"
+            "except BaseException as exc:\n"
+            "    write_status({'phase': 'import', 'error_type': "
+            "type(exc).__name__, 'error': str(exc)})\n"
+            "    raise\n"
             f"invoke_args = {invocation_args!r}\n"
-            "result = fn(*invoke_args)\n"
-            "print(json.dumps({'result': result if isinstance(result, (int, str, bool, float)) else str(result)}))\n"
+            "try:\n"
+            "    result = fn(*invoke_args)\n"
+            "    write_status({'phase': 'completed', 'result': result if "
+            "isinstance(result, (int, str, bool, float)) else str(result)})\n"
+            "except BaseException as exc:\n"
+            "    write_status({'phase': 'execution', 'error_type': "
+            "type(exc).__name__, 'error': str(exc)})\n"
+            "    raise\n"
         )
         completed = self._run_subprocess(script, cwd=workspace)
+        status_payload: Dict[str, object] = {}
+        if status_path.exists():
+            try:
+                status_payload = json.loads(status_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                status_payload = {
+                    "phase": "unknown",
+                    "error": "Invalid entrypoint status payload.",
+                }
         result["returncode"] = completed.returncode
         result["stdout"] = completed.stdout.strip()
         result["stderr"] = completed.stderr.strip()
-        result["executed"] = completed.returncode == 0
+        result["execution_status"] = status_payload
+        result["failure_phase"] = (
+            status_payload.get("phase") if completed.returncode != 0 else ""
+        )
+        result["executed"] = (
+            completed.returncode == 0 and status_payload.get("phase") == "completed"
+        )
         result["backend"] = completed.backend
         result["timed_out"] = completed.timed_out
         result["launch_error"] = completed.launch_error
         result["isolation"] = completed.isolation
         return result
+
+    def _main_cli_arguments(
+        self,
+        tree: ast.AST,
+        workspace: Path,
+        input_path: Path,
+        output_path: Path,
+    ) -> tuple[list[str], Dict[str, object]]:
+        declarations = self._argparse_argument_declarations(tree)
+        if not declarations:
+            return [], {
+                "source": "public_signature",
+                "cli_arguments": [],
+                "cli_argument_count": 0,
+                "argparse_declarations": [],
+            }
+
+        cli_arguments: list[str] = []
+        value_index = 0
+        for declaration in declarations:
+            option_strings = [
+                str(value) for value in declaration["option_strings"]
+            ]
+            is_optional = bool(option_strings and option_strings[0].startswith("-"))
+            if is_optional and not declaration["required"]:
+                continue
+            if is_optional:
+                cli_arguments.append(self._preferred_option(option_strings))
+                if declaration["action"] in {"store_true", "store_false", "count"}:
+                    continue
+            cli_arguments.append(
+                self._cli_argument_sample(
+                    declaration,
+                    value_index,
+                    workspace,
+                    input_path,
+                    output_path,
+                )
+            )
+            value_index += 1
+
+        return cli_arguments, {
+            "source": "argparse_ast",
+            "cli_arguments": list(cli_arguments),
+            "cli_argument_count": len(cli_arguments),
+            "argparse_declarations": declarations,
+        }
+
+    @staticmethod
+    def _argparse_argument_declarations(tree: ast.AST) -> list[Dict[str, object]]:
+        declarations: list[tuple[int, Dict[str, object]]] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute) or node.func.attr != "add_argument":
+                continue
+            option_strings = [
+                argument.value
+                for argument in node.args
+                if isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+            ]
+            if not option_strings:
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
+            declarations.append(
+                (
+                    getattr(node, "lineno", 0),
+                    {
+                        "name": next(
+                            (value for value in option_strings if not value.startswith("-")),
+                            option_strings[0].lstrip("-").replace("-", "_"),
+                        ),
+                        "option_strings": option_strings,
+                        "required": RuntimeValidationLayer._literal_value(
+                            keywords.get("required"), False
+                        )
+                        is True,
+                        "nargs": RuntimeValidationLayer._literal_value(
+                            keywords.get("nargs"), None
+                        ),
+                        "action": RuntimeValidationLayer._literal_value(
+                            keywords.get("action"), ""
+                        ),
+                        "type": RuntimeValidationLayer._callable_name(keywords.get("type")),
+                    },
+                )
+            )
+        return [declaration for _, declaration in sorted(declarations, key=lambda item: item[0])]
+
+    def _cli_argument_sample(
+        self,
+        declaration: Dict[str, object],
+        value_index: int,
+        workspace: Path,
+        input_path: Path,
+        output_path: Path,
+    ) -> str:
+        name = str(declaration["name"]).lower()
+        type_name = str(declaration.get("type", ""))
+        if type_name == "int":
+            return "1"
+        if type_name == "float":
+            return "1.0"
+        if "base" in name:
+            path = workspace / "validator_base.json"
+            path.write_text(
+                '{"service":{"host":"localhost","ports":[80]},"enabled":true}',
+                encoding="utf-8",
+            )
+            return self._workspace_path(path, workspace)
+        if "override" in name:
+            path = workspace / "validator_override.json"
+            path.write_text(
+                '{"service":{"ports":[443]},"enabled":false}',
+                encoding="utf-8",
+            )
+            return self._workspace_path(path, workspace)
+        if "quarantine" in name:
+            suffix = ".jsonl" if "json" in name else ".csv"
+            return f"validator_quarantine{suffix}"
+        if any(token in name for token in ("output", "summary", "destination")):
+            return self._workspace_path(output_path, workspace)
+        if any(token in name for token in ("input", "source", "filename", "file")):
+            return self._workspace_path(input_path, workspace)
+        if "dir" in name:
+            directory = workspace / f"validator_{name}"
+            directory.mkdir(exist_ok=True)
+            return self._workspace_path(directory, workspace)
+        if value_index == 0:
+            return self._workspace_path(input_path, workspace)
+        if value_index == 1:
+            return self._workspace_path(output_path, workspace)
+        path = workspace / f"validator_argument_{value_index + 1}.txt"
+        path.write_text("validator\n", encoding="utf-8")
+        return self._workspace_path(path, workspace)
+
+    @staticmethod
+    def _preferred_option(option_strings: list[str]) -> str:
+        return next(
+            (value for value in option_strings if value.startswith("--")),
+            option_strings[0],
+        )
+
+    @staticmethod
+    def _literal_value(node: ast.AST | None, default: object) -> object:
+        if isinstance(node, ast.Constant):
+            return node.value
+        return default
+
+    @staticmethod
+    def _callable_name(node: ast.AST | None) -> str:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        return ""
 
     def _sample_input_content(self, build_spec: BuildSpec) -> str:
         if self._is_jsonl_input(build_spec):

@@ -225,6 +225,7 @@ class ValidatorStage:
         if {
             "syntax_error",
             "import_failure",
+            "entrypoint_execution_failure",
             "missing_entrypoint",
             "test_execution_failure",
             "superficial_stub",
