@@ -1,5 +1,10 @@
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
+import lenses.quantum as quantum_module
 from lenses.causal import CausalLens
 from lenses.formal import FormalLens
 from lenses.physical import PhysicalLens
@@ -40,6 +45,53 @@ def test_quantum_lens_exposes_runtime_status():
 
     assert lens.runtime_status() in {"ready", "degraded", "unavailable"}
     assert isinstance(lens.runtime_detail(), str)
+
+
+def test_quantum_lens_serializes_and_caches_native_probe(monkeypatch):
+    state_lock = threading.Lock()
+
+    class GuardedQuantumCircuit:
+        active = 0
+        constructions = 0
+
+        def __init__(self, width):
+            self.width = width
+            with state_lock:
+                type(self).active += 1
+                type(self).constructions += 1
+                overlapping = type(self).active > 1
+            time.sleep(0.01)
+            with state_lock:
+                type(self).active -= 1
+            if overlapping:
+                raise RuntimeError("concurrent native circuit construction")
+
+        def h(self, qubit):
+            return None
+
+        def cx(self, control, target):
+            return None
+
+        def depth(self):
+            return 2
+
+        def count_ops(self):
+            return {"h": 1, "cx": self.width - 1}
+
+    monkeypatch.setattr(
+        quantum_module,
+        "_load_quantum_circuit",
+        lambda: (GuardedQuantumCircuit, ""),
+    )
+    lens = QuantumLens(api_key="dummy_key_for_testing", execution_mode="local-only")
+    problem = "Analyze a quantum distributed parallel system."
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        results = list(executor.map(lens.frame, [problem] * 64))
+
+    assert len(results) == 64
+    assert GuardedQuantumCircuit.constructions == 1
+    assert all("depth 2" in result.framing for result in results)
 
 
 def test_lens_remote_only_requires_live_credentials():

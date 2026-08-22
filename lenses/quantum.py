@@ -1,5 +1,11 @@
+import threading
+
 from lenses.base import BaseLens
 from lenses.runtime import load_optional_module
+
+
+_QISKIT_PROBE_LOCK = threading.RLock()
+_QISKIT_PROBE_CACHE: dict[tuple[object, int], tuple[int, tuple[tuple[str, int], ...]]] = {}
 
 
 def _load_quantum_circuit():
@@ -7,9 +13,31 @@ def _load_quantum_circuit():
     quantum_circuit = getattr(qiskit, "QuantumCircuit", None) if qiskit is not None else None
     return quantum_circuit, import_error
 
+
+def _probe_quantum_circuit(quantum_circuit, width: int) -> tuple[int, dict[str, int]]:
+    cache_key = (quantum_circuit, width)
+    with _QISKIT_PROBE_LOCK:
+        cached = _QISKIT_PROBE_CACHE.get(cache_key)
+        if cached is None:
+            circuit = quantum_circuit(width)
+            circuit.h(0)
+            if width > 1:
+                circuit.cx(0, 1)
+            if width > 2:
+                circuit.cx(1, 2)
+            cached = (
+                int(circuit.depth()),
+                tuple(sorted((str(name), int(count)) for name, count in circuit.count_ops().items())),
+            )
+            _QISKIT_PROBE_CACHE[cache_key] = cached
+    depth, operations = cached
+    return depth, dict(operations)
+
+
 class QuantumLens(BaseLens):
     epistemic_tag = "quantum"
     lens_name = "Quantum Logic"
+    parallel_safe = False
     library_focus = "Qiskit"
     analysis_focus = "state ambiguity, branching alternatives, and non-classical interactions"
     keywords = (
@@ -45,16 +73,9 @@ class QuantumLens(BaseLens):
             return notes, [], blind_spots, 0.0
 
         width = 2 if len(problem) < 220 else 3
-        circuit = quantum_circuit(width)
-        circuit.h(0)
-        if width > 1:
-            circuit.cx(0, 1)
-        if width > 2:
-            circuit.cx(1, 2)
-
-        ops = circuit.count_ops()
+        depth, ops = _probe_quantum_circuit(quantum_circuit, width)
         notes = [
-            f"Qiskit constructed a {width}-qubit branching scaffold with depth {circuit.depth()} and ops {dict(ops)}."
+            f"Qiskit constructed a {width}-qubit branching scaffold with depth {depth} and ops {ops}."
         ]
         constraints = ["Keep multiple candidate states alive until cross-lens collapse is justified."]
         blind_spots = []
