@@ -289,3 +289,18 @@ def test_blind_case_selection_rejects_unknown_ids(tmp_path):
             run_case=lambda requirement: None,
             case_ids=["B999"],
         )
+
+
+def test_v7_post_fix_workflow_validates_frozen_receipt_not_current_baseline():
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "forge-blind-v7-replay.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "verify_baseline=False" in workflow
+    assert "verify_baseline=True" not in workflow
+    assert "baseline['baseline_sha256'] == bundle.baseline_sha256" in workflow
+    assert "baseline['baseline_file_count'] == bundle.baseline_file_count" in workflow
+    assert "--post-fix-replay" in workflow
