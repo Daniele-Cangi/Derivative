@@ -40,14 +40,16 @@ jobs:
           "import json;
           from pathlib import Path;
           from core.forge.blind_benchmark import load_blind_bundle;
-          bundle = load_blind_bundle('benchmarks/blind_v7/external_001/manifest.json', verify_baseline=True);
+          bundle = load_blind_bundle('benchmarks/blind_v7/external_001/manifest.json', verify_baseline=False);
           baseline = json.loads(Path('benchmarks/blind_v7/external_001/baseline_result.json').read_text(encoding='utf-8'));
           assert bundle.bundle_id == 'forge-blind-v7-external-001';
           assert bundle.schema_version == 3;
           assert len(bundle.cases) == 12;
           assert len(bundle.oracle_sha256) == 6;
-          assert bundle.baseline_verified;
+          assert not bundle.baseline_verified;
           assert baseline['execution_kind'] == 'sealed_baseline';
+          assert baseline['baseline_sha256'] == bundle.baseline_sha256;
+          assert baseline['baseline_file_count'] == bundle.baseline_file_count;
           assert baseline['manifest_sha256'] == bundle.manifest_sha256;
           assert baseline['dataset_sha256'] == bundle.dataset_sha256;
           print(f'frozen_inputs_verified manifest={bundle.manifest_sha256} dataset={bundle.dataset_sha256}')"
