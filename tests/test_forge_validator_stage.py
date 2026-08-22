@@ -1287,3 +1287,77 @@ def main(argv=None):
     entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
     assert entrypoint["failure_phase"] == "import"
     assert entrypoint["execution_status"]["error_type"] == "ModuleNotFoundError"
+
+
+def test_runtime_clean_system_exit_counts_as_completed_execution(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        "Build a Python CLI exposing main(argv) that includes tests.",
+        '''import sys
+
+
+def main(argv=None):
+    sys.exit(0)
+''',
+    )
+
+    assert result.passed is True
+    entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
+    assert entrypoint["executed"] is True
+    assert entrypoint["failure_phase"] == ""
+    assert entrypoint["execution_status"] == {
+        "phase": "completed",
+        "result": 0,
+    }
+
+
+def test_runtime_nonzero_system_exit_remains_execution_failure(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        "Build a Python CLI exposing main(argv) that includes tests.",
+        '''raise_code = 2
+
+
+def main(argv=None):
+    raise SystemExit(raise_code)
+''',
+    )
+
+    assert result.passed is False
+    assert result.evidence["failure_signatures"] == [
+        "entrypoint_execution_failure"
+    ]
+    entrypoint = result.evidence["entrypoint_results"]["src/cli.py"]
+    assert entrypoint["failure_phase"] == "execution"
+    assert entrypoint["execution_status"]["error_type"] == "SystemExit"
+
+
+def test_runtime_smoke_materializes_declared_directory_arguments(tmp_path):
+    result = _validate_runtime_cli_source(
+        tmp_path,
+        (
+            "Build a Python CLI exposing main(argv) that processes an input directory "
+            "and writes results to an output directory, and includes tests."
+        ),
+        '''import argparse
+from pathlib import Path
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_dir")
+    parser.add_argument("output_dir")
+    args = parser.parse_args(argv)
+    assert Path(args.input_dir).is_dir()
+    assert Path(args.output_dir).is_dir()
+    return 0
+''',
+    )
+
+    assert result.passed is True
+    smoke = result.evidence["entrypoint_results"]["src/cli.py"]["smoke_contract"]
+    assert smoke["cli_arguments"] == [
+        "validator_input_dir",
+        "validator_output_dir",
+    ]
+    assert smoke["cli_argument_count"] == 2

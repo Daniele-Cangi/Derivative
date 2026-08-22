@@ -288,6 +288,13 @@ class RuntimeValidationLayer(ValidationLayerBase):
             "    result = fn(*invoke_args)\n"
             "    write_status({'phase': 'completed', 'result': result if "
             "isinstance(result, (int, str, bool, float)) else str(result)})\n"
+            "except SystemExit as exc:\n"
+            "    if exc.code in (None, 0):\n"
+            "        write_status({'phase': 'completed', 'result': 0})\n"
+            "    else:\n"
+            "        write_status({'phase': 'execution', 'error_type': "
+            "type(exc).__name__, 'error': str(exc)})\n"
+            "        raise\n"
             "except BaseException as exc:\n"
             "    write_status({'phase': 'execution', 'error_type': "
             "type(exc).__name__, 'error': str(exc)})\n"
@@ -435,6 +442,10 @@ class RuntimeValidationLayer(ValidationLayerBase):
                 encoding="utf-8",
             )
             return self._workspace_path(path, workspace)
+        if "dir" in name:
+            directory = workspace / f"validator_{name}"
+            directory.mkdir(exist_ok=True)
+            return self._workspace_path(directory, workspace)
         if "quarantine" in name:
             suffix = ".jsonl" if "json" in name else ".csv"
             return f"validator_quarantine{suffix}"
@@ -442,10 +453,6 @@ class RuntimeValidationLayer(ValidationLayerBase):
             return self._workspace_path(output_path, workspace)
         if any(token in name for token in ("input", "source", "filename", "file")):
             return self._workspace_path(input_path, workspace)
-        if "dir" in name:
-            directory = workspace / f"validator_{name}"
-            directory.mkdir(exist_ok=True)
-            return self._workspace_path(directory, workspace)
         if value_index == 0:
             return self._workspace_path(input_path, workspace)
         if value_index == 1:
