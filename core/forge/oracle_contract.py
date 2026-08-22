@@ -212,20 +212,24 @@ _RETURN_NON_NONE = "return_non_none"
 _RETURN_NONE = "return_none"
 _FALLTHROUGH = "fallthrough"
 _RAISE = "raise"
-_LOOP_CONTROL = "loop_control"
+_BREAK = "break"
+_CONTINUE = "continue"
 
 
 def _returns_non_none_value(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> bool:
-    if isinstance(function, ast.FunctionDef) and _contains_yield(function):
-        return True
+    contains_yield = _contains_yield(function)
+    if contains_yield:
+        return isinstance(function, ast.FunctionDef)
     outcomes = _block_exit_outcomes(function.body)
     normal_outcomes = outcomes - {_RAISE}
     return not normal_outcomes or normal_outcomes == {_RETURN_NON_NONE}
 
 
-def _contains_yield(function: ast.FunctionDef) -> bool:
+def _contains_yield(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
     stack: list[ast.AST] = list(function.body)
     while stack:
         node = stack.pop()
@@ -263,6 +267,15 @@ def _statement_exit_outcomes(statement: ast.stmt) -> set[str]:
     if isinstance(statement, ast.Raise):
         return {_RAISE}
     if isinstance(statement, ast.If):
+        literal_truth = _literal_truth_value(statement.test)
+        if literal_truth is True:
+            return _block_exit_outcomes(statement.body)
+        if literal_truth is False:
+            return (
+                _block_exit_outcomes(statement.orelse)
+                if statement.orelse
+                else {_FALLTHROUGH}
+            )
         alternate = (
             _block_exit_outcomes(statement.orelse)
             if statement.orelse
@@ -275,16 +288,22 @@ def _statement_exit_outcomes(statement: ast.stmt) -> set[str]:
         return _block_exit_outcomes(statement.body)
     if isinstance(statement, (ast.For, ast.AsyncFor, ast.While)):
         body = _block_exit_outcomes(statement.body)
+        terminal = body - {_FALLTHROUGH, _BREAK, _CONTINUE}
+        if isinstance(statement, ast.While) and _literal_truth_value(
+            statement.test
+        ) is True:
+            if _BREAK in body:
+                terminal.add(_FALLTHROUGH)
+            return terminal
         alternate = (
             _block_exit_outcomes(statement.orelse)
             if statement.orelse
             else {_FALLTHROUGH}
         )
-        return (
-            {_FALLTHROUGH}
-            | (body - {_FALLTHROUGH, _LOOP_CONTROL})
-            | (alternate - {_LOOP_CONTROL})
-        )
+        terminal.update(alternate - {_BREAK, _CONTINUE})
+        if _BREAK in body:
+            terminal.add(_FALLTHROUGH)
+        return terminal
     if isinstance(statement, ast.Match):
         outcomes = {
             outcome
@@ -294,10 +313,17 @@ def _statement_exit_outcomes(statement: ast.stmt) -> set[str]:
         if not any(_is_wildcard_case(case) for case in statement.cases):
             outcomes.add(_FALLTHROUGH)
         return outcomes
-    if isinstance(statement, (ast.Break, ast.Continue)):
-        return {_LOOP_CONTROL}
+    if isinstance(statement, ast.Break):
+        return {_BREAK}
+    if isinstance(statement, ast.Continue):
+        return {_CONTINUE}
     return {_FALLTHROUGH}
 
+
+def _literal_truth_value(expression: ast.expr) -> bool | None:
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, bool):
+        return expression.value
+    return None
 
 def _try_exit_outcomes(statement: ast.Try) -> set[str]:
     body = _block_exit_outcomes(statement.body)
@@ -367,17 +393,41 @@ class _BindingUseVisitor(ast.NodeVisitor):
         return None
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
-        return None
+        self._visit_comprehension(node.generators, (node.elt,))
 
     def visit_SetComp(self, node: ast.SetComp) -> None:
-        return None
+        self._visit_comprehension(node.generators, (node.elt,))
 
     def visit_DictComp(self, node: ast.DictComp) -> None:
-        return None
+        self._visit_comprehension(node.generators, (node.key, node.value))
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
-        return None
+        self._visit_comprehension(node.generators, (node.elt,))
 
+    def _visit_comprehension(
+        self,
+        generators: list[ast.comprehension],
+        result_expressions: tuple[ast.expr, ...],
+    ) -> None:
+        shadowed = False
+        for generator in generators:
+            if not shadowed:
+                self.visit(generator.iter)
+            if _target_binds_name(generator.target, self.bound_name):
+                shadowed = True
+            if not shadowed:
+                for condition in generator.ifs:
+                    self.visit(condition)
+        if not shadowed:
+            for expression in result_expressions:
+                self.visit(expression)
+
+
+def _target_binds_name(target: ast.expr, bound_name: str) -> bool:
+    return any(
+        isinstance(node, ast.Name) and node.id == bound_name
+        for node in ast.walk(target)
+    )
 
 def _bound_attribute_is_used(
     function: ast.FunctionDef | ast.AsyncFunctionDef,

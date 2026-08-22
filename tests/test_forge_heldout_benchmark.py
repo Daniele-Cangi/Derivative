@@ -555,6 +555,7 @@ def test_oracle_sanity_distinguishes_sync_and_async_generator_enter():
         "class capture:\n"
         "    async def __aenter__(self):\n"
         "        yield self\n"
+        "        raise RuntimeError\n"
         "    async def __aexit__(self, *args):\n"
         "        pass\n\n"
         "async def test_output():\n"
@@ -618,6 +619,82 @@ def test_oracle_sanity_handles_raise_and_finally_exit_paths():
     assert len(incomplete) == 1
     assert incomplete[0].contract_id == "context_manager_binding"
     assert oracle_contract_mismatches(complete_finally_oracle, requirement) == []
+
+def test_oracle_sanity_models_literal_infinite_loop_exits():
+    returning_loop_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        while True:\n"
+        "            return self\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    breaking_loop_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        while True:\n"
+        "            if enabled:\n"
+        "                break\n"
+        "            return self\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    requirement = "Build an importable function and include tests."
+
+    assert oracle_contract_mismatches(returning_loop_oracle, requirement) == []
+    breaking = oracle_contract_mismatches(breaking_loop_oracle, requirement)
+    assert len(breaking) == 1
+    assert breaking[0].contract_id == "context_manager_binding"
+
+
+def test_oracle_sanity_tracks_comprehension_capture_and_shadowing():
+    capture_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        pass\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        values = [redir.stdout for item in items]\n"
+    )
+    iterable_capture_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        pass\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        values = [item for redir in redir.stdout]\n"
+    )
+    shadowed_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        pass\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        values = [redir.stdout for redir in items]\n"
+    )
+    requirement = "Build an importable function and include tests."
+
+    captured = oracle_contract_mismatches(capture_oracle, requirement)
+    iterable_captured = oracle_contract_mismatches(
+        iterable_capture_oracle, requirement
+    )
+    assert len(captured) == 1
+    assert captured[0].contract_id == "context_manager_binding"
+    assert len(iterable_captured) == 1
+    assert iterable_captured[0].contract_id == "context_manager_binding"
+    assert oracle_contract_mismatches(shadowed_oracle, requirement) == []
 
 def test_frozen_v7_001_oracle_is_rejected_by_context_binding_gate():
     dataset = (
