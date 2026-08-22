@@ -103,6 +103,7 @@ def _baseline() -> dict:
         "dataset_sha256": "dataset-sha",
         "baseline_sha256": "baseline-sha",
         "baseline_verified": True,
+        "baseline_file_count": 1,
         "observed_baseline_sha256": "baseline-sha",
         "observed_baseline_file_count": 1,
         "execution_kind": "sealed_baseline",
@@ -281,6 +282,32 @@ def test_adjudicated_replay_metrics_have_distinct_terminal_identity():
             baseline_report_sha256="replay-sha",
             adjudication_sha256="adjudication-sha",
             execution_kind="post_fix_replay",
+        )
+
+    incomplete = replay.copy()
+    incomplete.pop("observed_baseline_sha256")
+    with pytest.raises(ValueError, match="incomplete baseline observations"):
+        derive_adjudicated_metrics(
+            bundle=_bundle(),
+            baseline_report=incomplete,
+            adjudication_receipt=_adjudication(),
+            baseline_report_sha256="replay-sha",
+            adjudication_sha256="adjudication-sha",
+            execution_kind="post_fix_replay",
+            receipt_id="incomplete-replay",
+        )
+
+    tampered = replay.copy()
+    tampered["baseline_file_count"] = 2
+    with pytest.raises(ValueError, match="incomplete baseline observations"):
+        derive_adjudicated_metrics(
+            bundle=_bundle(),
+            baseline_report=tampered,
+            adjudication_receipt=_adjudication(),
+            baseline_report_sha256="replay-sha",
+            adjudication_sha256="adjudication-sha",
+            execution_kind="post_fix_replay",
+            receipt_id="tampered-replay",
         )
 
     with pytest.raises(ValueError, match="execution kind"):

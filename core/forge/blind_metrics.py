@@ -408,10 +408,23 @@ def _validate_source_links(
         raise ValueError(
             "Baseline report execution_kind does not match the metrics receipt."
         )
+    baseline_file_count = baseline.get("baseline_file_count")
+    observed_baseline_sha256 = baseline.get("observed_baseline_sha256")
+    observed_baseline_file_count = baseline.get("observed_baseline_file_count")
+    if (
+        type(baseline_file_count) is not int
+        or baseline_file_count != bundle.baseline_file_count
+        or not isinstance(observed_baseline_sha256, str)
+        or not observed_baseline_sha256.strip()
+        or type(observed_baseline_file_count) is not int
+        or observed_baseline_file_count < 0
+    ):
+        raise ValueError(
+            "Baseline report contains invalid or incomplete baseline observations."
+        )
     baseline_matches = (
-        baseline.get("observed_baseline_sha256") == bundle.baseline_sha256
-        and baseline.get("observed_baseline_file_count")
-        == bundle.baseline_file_count
+        observed_baseline_sha256 == bundle.baseline_sha256
+        and observed_baseline_file_count == bundle.baseline_file_count
     )
     if baseline.get("baseline_verified") is not baseline_matches:
         raise ValueError(
