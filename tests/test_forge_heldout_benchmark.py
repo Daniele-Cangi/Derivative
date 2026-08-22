@@ -414,12 +414,129 @@ def test_oracle_sanity_rejects_unusable_context_manager_binding(tmp_path):
             "enter_line": 2,
             "bound_name": "redir",
             "message": (
-                "capture.__enter__ does not return the object bound as redir, "
+                "capture.__enter__ does not return a non-None value on every path bound as redir, "
                 "but the oracle dereferences it"
             ),
         }
     ]
 
+
+def test_oracle_sanity_matches_sync_and_async_context_protocols(tmp_path):
+    oracle_path = tmp_path / "oracle.py"
+    oracle_path.write_text(
+        "class dual_capture:\n"
+        "    def __enter__(self):\n"
+        "        return self\n"
+        "    async def __aenter__(self):\n"
+        "        self.stdout = object()\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n"
+        "    async def __aexit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_sync():\n"
+        "    with dual_capture() as redir:\n"
+        "        assert redir.stdout\n\n"
+        "async def test_async():\n"
+        "    async with dual_capture() as redir:\n"
+        "        assert redir.stdout\n",
+        encoding="utf-8",
+    )
+    case = HeldoutBenchmarkCase(
+        "dual-context-protocol",
+        "Build an importable function and include tests.",
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(oracle_path)),
+    )
+
+    result = inspect_oracle_sanity(case)
+
+    assert result is not None
+    assert result.valid is False
+    assert len(result.sanity_failures) == 1
+    assert result.sanity_failures[0]["function"] == "test_async"
+    assert "dual_capture.__aenter__" in result.sanity_failures[0]["message"]
+
+
+def test_oracle_sanity_ignores_rebound_and_nested_shadowed_names(tmp_path):
+    oracle_path = tmp_path / "oracle.py"
+    oracle_path.write_text(
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        self.stdout = object()\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_rebound():\n"
+        "    with capture() as redir:\n"
+        "        pass\n"
+        "    redir = object()\n"
+        "    assert redir.stdout\n\n"
+        "def test_nested_shadow():\n"
+        "    with capture() as redir:\n"
+        "        pass\n"
+        "    def inspect(redir):\n"
+        "        return redir.stdout\n"
+        "    assert inspect\n",
+        encoding="utf-8",
+    )
+    case = HeldoutBenchmarkCase(
+        "rebound-context-name",
+        "Build an importable function and include tests.",
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(oracle_path)),
+    )
+
+    assert inspect_oracle_sanity(case) is None
+
+
+def test_oracle_sanity_requires_non_none_return_on_every_path(tmp_path):
+    partial_oracle = tmp_path / "partial_oracle.py"
+    partial_oracle.write_text(
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        if enabled:\n"
+        "            return self\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n",
+        encoding="utf-8",
+    )
+    complete_oracle = tmp_path / "complete_oracle.py"
+    complete_oracle.write_text(
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        if enabled:\n"
+        "            return self\n"
+        "        return self\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n",
+        encoding="utf-8",
+    )
+    partial_case = HeldoutBenchmarkCase(
+        "partial-context-return",
+        "Build an importable function and include tests.",
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(partial_oracle)),
+    )
+    complete_case = HeldoutBenchmarkCase(
+        "complete-context-return",
+        "Build an importable function and include tests.",
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(complete_oracle)),
+    )
+
+    partial_result = inspect_oracle_sanity(partial_case)
+
+    assert partial_result is not None
+    assert partial_result.valid is False
+    assert partial_result.sanity_failures[0]["contract_id"] == (
+        "context_manager_binding"
+    )
+    assert inspect_oracle_sanity(complete_case) is None
 
 def test_frozen_v7_001_oracle_is_rejected_by_context_binding_gate():
     dataset = (

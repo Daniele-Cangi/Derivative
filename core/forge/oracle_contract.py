@@ -148,25 +148,20 @@ def oracle_contract_mismatches(
 def context_manager_binding_mismatches(
     tree: ast.Module,
 ) -> list[OracleHarnessMismatch]:
-    invalid_context_managers: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
-    for class_node in (
-        node for node in tree.body if isinstance(node, ast.ClassDef)
-    ):
-        enter = next(
-            (
-                node
-                for node in class_node.body
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                and node.name in {"__enter__", "__aenter__"}
-            ),
-            None,
-        )
-        if enter is not None and not _returns_non_none_value(enter):
-            invalid_context_managers[class_node.name] = enter
+    invalid_context_managers: dict[
+        tuple[str, str], ast.FunctionDef | ast.AsyncFunctionDef
+    ] = {}
+    for class_node in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+        for enter in (
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in {"__enter__", "__aenter__"}
+        ):
+            if not _returns_non_none_value(enter):
+                invalid_context_managers[(class_node.name, enter.name)] = enter
 
     mismatches: list[OracleHarnessMismatch] = []
-    if not invalid_context_managers:
-        return mismatches
     for function in (
         node
         for node in tree.body
@@ -176,18 +171,25 @@ def context_manager_binding_mismatches(
         for node in ast.walk(function):
             if not isinstance(node, (ast.With, ast.AsyncWith)):
                 continue
+            enter_name = (
+                "__aenter__"
+                if isinstance(node, ast.AsyncWith)
+                else "__enter__"
+            )
             for item in node.items:
                 call = item.context_expr
                 bound = item.optional_vars
                 if (
                     not isinstance(call, ast.Call)
                     or not isinstance(call.func, ast.Name)
-                    or call.func.id not in invalid_context_managers
                     or not isinstance(bound, ast.Name)
-                    or not _bound_attribute_is_used(function, bound.id)
                 ):
                     continue
-                enter = invalid_context_managers[call.func.id]
+                enter = invalid_context_managers.get((call.func.id, enter_name))
+                if enter is None or not _bound_attribute_is_used(
+                    function, bound, bound.id
+                ):
+                    continue
                 mismatches.append(
                     OracleHarnessMismatch(
                         contract_id="context_manager_binding",
@@ -197,43 +199,184 @@ def context_manager_binding_mismatches(
                         enter_line=enter.lineno,
                         bound_name=bound.id,
                         message=(
-                            f"{call.func.id}.__enter__ does not return the object "
-                            f"bound as {bound.id}, but the oracle dereferences it"
+                            f"{call.func.id}.{enter.name} does not return a non-None "
+                            f"value on every path bound as {bound.id}, but the oracle "
+                            "dereferences it"
                         ),
                     )
                 )
     return mismatches
 
 
+_RETURN_NON_NONE = "return_non_none"
+_RETURN_NONE = "return_none"
+_FALLTHROUGH = "fallthrough"
+_RAISE = "raise"
+_LOOP_CONTROL = "loop_control"
+
+
 def _returns_non_none_value(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> bool:
-    return any(
-        _statement_returns_non_none_value(statement) for statement in function.body
-    )
+    outcomes = _block_exit_outcomes(function.body)
+    normal_outcomes = outcomes - {_RAISE}
+    return not normal_outcomes or normal_outcomes == {_RETURN_NON_NONE}
 
 
-def _statement_returns_non_none_value(statement: ast.stmt) -> bool:
+def _block_exit_outcomes(statements: list[ast.stmt]) -> set[str]:
+    outcomes = {_FALLTHROUGH}
+    for statement in statements:
+        next_outcomes: set[str] = set()
+        for outcome in outcomes:
+            if outcome == _FALLTHROUGH:
+                next_outcomes.update(_statement_exit_outcomes(statement))
+            else:
+                next_outcomes.add(outcome)
+        outcomes = next_outcomes
+    return outcomes
+
+
+def _statement_exit_outcomes(statement: ast.stmt) -> set[str]:
     if isinstance(statement, ast.Return):
-        return statement.value is not None and not (
-            isinstance(statement.value, ast.Constant) and statement.value.value is None
+        if statement.value is None or (
+            isinstance(statement.value, ast.Constant)
+            and statement.value.value is None
+        ):
+            return {_RETURN_NONE}
+        return {_RETURN_NON_NONE}
+    if isinstance(statement, ast.Raise):
+        return {_RAISE}
+    if isinstance(statement, ast.If):
+        alternate = (
+            _block_exit_outcomes(statement.orelse)
+            if statement.orelse
+            else {_FALLTHROUGH}
         )
-    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        return False
-    return any(
-        _statement_returns_non_none_value(child)
-        for child in ast.iter_child_nodes(statement)
-        if isinstance(child, ast.stmt)
+        return _block_exit_outcomes(statement.body) | alternate
+    if isinstance(statement, ast.Try):
+        return _try_exit_outcomes(statement)
+    if isinstance(statement, (ast.With, ast.AsyncWith)):
+        return _block_exit_outcomes(statement.body)
+    if isinstance(statement, (ast.For, ast.AsyncFor, ast.While)):
+        body = _block_exit_outcomes(statement.body)
+        alternate = (
+            _block_exit_outcomes(statement.orelse)
+            if statement.orelse
+            else {_FALLTHROUGH}
+        )
+        return (
+            {_FALLTHROUGH}
+            | (body - {_FALLTHROUGH, _LOOP_CONTROL})
+            | (alternate - {_LOOP_CONTROL})
+        )
+    if isinstance(statement, ast.Match):
+        outcomes = {
+            outcome
+            for case in statement.cases
+            for outcome in _block_exit_outcomes(case.body)
+        }
+        if not any(_is_wildcard_case(case) for case in statement.cases):
+            outcomes.add(_FALLTHROUGH)
+        return outcomes
+    if isinstance(statement, (ast.Break, ast.Continue)):
+        return {_LOOP_CONTROL}
+    return {_FALLTHROUGH}
+
+
+def _try_exit_outcomes(statement: ast.Try) -> set[str]:
+    body = _block_exit_outcomes(statement.body)
+    outcomes = body - {_FALLTHROUGH}
+    if _FALLTHROUGH in body:
+        outcomes.update(
+            _block_exit_outcomes(statement.orelse)
+            if statement.orelse
+            else {_FALLTHROUGH}
+        )
+    for handler in statement.handlers:
+        outcomes.update(_block_exit_outcomes(handler.body))
+    if not statement.finalbody:
+        return outcomes
+    final = _block_exit_outcomes(statement.finalbody)
+    final_outcomes = final - {_FALLTHROUGH}
+    if _FALLTHROUGH in final:
+        final_outcomes.update(outcomes)
+    return final_outcomes
+
+
+def _is_wildcard_case(case: ast.match_case) -> bool:
+    return (
+        isinstance(case.pattern, ast.MatchAs)
+        and case.pattern.pattern is None
+        and case.pattern.name is None
+        and case.guard is None
     )
 
 
-def _bound_attribute_is_used(function: ast.AST, bound_name: str) -> bool:
-    return any(
-        isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Name)
-        and node.value.id == bound_name
-        for node in ast.walk(function)
-    )
+class _BindingUseVisitor(ast.NodeVisitor):
+    def __init__(self, bound: ast.Name, bound_name: str):
+        self.bound = bound
+        self.bound_name = bound_name
+        self.anchor = _node_position(bound)
+        self.attribute_uses: list[tuple[int, int]] = []
+        self.rebindings: list[tuple[int, int]] = []
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if (
+            node is not self.bound
+            and node.id == self.bound_name
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and _node_position(node) > self.anchor
+        ):
+            self.rebindings.append(_node_position(node))
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == self.bound_name
+            and _node_position(node) > self.anchor
+        ):
+            self.attribute_uses.append(_node_position(node))
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return None
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return None
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return None
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return None
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        return None
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        return None
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        return None
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        return None
+
+
+def _bound_attribute_is_used(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    bound: ast.Name,
+    bound_name: str,
+) -> bool:
+    visitor = _BindingUseVisitor(bound, bound_name)
+    for statement in function.body:
+        visitor.visit(statement)
+    stop = min(visitor.rebindings, default=(float("inf"), float("inf")))
+    return any(position < stop for position in visitor.attribute_uses)
+
+
+def _node_position(node: ast.AST) -> tuple[int, int]:
+    return (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
 
 
 def explicit_pattern_fixture_mismatches(
