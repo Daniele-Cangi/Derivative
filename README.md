@@ -58,11 +58,13 @@ Host credentials are never inherited by generated-code sandboxes.
 
 ## Terminal Results
 
-Forge always terminates with one explicit status:
+A normal build reaches one of three terminal build statuses:
 
 - **`verified`**: all runtime, contract, and adversarial gates passed; packaging is allowed.
 - **`validation_failed`**: a candidate exists, but its evidence is insufficient; packaging is blocked.
 - **`infeasible_proven`**: stated constraints are contradictory and an evidence-backed certificate was emitted.
+
+Operational preflight can stop earlier with explicit errors such as `sandbox_unavailable` or `sandbox_policy_violation`; these do not masquerade as build outcomes.
 
 Failed and infeasible runs preserve their typed artifacts. Only `verified` builds enter `generated_artifacts/forge_packages/`.
 
@@ -150,7 +152,7 @@ Blind evidence is immutable and reported without retrospective score repair:
 
 - **Blind V5** established the evidence-closure protocol and remains a regression corpus.
 - **Blind V6** exposed label and legacy public-import ambiguities; undefined external metrics remain `null`.
-- **Blind V7** is the first schema-v3 bundle with typed public import contracts. Its frozen baseline reported external `Verified@1 = 0.000` and raw external false-verified rate `0.000`.
+- **Blind V7** is the first schema-v3 bundle with typed public import contracts. Its frozen baseline reported external Verified@1 at 0/6. The legacy raw false-verified field was `0.000` with no observed verified artifact; the schema-v3 adjudicated value is therefore `null`, not an asserted 0/0 rate.
 - A targeted V7 post-fix replay remained `0/5` externally accepted and exposed one invalid frozen oracle plus four genuine candidate-generation failures. The raw receipt is unchanged; oracle preflight now rejects the broken harness before spending model tokens.
 
 These results show a strong fail-closed architecture, not completed generality. Known blind cases are regression evidence after first execution; future generality must be measured on a newly frozen distribution.

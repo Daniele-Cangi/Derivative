@@ -9,8 +9,9 @@ This ledger separates immutable blind evidence from regression work. It is inten
 - A replay against a known bundle is labeled `post_fix_replay`, never a new blind score.
 - Internal `verified` and external oracle acceptance are separate facts.
 - Invalid oracles are reported as `oracle_invalid`, excluded with evidence, and never converted into passes.
-- Undefined rates are `null`, not synthetic zeroes.
-- Every rate reports an explicit numerator and denominator.
+- Schema-v3 adjudicated rates store `numerator`, `denominator`, and `value`; `value` is `null` when the denominator is zero.
+- Legacy raw summaries retain their historical scalar schema, including `0.0` for some empty denominators. The ledger labels those fields as legacy and states the zero denominator instead of treating them as measured zero rates.
+- Rates in this ledger include explicit numerators and denominators whenever the source receipt defines the population.
 - Model cost is reported only when pricing metadata was configured for that run.
 
 ## Metric Definitions
@@ -40,9 +41,10 @@ Blind V5 was frozen before first execution and established the current evidence-
 Immutable baseline:
 
 - 12 cases;
-- raw status accuracy: 4/12 (`0.417`);
-- external false-verified rate: `1.000`;
-- infeasibility detection: `0.333`;
+- raw report `status_accuracy`: 4/12 (`0.417`);
+- external Verified@1: 0/6 (`0.000`);
+- external false-verified rate: 1/1 (`1.000`);
+- infeasibility detection: 1/3 (`0.333`);
 - model tokens: `680,399`;
 - estimated model cost: `$1.83934`.
 
@@ -72,10 +74,10 @@ Blind V6 was independently produced, frozen, and executed once against its seale
 Immutable raw report:
 
 - 12 cases;
-- status accuracy: `0.333`;
-- external Verified@1: `0.000`;
-- external false-verified rate: `1.000`;
-- infeasibility detection: `0.000`;
+- raw report `status_accuracy`: 4/12 (`0.333`);
+- external Verified@1: 0/6 (`0.000`);
+- external false-verified rate: 2/2 (`1.000`);
+- infeasibility detection: 0/3 (`0.000`);
 - model tokens: `743,949`;
 - estimated model cost: `$1.885866`.
 
@@ -113,11 +115,12 @@ The [first baseline workflow](https://github.com/Daniele-Cangi/Derivative/action
 Raw results:
 
 - claimed status matches: 4/12;
-- status accuracy: `0.333`;
-- external Verified@1: `0.000`;
-- success after repair: `0.000`;
-- external false-verified rate: `0.000`;
-- infeasibility detection: `0.333`;
+- raw report `status_accuracy`: 4/12 (`0.333`);
+- external Verified@1: 0/6 (`0.000`);
+- success after repair: 0/6 (`0.000`);
+- legacy raw external false-verified field: `0.000` with 0 observed verified artifacts and denominator 0;
+- schema-v3 adjudicated external false-verified value: `null` (0/0);
+- infeasibility detection: 1/3 (`0.333`);
 - model requests: `54`;
 - model tokens: `761,049`;
 - repairs: `17`;
@@ -138,11 +141,11 @@ The first full post-fix replay remained labeled `post_fix_replay` with `baseline
 Raw results:
 
 - case passes: 3/12;
-- raw status accuracy: `0.500`;
-- external Verified@1: `0.000`;
-- oracle pass rate: `0.000`;
-- external false-verified rate: `1.000`;
-- infeasibility detection: `0.333`.
+- raw status matches: 6/12 (`0.500`);
+- external Verified@1: 0/6 (`0.000`);
+- oracle pass rate: 0/3 (`0.000`);
+- external false-verified rate: 3/3 (`1.000`);
+- infeasibility detection: 1/3 (`0.333`).
 
 The adjudicated replay includes 11 definitive cases and reports status accuracy 5/11, external Verified@1 0/5, success after repair 0/5, oracle pass 0/3, and external false verification 3/3.
 
@@ -155,7 +158,8 @@ The [targeted workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs
 Raw results:
 
 - externally accepted artifacts: 0/5;
-- external false-verified rate: `1.000`;
+- external Verified@1: 0/5 (`0.000`);
+- external false-verified rate: 1/1 (`1.000`);
 - model requests: `32`;
 - model tokens: `636,018`;
 - repairs: `9`;
@@ -195,9 +199,9 @@ Additional SHA-256 values:
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
 
-The original V2 run scored 6/10 with external false-verified rate 0.0. Later targeted runs are regression evidence, including a 3/3 rerun of previously failing feasible cases; that result is not reported as a fresh blind 10/10.
+The original V2 run scored 6/10. Its legacy summary records external false-verified rate `0.0` without a persisted denominator, so this ledger does not reinterpret it as a schema-v3 rate. Later targeted runs are regression evidence, including a 3/3 rerun of previously failing feasible cases; that result is not reported as a fresh blind 10/10.
 
-V3 exposed requirement extraction, domain routing, semantic test alignment, public module preservation, ambiguity handling, and contradiction-detection gaps. Successive known-case replays improved mechanisms but also exposed false-verification and frozen-oracle defects. The final recorded hybrid replay matched all 12 terminal statuses internally but externally passed 9/12, with external false-verified rate 0.500. Three failures required oracle adjudication rather than silent score adjustment.
+V3 exposed requirement extraction, domain routing, semantic test alignment, public module preservation, ambiguity handling, and contradiction-detection gaps. Successive known-case replays improved mechanisms but also exposed false-verification and frozen-oracle defects. The final recorded hybrid replay matched all 12 terminal statuses internally but externally passed 9/12, with external false-verified rate 3/6 (`0.500`). Three failures required oracle adjudication rather than silent score adjustment.
 
 The V3 manifest remains sealed to its original implementation digest. Every later report keeps `baseline_verified=false`.
 
