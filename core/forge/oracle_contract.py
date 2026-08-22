@@ -67,17 +67,34 @@ class OraclePatternMismatch:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class OracleHarnessMismatch:
+    contract_id: str
+    function: str
+    class_name: str
+    context_line: int
+    enter_line: int
+    bound_name: str
+    message: str
+
+    def to_evidence(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def oracle_contract_mismatches(
     source: str,
     requirement: str,
-) -> list[OracleContractMismatch | OraclePatternMismatch]:
+) -> list[OracleContractMismatch | OraclePatternMismatch | OracleHarnessMismatch]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return []
 
-    mismatches: list[OracleContractMismatch | OraclePatternMismatch] = [
-        *explicit_pattern_fixture_mismatches(source, requirement, tree=tree)
+    mismatches: list[
+        OracleContractMismatch | OraclePatternMismatch | OracleHarnessMismatch
+    ] = [
+        *explicit_pattern_fixture_mismatches(source, requirement, tree=tree),
+        *context_manager_binding_mismatches(tree),
     ]
     cli_name = _declared_cli_name(requirement)
     if (
@@ -126,6 +143,455 @@ def oracle_contract_mismatches(
                 )
             )
     return mismatches
+
+
+def context_manager_binding_mismatches(
+    tree: ast.Module,
+) -> list[OracleHarnessMismatch]:
+    module_classes = {
+        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    mismatches: list[OracleHarnessMismatch] = []
+    for function in (
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    ):
+        local_classes = _local_class_definitions(function)
+        for node in ast.walk(function):
+            if not isinstance(node, (ast.With, ast.AsyncWith)):
+                continue
+            enter_name = (
+                "__aenter__"
+                if isinstance(node, ast.AsyncWith)
+                else "__enter__"
+            )
+            for item in node.items:
+                call = item.context_expr
+                bound = item.optional_vars
+                if (
+                    not isinstance(call, ast.Call)
+                    or not isinstance(call.func, ast.Name)
+                    or not isinstance(bound, ast.Name)
+                    or not _bound_attribute_is_used(function, bound, bound.id)
+                ):
+                    continue
+                class_node, class_available = _resolve_context_manager_class(
+                    call.func.id,
+                    node,
+                    function,
+                    module_classes,
+                    local_classes,
+                )
+                if not class_available:
+                    enter_line = (
+                        class_node.lineno if class_node is not None else node.lineno
+                    )
+                    mismatches.append(
+                        OracleHarnessMismatch(
+                            contract_id="context_manager_binding",
+                            function=function.name,
+                            class_name=call.func.id,
+                            context_line=node.lineno,
+                            enter_line=enter_line,
+                            bound_name=bound.id,
+                            message=(
+                                f"local class {call.func.id} is not guaranteed to be "
+                                f"bound before the context use assigned to {bound.id}"
+                            ),
+                        )
+                    )
+                    continue
+                enter, protocol_matches = _context_enter_method(
+                    class_node, enter_name
+                )
+                if enter is None or (
+                    protocol_matches and _returns_non_none_value(enter)
+                ):
+                    continue
+                if protocol_matches:
+                    message = (
+                        f"{call.func.id}.{enter.name} does not return a non-None "
+                        f"value on every path bound as {bound.id}, but the oracle "
+                        "dereferences it"
+                    )
+                else:
+                    message = (
+                        f"{call.func.id}.{enter.name} uses an incompatible sync/async "
+                        f"declaration for the context bound as {bound.id}"
+                    )
+                mismatches.append(
+                    OracleHarnessMismatch(
+                        contract_id="context_manager_binding",
+                        function=function.name,
+                        class_name=call.func.id,
+                        context_line=node.lineno,
+                        enter_line=enter.lineno,
+                        bound_name=bound.id,
+                        message=message,
+                    )
+                )
+    return mismatches
+
+
+def _local_class_definitions(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.ClassDef]:
+    classes: list[ast.ClassDef] = []
+    stack: list[ast.AST] = list(reversed(function.body))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.ClassDef):
+            classes.append(node)
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        stack.extend(reversed(list(ast.iter_child_nodes(node))))
+    return classes
+
+
+def _resolve_context_manager_class(
+    class_name: str,
+    context: ast.With | ast.AsyncWith,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    module_classes: dict[str, ast.ClassDef],
+    local_classes: list[ast.ClassDef],
+) -> tuple[ast.ClassDef | None, bool]:
+    matching_local = [node for node in local_classes if node.name == class_name]
+    available_local = [
+        node
+        for node in matching_local
+        if _class_executes_before_context(function, node, context)
+    ]
+    if available_local:
+        return max(available_local, key=_node_position), True
+    if matching_local:
+        return max(matching_local, key=_node_position), False
+    return module_classes.get(class_name), True
+
+
+def _class_executes_before_context(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    class_node: ast.ClassDef,
+    context: ast.With | ast.AsyncWith,
+) -> bool:
+    class_path = _statement_path(function.body, class_node)
+    context_path = _statement_path(function.body, context)
+    if class_path is None or context_path is None:
+        return False
+    for depth, (class_block, class_index) in enumerate(class_path):
+        if depth >= len(context_path):
+            return False
+        context_block, context_index = context_path[depth]
+        if class_block is not context_block:
+            return False
+        if class_index == context_index:
+            continue
+        return class_index < context_index and depth == len(class_path) - 1
+    return False
+
+
+def _statement_path(
+    statements: list[ast.stmt],
+    target: ast.stmt,
+) -> list[tuple[list[ast.stmt], int]] | None:
+    for index, statement in enumerate(statements):
+        if statement is target:
+            return [(statements, index)]
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for child_block in _child_statement_blocks(statement):
+            child_path = _statement_path(child_block, target)
+            if child_path is not None:
+                return [(statements, index), *child_path]
+    return None
+
+
+def _child_statement_blocks(statement: ast.stmt) -> list[list[ast.stmt]]:
+    blocks: list[list[ast.stmt]] = []
+    for attribute in ("body", "orelse", "finalbody"):
+        value = getattr(statement, attribute, None)
+        if isinstance(value, list) and all(isinstance(node, ast.stmt) for node in value):
+            blocks.append(value)
+    for handler in getattr(statement, "handlers", ()):
+        blocks.append(handler.body)
+    for case in getattr(statement, "cases", ()):
+        blocks.append(case.body)
+    return blocks
+
+
+def _context_enter_method(
+    class_node: ast.ClassDef | None,
+    enter_name: str,
+) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef | None, bool]:
+    if class_node is None:
+        return None, False
+    method = next(
+        (
+            node
+            for node in class_node.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == enter_name
+        ),
+        None,
+    )
+    if method is None:
+        return None, False
+    expected_type = (
+        ast.AsyncFunctionDef if enter_name == "__aenter__" else ast.FunctionDef
+    )
+    return method, isinstance(method, expected_type)
+
+_RETURN_NON_NONE = "return_non_none"
+_RETURN_NONE = "return_none"
+_FALLTHROUGH = "fallthrough"
+_RAISE = "raise"
+_BREAK = "break"
+_CONTINUE = "continue"
+
+
+def _returns_non_none_value(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    contains_yield = _contains_yield(function)
+    if contains_yield:
+        return isinstance(function, ast.FunctionDef)
+    outcomes = _block_exit_outcomes(function.body)
+    normal_outcomes = outcomes - {_RAISE}
+    return not normal_outcomes or normal_outcomes == {_RETURN_NON_NONE}
+
+
+def _contains_yield(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    stack: list[ast.AST] = list(function.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(
+            node,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda),
+        ):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+    return False
+
+def _block_exit_outcomes(statements: list[ast.stmt]) -> set[str]:
+    outcomes = {_FALLTHROUGH}
+    for statement in statements:
+        next_outcomes: set[str] = set()
+        for outcome in outcomes:
+            if outcome == _FALLTHROUGH:
+                next_outcomes.update(_statement_exit_outcomes(statement))
+            else:
+                next_outcomes.add(outcome)
+        outcomes = next_outcomes
+    return outcomes
+
+
+def _statement_exit_outcomes(statement: ast.stmt) -> set[str]:
+    if isinstance(statement, ast.Return):
+        if statement.value is None or (
+            isinstance(statement.value, ast.Constant)
+            and statement.value.value is None
+        ):
+            return {_RETURN_NONE}
+        return {_RETURN_NON_NONE}
+    if isinstance(statement, ast.Raise):
+        return {_RAISE}
+    if isinstance(statement, ast.If):
+        literal_truth = _literal_truth_value(statement.test)
+        if literal_truth is True:
+            return _block_exit_outcomes(statement.body)
+        if literal_truth is False:
+            return (
+                _block_exit_outcomes(statement.orelse)
+                if statement.orelse
+                else {_FALLTHROUGH}
+            )
+        alternate = (
+            _block_exit_outcomes(statement.orelse)
+            if statement.orelse
+            else {_FALLTHROUGH}
+        )
+        return _block_exit_outcomes(statement.body) | alternate
+    if isinstance(statement, ast.Try):
+        return _try_exit_outcomes(statement)
+    if isinstance(statement, (ast.With, ast.AsyncWith)):
+        return _block_exit_outcomes(statement.body)
+    if isinstance(statement, (ast.For, ast.AsyncFor, ast.While)):
+        body = _block_exit_outcomes(statement.body)
+        terminal = body - {_FALLTHROUGH, _BREAK, _CONTINUE}
+        if isinstance(statement, ast.While) and _literal_truth_value(
+            statement.test
+        ) is True:
+            if _BREAK in body:
+                terminal.add(_FALLTHROUGH)
+            return terminal
+        alternate = (
+            _block_exit_outcomes(statement.orelse)
+            if statement.orelse
+            else {_FALLTHROUGH}
+        )
+        terminal.update(alternate - {_BREAK, _CONTINUE})
+        if _BREAK in body:
+            terminal.add(_FALLTHROUGH)
+        return terminal
+    if isinstance(statement, ast.Match):
+        outcomes = {
+            outcome
+            for case in statement.cases
+            for outcome in _block_exit_outcomes(case.body)
+        }
+        if not any(_is_wildcard_case(case) for case in statement.cases):
+            outcomes.add(_FALLTHROUGH)
+        return outcomes
+    if isinstance(statement, ast.Break):
+        return {_BREAK}
+    if isinstance(statement, ast.Continue):
+        return {_CONTINUE}
+    return {_FALLTHROUGH}
+
+
+def _literal_truth_value(expression: ast.expr) -> bool | None:
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, bool):
+        return expression.value
+    return None
+
+def _try_exit_outcomes(statement: ast.Try) -> set[str]:
+    body = _block_exit_outcomes(statement.body)
+    outcomes = body - {_FALLTHROUGH}
+    if _FALLTHROUGH in body:
+        outcomes.update(
+            _block_exit_outcomes(statement.orelse)
+            if statement.orelse
+            else {_FALLTHROUGH}
+        )
+    for handler in statement.handlers:
+        outcomes.update(_block_exit_outcomes(handler.body))
+    if not statement.finalbody:
+        return outcomes
+    final = _block_exit_outcomes(statement.finalbody)
+    final_outcomes = final - {_FALLTHROUGH}
+    if _FALLTHROUGH in final:
+        final_outcomes.update(outcomes)
+    return final_outcomes
+
+
+def _is_wildcard_case(case: ast.match_case) -> bool:
+    return (
+        isinstance(case.pattern, ast.MatchAs)
+        and case.pattern.pattern is None
+        and case.pattern.name is None
+        and case.guard is None
+    )
+
+
+class _BindingUseVisitor(ast.NodeVisitor):
+    def __init__(self, bound: ast.Name, bound_name: str):
+        self.bound = bound
+        self.bound_name = bound_name
+        self.anchor = _node_position(bound)
+        self.attribute_uses: list[tuple[int, int]] = []
+        self.rebindings: list[tuple[int, int]] = []
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if (
+            node is not self.bound
+            and node.id == self.bound_name
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and _node_position(node) > self.anchor
+        ):
+            self.rebindings.append(_node_position(node))
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == self.bound_name
+            and _node_position(node) > self.anchor
+        ):
+            self.attribute_uses.append(_node_position(node))
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        if (
+            isinstance(node.value, ast.Name)
+            and node.value.id == self.bound_name
+            and _node_position(node) > self.anchor
+        ):
+            self.attribute_uses.append(_node_position(node))
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return None
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return None
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return None
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return None
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node.generators, (node.key, node.value))
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._visit_comprehension(node.generators, (node.elt,))
+
+    def _visit_comprehension(
+        self,
+        generators: list[ast.comprehension],
+        result_expressions: tuple[ast.expr, ...],
+    ) -> None:
+        shadowed = False
+        for generator in generators:
+            if not shadowed:
+                self.visit(generator.iter)
+            if _target_binds_name(generator.target, self.bound_name):
+                shadowed = True
+            elif not shadowed:
+                self.visit(generator.target)
+            if not shadowed:
+                for condition in generator.ifs:
+                    self.visit(condition)
+        if not shadowed:
+            for expression in result_expressions:
+                self.visit(expression)
+
+
+def _target_binds_name(target: ast.expr, bound_name: str) -> bool:
+    return any(
+        isinstance(node, ast.Name)
+        and node.id == bound_name
+        and isinstance(node.ctx, ast.Store)
+        for node in ast.walk(target)
+    )
+
+
+def _bound_attribute_is_used(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    bound: ast.Name,
+    bound_name: str,
+) -> bool:
+    visitor = _BindingUseVisitor(bound, bound_name)
+    for statement in function.body:
+        visitor.visit(statement)
+    stop = min(visitor.rebindings, default=(float("inf"), float("inf")))
+    return any(position < stop for position in visitor.attribute_uses)
+
+
+def _node_position(node: ast.AST) -> tuple[int, int]:
+    return (getattr(node, "lineno", 0), getattr(node, "col_offset", 0))
 
 
 def explicit_pattern_fixture_mismatches(
