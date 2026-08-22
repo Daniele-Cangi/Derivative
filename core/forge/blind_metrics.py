@@ -82,6 +82,10 @@ def derive_adjudicated_metrics(
         )
     if receipt_id is not None and not receipt_id.strip():
         raise ValueError("Adjudicated metrics receipt_id cannot be blank.")
+    if execution_kind == "post_fix_replay" and receipt_id is None:
+        raise ValueError(
+            "Post-fix replay metrics require an explicit receipt_id."
+        )
     _validate_source_links(
         bundle,
         baseline_report,
@@ -229,7 +233,9 @@ def derive_adjudicated_metrics(
     }
     timestamp = created_at or datetime.now(timezone.utc).isoformat()
     resolved_receipt_id = (
-        receipt_id or f"{bundle.bundle_id}-adjudicated-definitive-metrics"
+        receipt_id.strip()
+        if receipt_id is not None
+        else f"{bundle.bundle_id}-adjudicated-definitive-metrics"
     )
     return {
         "schema_version": 1,

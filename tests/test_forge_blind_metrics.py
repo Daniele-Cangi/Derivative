@@ -273,6 +273,16 @@ def test_adjudicated_replay_metrics_have_distinct_terminal_identity():
     assert receipt["receipt_id"] == "metrics-test-post-fix-replay-001"
     assert receipt["execution_kind"] == "post_fix_replay"
 
+    with pytest.raises(ValueError, match="explicit receipt_id"):
+        derive_adjudicated_metrics(
+            bundle=_bundle(),
+            baseline_report=replay,
+            adjudication_receipt=_adjudication(),
+            baseline_report_sha256="replay-sha",
+            adjudication_sha256="adjudication-sha",
+            execution_kind="post_fix_replay",
+        )
+
     with pytest.raises(ValueError, match="execution kind"):
         derive_adjudicated_metrics(
             bundle=_bundle(),
