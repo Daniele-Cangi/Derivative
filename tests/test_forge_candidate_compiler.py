@@ -120,12 +120,7 @@ class _SyntaxRegressionKernel:
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         return {
             "status": "candidate",
-            "files": {
-                path: _BROKEN_SOURCE
-                if path == "src/cli.py"
-                else _test_source(path)
-                for path in target_files
-            },
+            "files": {path: _BROKEN_SOURCE for path in target_files},
         }
 
 
@@ -135,10 +130,12 @@ class _RegressingThenRecoveringKernel:
     def __init__(self):
         self.calls = 0
         self.context_history = []
+        self.target_history = []
 
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         self.calls += 1
         self.context_history.append(copy.deepcopy(repair_context))
+        self.target_history.append(sorted(target_files))
         if self.calls == 1:
             files = {
                 path: "# regressed source state\n"
@@ -422,21 +419,29 @@ def test_candidate_compiler_rejects_syntax_regression_from_semantic_baseline(
     _, plan, artifact, validation = json_merge_case
 
     def staged_preflight(files, tests):
-        if files.get("src/cli.py") == _BROKEN_SOURCE:
+        broken_paths = sorted(
+            path for path, content in files.items() if content == _BROKEN_SOURCE
+        )
+        if broken_paths:
             return {
                 "ran": False,
                 "passed": False,
                 "phase": "syntax",
-                "failed_paths": ["src/cli.py"],
-                "source_failed_paths": ["src/cli.py"],
-                "test_failed_paths": [],
+                "failed_paths": broken_paths,
+                "source_failed_paths": [
+                    path for path in broken_paths if path.startswith("src/")
+                ],
+                "test_failed_paths": [
+                    path for path in broken_paths if path.startswith("tests/")
+                ],
                 "failures": [
                     {
-                        "path": "src/cli.py",
+                        "path": path,
                         "kind": "syntax_error",
                         "line": 1,
                         "message": "invalid syntax",
                     }
+                    for path in broken_paths
                 ],
             }
         failed_path = artifact.test_paths[0]
@@ -508,19 +513,21 @@ def test_candidate_compiler_restores_safe_state_before_later_correction(
     _, plan, artifact, validation = json_merge_case
     kernel = _RegressingThenRecoveringKernel()
     calls = 0
-    failed_path = artifact.test_paths[0]
+    baseline_failed_path = artifact.test_paths[0]
+    rejected_failed_path = artifact.test_paths[1]
+    assert baseline_failed_path != rejected_failed_path
 
-    def semantic_failure(message):
+    def semantic_failure(path, message):
         return {
             "ran": True,
             "passed": False,
             "phase": "semantic_contract",
-            "failed_paths": [failed_path],
+            "failed_paths": [path],
             "source_failed_paths": [],
-            "test_failed_paths": [failed_path],
+            "test_failed_paths": [path],
             "failures": [
                 {
-                    "path": failed_path,
+                    "path": path,
                     "kind": "semantic_contract_failure",
                     "message": message,
                 }
@@ -531,18 +538,27 @@ def test_candidate_compiler_restores_safe_state_before_later_correction(
         nonlocal calls
         calls += 1
         if calls == 1:
-            return semantic_failure("baseline semantic evidence is incomplete")
+            return semantic_failure(
+                baseline_failed_path,
+                "baseline semantic evidence is incomplete",
+            )
         if calls == 2:
-            result = semantic_failure("candidate semantic evidence regressed")
+            result = semantic_failure(
+                rejected_failed_path,
+                "candidate semantic evidence regressed",
+            )
             result["failures"].append(
                 {
-                    "path": failed_path,
+                    "path": rejected_failed_path,
                     "kind": "requirement_assertion_evidence_failure",
                     "message": "candidate introduced a second semantic failure",
                 }
             )
             return result
-        return semantic_failure("recovered baseline-quality semantic evidence")
+        return semantic_failure(
+            baseline_failed_path,
+            "recovered baseline-quality semantic evidence",
+        )
 
     compiler = SubstrateCandidateCompiler(
         substrate=_StaticSubstrate(),
@@ -568,6 +584,10 @@ def test_candidate_compiler_restores_safe_state_before_later_correction(
     assert first_attempt["working_state_restored"] is True
     assert second_attempt["regresses_from_baseline"] is False
     assert second_attempt["selected_for_handoff"] is True
+    assert kernel.target_history[1] == [baseline_failed_path]
+    assert kernel.context_history[1]["preflight_test_execution"]["failed_paths"] == [
+        baseline_failed_path
+    ]
     assert candidate.files["src/cli.py"] == baseline_files["src/cli.py"]
     assert candidate.files["src/cli.py"] != "# regressed source state\n"
     assert kernel.context_history[1]["preserved_candidate_files"]["src/cli.py"] == (
