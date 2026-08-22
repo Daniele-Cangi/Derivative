@@ -28,11 +28,23 @@ class CognitiveSubstrate:
         successful_lenses: set[str] = set()
         self.last_errors = []
         
-        # Parallel execution of lenses
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(self.lenses))) as executor:
+        serial_lenses = [lens for lens in self.lenses if not lens.parallel_safe]
+        parallel_lenses = [lens for lens in self.lenses if lens.parallel_safe]
+
+        for lens in serial_lenses:
+            try:
+                result = self._apply_lens(lens, problem)
+            except Exception as exc:
+                self.last_errors.append(f"{lens.lens_name}: {exc}")
+                result = None
+            if result:
+                framings.append(result)
+                successful_lenses.add(result.lens_name)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(parallel_lenses))) as executor:
             future_to_lens = {
                 executor.submit(self._apply_lens, lens, problem): lens 
-                for lens in self.lenses
+                for lens in parallel_lenses
             }
             
             for future in concurrent.futures.as_completed(future_to_lens):

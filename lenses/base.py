@@ -27,6 +27,7 @@ class BaseLens:
     """Base class for all cognitive lenses."""
     epistemic_tag = "unknown"
     lens_name = "BaseLens"
+    parallel_safe = True
     library_focus = "None"
     analysis_focus = "general system behavior"
     keywords: tuple[str, ...] = ()
