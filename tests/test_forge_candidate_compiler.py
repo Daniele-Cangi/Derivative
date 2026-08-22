@@ -111,6 +111,60 @@ class _MonotonicCorrectionKernel(_JsonMergeKernel):
         )
 
 
+_BROKEN_SOURCE = "def broken(:\n"
+
+
+class _SyntaxRegressionKernel:
+    use_live_model = True
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        return {
+            "status": "candidate",
+            "files": {path: _BROKEN_SOURCE for path in target_files},
+        }
+
+
+class _RegressingThenRecoveringKernel:
+    use_live_model = True
+
+    def __init__(self):
+        self.calls = 0
+        self.context_history = []
+        self.target_history = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        self.calls += 1
+        self.context_history.append(copy.deepcopy(repair_context))
+        self.target_history.append(sorted(target_files))
+        if self.calls == 1:
+            files = {
+                path: "# regressed source state\n"
+                if path == "src/cli.py"
+                else _test_source(path)
+                for path in target_files
+            }
+        else:
+            files = {path: _test_source(path) for path in target_files}
+        return {"status": "candidate", "files": files}
+
+
+class _OmissionRecoveryKernel(_JsonMergeKernel):
+    def __init__(self):
+        self.calls = 0
+        self.target_history = []
+
+    def propose_code_revision(self, repair_context, target_files, lens_framings):
+        self.calls += 1
+        self.target_history.append(sorted(target_files))
+        if self.calls == 2:
+            return {"status": "candidate", "files": {}}
+        return super().propose_code_revision(
+            repair_context,
+            target_files,
+            lens_framings,
+        )
+
+
 def _source():
     return '''import argparse
 import json
@@ -376,6 +430,265 @@ def test_complete_failed_preflight_candidate_is_preserved_for_outer_repair(json_
     assert "adapter_capability_mismatch" in revalidated.failure_signatures
 
 
+def test_candidate_compiler_rejects_syntax_regression_from_semantic_baseline(
+    json_merge_case,
+):
+    _, plan, artifact, validation = json_merge_case
+
+    def staged_preflight(files, tests):
+        broken_paths = sorted(
+            path for path, content in files.items() if content == _BROKEN_SOURCE
+        )
+        if broken_paths:
+            return {
+                "ran": False,
+                "passed": False,
+                "phase": "syntax",
+                "failed_paths": broken_paths,
+                "source_failed_paths": [
+                    path for path in broken_paths if path.startswith("src/")
+                ],
+                "test_failed_paths": [
+                    path for path in broken_paths if path.startswith("tests/")
+                ],
+                "failures": [
+                    {
+                        "path": path,
+                        "kind": "syntax_error",
+                        "line": 1,
+                        "message": "invalid syntax",
+                    }
+                    for path in broken_paths
+                ],
+            }
+        failed_path = artifact.test_paths[0]
+        return {
+            "ran": True,
+            "passed": False,
+            "phase": "semantic_contract",
+            "failed_paths": [failed_path],
+            "source_failed_paths": [],
+            "test_failed_paths": [failed_path],
+            "failures": [
+                {
+                    "path": failed_path,
+                    "kind": "semantic_contract_failure",
+                    "message": "baseline semantic evidence is incomplete",
+                }
+            ],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=_SyntaxRegressionKernel(),
+        max_preflight_corrections=1,
+        test_preflight_runner=staged_preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert candidate.available is True
+    assert candidate.files == {}
+    assert candidate.evidence["complete_transaction"] is False
+    assert candidate.evidence["regression_rejected"] is True
+    assert candidate.evidence["regression_rejected_attempts"] == [1, 2]
+    assert candidate.evidence["baseline_preflight_quality"]["phase"] == (
+        "semantic_contract"
+    )
+    assert all(
+        attempt["preflight_quality"]["phase"] == "syntax"
+        and attempt["regresses_from_baseline"] is True
+        for attempt in candidate.evidence["candidate_attempts"]
+    )
+    assert "regressed from the current artifact preflight" in candidate.stop_reason
+
+    repaired = CoderStage(candidate_compiler=compiler).repair(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert repaired.changed is False
+    assert {
+        generated.path: generated.content
+        for generated in repaired.artifact.files
+    } == {
+        generated.path: generated.content
+        for generated in artifact.files
+    }
+
+
+def test_candidate_compiler_restores_safe_state_before_later_correction(
+    json_merge_case,
+):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _RegressingThenRecoveringKernel()
+    calls = 0
+    baseline_failed_path = artifact.test_paths[0]
+    rejected_failed_path = artifact.test_paths[1]
+    assert baseline_failed_path != rejected_failed_path
+
+    def semantic_failure(path, message):
+        return {
+            "ran": True,
+            "passed": False,
+            "phase": "semantic_contract",
+            "failed_paths": [path],
+            "source_failed_paths": [],
+            "test_failed_paths": [path],
+            "failures": [
+                {
+                    "path": path,
+                    "kind": "semantic_contract_failure",
+                    "message": message,
+                }
+            ],
+        }
+
+    def staged_preflight(files, tests):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return semantic_failure(
+                baseline_failed_path,
+                "baseline semantic evidence is incomplete",
+            )
+        if calls == 2:
+            result = semantic_failure(
+                rejected_failed_path,
+                "candidate semantic evidence regressed",
+            )
+            result["failures"].append(
+                {
+                    "path": rejected_failed_path,
+                    "kind": "requirement_assertion_evidence_failure",
+                    "message": "candidate introduced a second semantic failure",
+                }
+            )
+            return result
+        return semantic_failure(
+            baseline_failed_path,
+            "recovered baseline-quality semantic evidence",
+        )
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=1,
+        test_preflight_runner=staged_preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    baseline_files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    first_attempt, second_attempt = candidate.evidence["candidate_attempts"]
+    assert first_attempt["regresses_from_baseline"] is True
+    assert first_attempt["working_state_restored"] is True
+    assert second_attempt["regresses_from_baseline"] is False
+    assert second_attempt["selected_for_handoff"] is True
+    assert kernel.target_history[1] == [baseline_failed_path]
+    assert kernel.context_history[1]["preflight_test_execution"]["failed_paths"] == [
+        baseline_failed_path
+    ]
+    assert candidate.files["src/cli.py"] == baseline_files["src/cli.py"]
+    assert candidate.files["src/cli.py"] != "# regressed source state\n"
+    assert kernel.context_history[1]["preserved_candidate_files"]["src/cli.py"] == (
+        baseline_files["src/cli.py"]
+    )
+
+
+def test_incomplete_correction_restores_selected_safe_state(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _OmissionRecoveryKernel()
+    calls = 0
+    baseline_failed_path = artifact.test_paths[0]
+    selected_failed_path = artifact.test_paths[1]
+
+    def semantic_failure(path, message):
+        return {
+            "ran": True,
+            "passed": False,
+            "phase": "semantic_contract",
+            "failed_paths": [path],
+            "source_failed_paths": [],
+            "test_failed_paths": [path],
+            "failures": [
+                {
+                    "path": path,
+                    "kind": "semantic_contract_failure",
+                    "message": message,
+                }
+            ],
+        }
+
+    def staged_preflight(files, tests):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return semantic_failure(
+                baseline_failed_path,
+                "baseline semantic evidence is incomplete",
+            )
+        if calls == 2:
+            return semantic_failure(
+                selected_failed_path,
+                "selected candidate requires one correction",
+            )
+        return {
+            "ran": True,
+            "passed": True,
+            "phase": "tests",
+            "failed_paths": [],
+            "source_failed_paths": [],
+            "test_failed_paths": [],
+            "failures": [],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=2,
+        test_preflight_runner=staged_preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    first_attempt, omitted_attempt, recovered_attempt = candidate.evidence[
+        "candidate_attempts"
+    ]
+    assert first_attempt["selected_for_handoff"] is True
+    assert omitted_attempt["preflight"]["phase"] == "candidate_completeness"
+    assert omitted_attempt["working_state_restored"] is True
+    assert omitted_attempt["routing_active_paths"] == [selected_failed_path]
+    assert recovered_attempt["preflight"]["passed"] is True
+    assert kernel.target_history[1:] == [
+        [selected_failed_path],
+        [selected_failed_path],
+    ]
+    assert candidate.evidence["preflight_passed"] is True
+    assert candidate.files["src/cli.py"] == _source()
+
+
 def test_candidate_compiler_preserves_sanitized_backend_failure_reason(json_merge_case):
     _, plan, artifact, validation = json_merge_case
     compiler = SubstrateCandidateCompiler(
@@ -405,7 +718,7 @@ def test_candidate_correction_preserves_passing_files(json_merge_case):
 
     def preflight(files, tests):
         preflight_calls.append(dict(files))
-        if len(preflight_calls) == 1:
+        if len(preflight_calls) <= 2:
             return {
                 "ran": True,
                 "passed": False,
@@ -443,11 +756,11 @@ def test_candidate_correction_preserves_passing_files(json_merge_case):
     assert candidate.files
     assert set(kernel.target_history[0]) == set(candidate.files)
     assert kernel.target_history[1] == ["tests/test_replaces_json_lists.py"]
-    assert candidate.files["src/cli.py"] == preflight_calls[0]["src/cli.py"]
+    assert candidate.files["src/cli.py"] == preflight_calls[1]["src/cli.py"]
     second_attempt = candidate.evidence["candidate_attempts"][1]
     assert "src/cli.py" in second_attempt["preserved_paths"]
     preserved = kernel.context_history[1]["preserved_candidate_files"]
-    assert preserved["src/cli.py"] == preflight_calls[0]["src/cli.py"]
+    assert preserved["src/cli.py"] == preflight_calls[1]["src/cli.py"]
     assert "immutable context" in kernel.context_history[1]["preservation_contract"]
 
 
@@ -458,7 +771,7 @@ def test_executable_test_failure_expands_correction_to_imported_source(json_merg
 
     def preflight(files, tests):
         calls.append(dict(files))
-        if len(calls) == 1:
+        if len(calls) <= 2:
             return {
                 "ran": True,
                 "passed": False,
@@ -511,7 +824,7 @@ def test_candidate_correction_receives_structured_pytest_failure(json_merge_case
     def preflight(files, tests):
         nonlocal calls
         calls += 1
-        if calls == 1:
+        if calls <= 2:
             return {
                 "ran": True,
                 "passed": False,
@@ -617,7 +930,7 @@ def test_structural_preflight_does_not_freeze_unexecuted_paths(json_merge_case):
     def preflight(files, tests):
         nonlocal calls
         calls += 1
-        if calls == 1:
+        if calls <= 2:
             failed_path = artifact.test_paths[0]
             return {
                 "ran": False,
