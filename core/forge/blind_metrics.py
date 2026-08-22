@@ -14,6 +14,9 @@ from core.forge.blind_benchmark import BlindBenchmarkBundle, load_blind_bundle
 from core.forge.blind_requirement import requirement_preflight_error
 
 
+_SUPPORTED_EXECUTION_KINDS = frozenset({"sealed_baseline", "post_fix_replay"})
+
+
 def derive_adjudicated_metrics_from_files(
     *,
     manifest_path: str,
@@ -22,6 +25,8 @@ def derive_adjudicated_metrics_from_files(
     output_path: str,
     repository_root: str | Path = ".",
     created_at: str | None = None,
+    execution_kind: str = "sealed_baseline",
+    receipt_id: str | None = None,
 ) -> dict[str, Any]:
     destination = Path(output_path).resolve()
     if destination.exists():
@@ -50,6 +55,8 @@ def derive_adjudicated_metrics_from_files(
         baseline_report_sha256=hashlib.sha256(baseline_bytes).hexdigest(),
         adjudication_sha256=hashlib.sha256(adjudication_bytes).hexdigest(),
         created_at=created_at,
+        execution_kind=execution_kind,
+        receipt_id=receipt_id,
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(
@@ -66,8 +73,25 @@ def derive_adjudicated_metrics(
     baseline_report_sha256: str,
     adjudication_sha256: str,
     created_at: str | None = None,
+    execution_kind: str = "sealed_baseline",
+    receipt_id: str | None = None,
 ) -> dict[str, Any]:
-    _validate_source_links(bundle, baseline_report, adjudication_receipt)
+    if execution_kind not in _SUPPORTED_EXECUTION_KINDS:
+        raise ValueError(
+            f"Unsupported adjudicated metrics execution kind: {execution_kind}."
+        )
+    if receipt_id is not None and not receipt_id.strip():
+        raise ValueError("Adjudicated metrics receipt_id cannot be blank.")
+    if execution_kind == "post_fix_replay" and receipt_id is None:
+        raise ValueError(
+            "Post-fix replay metrics require an explicit receipt_id."
+        )
+    _validate_source_links(
+        bundle,
+        baseline_report,
+        adjudication_receipt,
+        execution_kind,
+    )
     cases = {case.case_id: case for case in bundle.cases}
     results = _indexed_objects(
         _required_mapping(baseline_report, "summary").get("case_results"),
@@ -208,10 +232,16 @@ def derive_adjudicated_metrics(
         ),
     }
     timestamp = created_at or datetime.now(timezone.utc).isoformat()
+    resolved_receipt_id = (
+        receipt_id.strip()
+        if receipt_id is not None
+        else f"{bundle.bundle_id}-adjudicated-definitive-metrics"
+    )
     return {
         "schema_version": 1,
-        "receipt_id": f"{bundle.bundle_id}-adjudicated-definitive-metrics",
+        "receipt_id": resolved_receipt_id,
         "created_at": timestamp,
+        "execution_kind": execution_kind,
         "terminal_status": "adjudicated_metrics_derived",
         "sources": {
             "bundle_id": bundle.bundle_id,
@@ -368,15 +398,40 @@ def _validate_source_links(
     bundle: BlindBenchmarkBundle,
     baseline: dict[str, Any],
     adjudication: dict[str, Any],
+    execution_kind: str,
 ) -> None:
     if baseline.get("schema_version") != bundle.schema_version:
         raise ValueError("Baseline report schema_version does not match the frozen bundle.")
     if adjudication.get("schema_version") != 1:
         raise ValueError("Unsupported adjudication receipt schema_version.")
-    if baseline.get("execution_kind") != "sealed_baseline":
-        raise ValueError("Adjudicated metrics require a sealed baseline report.")
-    if baseline.get("baseline_verified") is not True:
-        raise ValueError("Baseline report does not attest the sealed Forge baseline.")
+    if baseline.get("execution_kind") != execution_kind:
+        raise ValueError(
+            "Baseline report execution_kind does not match the metrics receipt."
+        )
+    baseline_file_count = baseline.get("baseline_file_count")
+    observed_baseline_sha256 = baseline.get("observed_baseline_sha256")
+    observed_baseline_file_count = baseline.get("observed_baseline_file_count")
+    if (
+        type(baseline_file_count) is not int
+        or baseline_file_count != bundle.baseline_file_count
+        or not isinstance(observed_baseline_sha256, str)
+        or not observed_baseline_sha256.strip()
+        or type(observed_baseline_file_count) is not int
+        or observed_baseline_file_count < 0
+    ):
+        raise ValueError(
+            "Baseline report contains invalid or incomplete baseline observations."
+        )
+    baseline_matches = (
+        observed_baseline_sha256 == bundle.baseline_sha256
+        and observed_baseline_file_count == bundle.baseline_file_count
+    )
+    if baseline.get("baseline_verified") is not baseline_matches:
+        raise ValueError(
+            "Baseline report verification flag contradicts its observed baseline."
+        )
+    if execution_kind == "sealed_baseline" and not baseline_matches:
+        raise ValueError("Adjudicated baseline metrics require a sealed baseline report.")
     adjudicated_bundle = _required_mapping(adjudication, "bundle")
     expected = {
         "bundle_id": bundle.bundle_id,
