@@ -636,3 +636,36 @@ def test_orchestrator_stops_when_repair_changes_nothing(repair_case, tmp_path):
     metadata_path = next((tmp_path / "runs").glob("*/run_metadata.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert metadata["attempt_trace"][1]["repair"]["changed"] is False
+
+
+def test_entrypoint_execution_failure_targets_interface_implementation(repair_case):
+    artifact = repair_case["artifact"]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Entrypoint execution failed for src/cli.py."],
+        failure_signatures=["entrypoint_execution_failure"],
+        evidence={
+            "layer1": {
+                "entrypoint_results": {
+                    "src/cli.py": {
+                        "exists": True,
+                        "function_present": True,
+                        "executed": False,
+                        "failure_phase": "execution",
+                    }
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert directive.repairable is True
+    assert directive.operations == ["rerender_interface_implementation"]
+    assert directive.target_paths == ["src/cli.py"]
+    assert directive.evidence_refs == ["layer1.entrypoint_results:src/cli.py"]

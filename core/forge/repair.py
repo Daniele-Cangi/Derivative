@@ -18,6 +18,7 @@ class RepairPolicy:
     _OPERATIONS = {
         "syntax_error": "rerender_invalid_python",
         "import_failure": "restore_import_graph",
+        "entrypoint_execution_failure": "rerender_interface_implementation",
         "missing_entrypoint": "restore_declared_entrypoint",
         "test_execution_failure": "rerender_failing_tests_and_targets",
         "superficial_stub": "rerender_interface_implementation",
