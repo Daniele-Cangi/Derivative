@@ -11,6 +11,7 @@ from core.forge.contracts import (
     QualityContract,
     RequirementAtom,
 )
+from core.forge.public_contract import extract_public_import_contract
 from core.obligation_compiler import ObligationCompiler
 from core.problem_classifier import ProblemClassifier
 
@@ -30,7 +31,19 @@ class RequirementCompiler:
         if not functional_goals:
             functional_goals = self._extract_functional_goals(normalized)
         target_artifact_type = self._detect_target_artifact_type(normalized)
-        public_module = self._extract_public_module(normalized, target_artifact_type)
+        public_import_contract = extract_public_import_contract(
+            normalized,
+            kind=(
+                "cli_entrypoint"
+                if target_artifact_type == ArtifactTargetType.CLI
+                else "function"
+            ),
+        )
+        public_module = (
+            public_import_contract.module
+            if public_import_contract is not None
+            else self._extract_public_module(normalized, target_artifact_type)
+        )
         non_functional_constraints = [
             atom.text
             for atom in requirement_atoms
@@ -68,6 +81,7 @@ class RequirementCompiler:
             quality_contract=quality_contract,
             target_artifact_type=target_artifact_type,
             public_module=public_module,
+            public_import_contract=public_import_contract,
             risk_hints=self._derive_risk_hints(
                 normalized,
                 ambiguity_flags,
@@ -781,6 +795,8 @@ class RequirementCompiler:
 
     def _categorize_clause(self, clause: str) -> str:
         lowered = clause.lower()
+        if re.match(r"^public\s+import\s+contract\s*:", lowered):
+            return "functional"
         universal_tokens = (
             "every possible",
             "all possible",
@@ -961,6 +977,8 @@ class RequirementCompiler:
 
     def _verification_method_for_clause(self, clause: str, category: str) -> str:
         lowered = clause.lower()
+        if re.match(r"^public\s+import\s+contract\s*:", lowered):
+            return "interface_contract"
         absolute_universal_tokens = (
             "every possible",
             "all possible",

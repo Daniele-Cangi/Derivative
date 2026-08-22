@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
+from core.forge.public_contract import PublicImportContract
+
 
 class ArtifactTargetType(str, Enum):
     CLI = "cli"
@@ -142,6 +144,7 @@ class BuildSpec:
     quality_contract: QualityContract = field(default_factory=QualityContract)
     target_artifact_type: ArtifactTargetType = ArtifactTargetType.UNKNOWN
     public_module: str = ""
+    public_import_contract: Optional[PublicImportContract] = None
     risk_hints: List[str] = field(default_factory=list)
     ambiguity_flags: List[str] = field(default_factory=list)
     assumptions: List[str] = field(default_factory=list)

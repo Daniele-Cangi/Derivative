@@ -142,6 +142,33 @@ def test_declared_public_module_and_callable_drive_library_contract():
     assert interface_atom.verification_method == "interface_contract"
 
 
+def test_canonical_public_import_contract_is_a_hard_acceptance_requirement():
+    requirement = (
+        "Implement a CLI and importable function with signature main(argv: list[str] | None = None) -> int. "
+        "Public import contract: from forge_blind_v7.cli_dedupe_adjacent import main."
+    )
+
+    spec = RequirementCompiler().compile(requirement)
+
+    assert spec.public_import_contract is not None
+    assert spec.public_import_contract.module == "forge_blind_v7.cli_dedupe_adjacent"
+    assert spec.public_import_contract.symbol == "main"
+    assert spec.public_import_contract.kind == "cli_entrypoint"
+    assert spec.public_module == "forge_blind_v7.cli_dedupe_adjacent"
+
+    atom = next(
+        atom
+        for atom in spec.requirement_atoms
+        if atom.text.lower().startswith("public import contract:")
+    )
+    assert atom.category == "functional"
+    assert atom.strength == "hard"
+    assert atom.verification_method == "interface_contract"
+    assert any(
+        atom.requirement_id in criterion.requirement_ids
+        for criterion in spec.acceptance_contract.criteria
+    )
+
 def test_named_callable_component_outranks_pipeline_domain_noun():
     requirement = (
         "Design a data pipeline component 'select_records' accepting an iterator and a predicate. "

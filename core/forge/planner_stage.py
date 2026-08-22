@@ -613,11 +613,16 @@ class PlannerStage:
                 )
             ]
         if build_spec.target_artifact_type == ArtifactTargetType.CLI:
+            public_symbol = (
+                build_spec.public_import_contract.symbol
+                if build_spec.public_import_contract is not None
+                else "main"
+            )
             interfaces = [
                 PlanInterface(
-                    name="main",
+                    name=public_symbol,
                     interface_type="cli_entrypoint",
-                    signature="main(argv: Optional[list[str]] = None) -> int",
+                    signature=f"{public_symbol}(argv: Optional[list[str]] = None) -> int",
                     description="Runs the CLI workflow and returns process exit code.",
                     module_path=build_spec.public_module,
                 )

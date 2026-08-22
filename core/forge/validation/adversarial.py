@@ -156,12 +156,16 @@ class AdversarialValidationLayer(ValidationLayerBase):
         plan: FeasiblePlan,
         materialized: Dict[str, Path],
     ) -> List[str]:
-        non_cli_interfaces = {
+        contract_interfaces = {
             interface.name
             for interface in plan.interfaces
             if interface.interface_type in {"function", "entrypoint"}
+            or (
+                interface.interface_type == "cli_entrypoint"
+                and interface.module_path
+            )
         }
-        if not non_cli_interfaces:
+        if not contract_interfaces:
             return []
 
         mismatches: List[str] = []
@@ -189,7 +193,7 @@ class AdversarialValidationLayer(ValidationLayerBase):
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
-                if node.name not in non_cli_interfaces:
+                if node.name not in contract_interfaces:
                     continue
                 decorators = [self._decorator_name(item).lower() for item in node.decorator_list]
                 if any(

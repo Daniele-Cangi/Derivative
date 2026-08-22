@@ -179,6 +179,29 @@ def test_declared_public_module_is_checked_as_interface_contract(tmp_path):
     assert "src/codec.py:encode_stream:missing_public_module" in mismatches
 
 
+def test_cli_public_import_contract_rejects_main_exported_from_wrong_module(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Implement a CLI and importable function with signature main(argv: list[str] | None = None) -> int. "
+        "Public import contract: from forge_blind_v7.cli_dedupe_adjacent import main."
+    )
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    wrong_module = tmp_path / "cli.py"
+    wrong_module.write_text("def main(argv=None):\n    return 0\n", encoding="utf-8")
+
+    mismatches = AdversarialValidationLayer()._detect_interface_contract_mismatches(
+        plan,
+        {"src/cli.py": wrong_module},
+    )
+
+    expected = "src/forge_blind_v7/cli_dedupe_adjacent.py:main:missing_public_module"
+    assert expected in mismatches
+
 @pytest.fixture(scope="module")
 def forge_pipeline(tmp_path_factory):
     root = tmp_path_factory.mktemp("forge_validator_stage")

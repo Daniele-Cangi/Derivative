@@ -664,6 +664,28 @@ def test_declared_public_module_is_preserved_in_plan_layout_and_interface(tmp_pa
     assert "codec" in output.architecture_summary
 
 
+def test_cli_public_import_contract_drives_exact_plan_path_and_interface(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Implement a CLI and importable function with signature main(argv: list[str] | None = None) -> int. "
+        "Public import contract: from forge_blind_v7.cli_dedupe_adjacent import main."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    expected_path = "src/forge_blind_v7/cli_dedupe_adjacent.py"
+    assert output.implementation_blueprint.entrypoint_path == expected_path
+    assert expected_path in {item.path for item in output.file_tree_plan}
+    interface = next(item for item in output.interfaces if item.name == "main")
+    assert interface.module_path == "forge_blind_v7.cli_dedupe_adjacent"
+    public_atom = next(
+        atom
+        for atom in build_spec.requirement_atoms
+        if atom.text.lower().startswith("public import contract:")
+    )
+    coverage = output.requirement_coverage[public_atom.requirement_id]
+    assert expected_path in coverage["files"]
+
 def test_named_callable_component_becomes_public_module_contract(tmp_path):
     build_spec = RequirementCompiler().compile(
         "Design a data pipeline component 'filter_by_predicate' accepting an iterator and a predicate. "
