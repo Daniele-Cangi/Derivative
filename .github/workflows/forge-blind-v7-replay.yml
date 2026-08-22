@@ -1,0 +1,91 @@
+name: Forge Blind v7 Replay
+
+on:
+  workflow_dispatch:
+    inputs:
+      case_ids:
+        description: Space-separated frozen V7 case IDs to replay
+        required: true
+        default: "V7-001 V7-002 V7-003 V7-004 V7-005 V7-006 V7-007 V7-008 V7-009 V7-010 V7-011 V7-012"
+
+permissions:
+  contents: read
+
+jobs:
+  post-fix-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout current Forge revision
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build Forge sandbox image
+        run: docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+
+      - name: Verify frozen inputs and archived baseline
+        run: >
+          python -c
+          "import json;
+          from pathlib import Path;
+          from core.forge.blind_benchmark import load_blind_bundle;
+          bundle = load_blind_bundle('benchmarks/blind_v7/external_001/manifest.json', verify_baseline=True);
+          baseline = json.loads(Path('benchmarks/blind_v7/external_001/baseline_result.json').read_text(encoding='utf-8'));
+          assert bundle.bundle_id == 'forge-blind-v7-external-001';
+          assert bundle.schema_version == 3;
+          assert len(bundle.cases) == 12;
+          assert len(bundle.oracle_sha256) == 6;
+          assert bundle.baseline_verified;
+          assert baseline['execution_kind'] == 'sealed_baseline';
+          assert baseline['manifest_sha256'] == bundle.manifest_sha256;
+          assert baseline['dataset_sha256'] == bundle.dataset_sha256;
+          print(f'frozen_inputs_verified manifest={bundle.manifest_sha256} dataset={bundle.dataset_sha256}')"
+
+      - name: Execute selected post-fix replay
+        env:
+          CASE_IDS: ${{ inputs.case_ids }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1
+          OPENAI_INPUT_COST_PER_1M_TOKENS: "2.00"
+          OPENAI_OUTPUT_COST_PER_1M_TOKENS: "8.00"
+        run: |
+          case_flags=()
+          read -r -a requested_cases <<< "$CASE_IDS"
+          for case_id in "${requested_cases[@]}"; do
+            if [[ ! "$case_id" =~ ^V7-[0-9]{3}$ ]]; then
+              echo "Invalid V7 case ID: $case_id" >&2
+              exit 2
+            fi
+            case_flags+=(--case-id "$case_id")
+          done
+          python forge_blind_benchmark.py \
+            --manifest benchmarks/blind_v7/external_001/manifest.json \
+            --mode hybrid \
+            --execution-backend docker \
+            --sandbox-image derivative-forge-sandbox:py311 \
+            --post-fix-replay \
+            "${case_flags[@]}" \
+            --no-enforce-thresholds
+
+      - name: Upload replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-blind-v7-post-fix-replay-${{ github.run_number }}
+          path: |
+            generated_artifacts/forge_blind_benchmarks/
+            generated_artifacts/forge_blind_runs/
+            generated_artifacts/forge_blind_packages/
+          if-no-files-found: warn
+          retention-days: 90
