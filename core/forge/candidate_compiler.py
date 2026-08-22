@@ -28,6 +28,16 @@ class SubstrateCandidateCompiler:
     """Compiles one complete, untrusted plan-bound candidate transaction."""
 
     backend_name = "candidate_compiler"
+    _PREFLIGHT_PHASE_RANK = {
+        "backend_unavailable": -2,
+        "candidate_completeness": -1,
+        "fixture_oracle": 0,
+        "materialization": 1,
+        "syntax": 2,
+        "import": 3,
+        "tests": 4,
+        "semantic_contract": 5,
+    }
 
     def __init__(
         self,
@@ -141,9 +151,21 @@ class SubstrateCandidateCompiler:
             artifact,
         )
         current_targets = {path: files_by_path[path] for path in target_paths}
+        baseline_preflight = self._run_preflight(
+            current_targets,
+            plan,
+            context["test_generation_contracts"],
+            test_paths,
+        )
+        baseline_quality = self._preflight_quality(baseline_preflight)
         attempts: list[dict[str, Any]] = []
         rejected_paths: list[str] = []
         candidate_files: dict[str, str] = {}
+        selected_candidate_files: dict[str, str] = {}
+        selected_preflight: dict[str, Any] = {}
+        selected_quality: dict[str, Any] | None = None
+        complete_candidate_count = 0
+        regression_rejected_attempts: list[int] = []
         backend_available = False
         active_paths = list(target_paths)
 
@@ -272,52 +294,63 @@ class SubstrateCandidateCompiler:
                 }
                 continue
 
-            preflight = run_fixture_oracle_preflight(
+            preflight = self._run_preflight(
                 merged_candidate,
                 plan,
                 context["test_generation_contracts"],
+                test_paths,
             )
-            if preflight.get("passed", False):
-                preflight = self.test_preflight_runner(merged_candidate, test_paths)
-            if preflight.get("passed", False):
-                preflight = run_semantic_preflight(
-                    merged_candidate,
-                    plan,
-                    context["test_generation_contracts"],
-                    preflight,
-                )
             attempt_record["preflight"] = preflight
-            attempts.append(attempt_record)
             candidate_files = merged_candidate
+            complete_candidate_count += 1
+            if not preflight.get("passed", False):
+                failed = preflight_failed_paths(preflight)
+                impact_expanded_paths: list[str] = []
+                if preflight.get("phase") == "tests":
+                    impact_expanded_paths = self._imported_source_paths(
+                        candidate_files,
+                        [path for path in failed if path.startswith("tests/")],
+                        target_paths,
+                    )
+                    preflight["impact_expanded_paths"] = impact_expanded_paths
+                    failed = list(dict.fromkeys([*failed, *impact_expanded_paths]))
+                if preflight.get("phase") == "fixture_oracle":
+                    preflight["behaviorally_unvalidated_paths"] = list(target_paths)
+                    active_paths = [path for path in failed if path in target_paths]
+                elif preflight.get("phase") not in {"tests", "semantic_contract"}:
+                    preflight["behaviorally_unvalidated_paths"] = list(target_paths)
+                    active_paths = list(target_paths)
+                else:
+                    active_paths = [path for path in failed if path in target_paths]
+                if not active_paths:
+                    active_paths = list(target_paths)
+                current_targets = {
+                    path: candidate_files[path]
+                    for path in active_paths
+                }
+
+            quality = self._preflight_quality(preflight)
+            regresses_from_baseline = self._preflight_regresses(
+                quality,
+                baseline_quality,
+            )
+            attempt_record["preflight_quality"] = quality
+            attempt_record["regresses_from_baseline"] = regresses_from_baseline
+            attempts.append(attempt_record)
+            if regresses_from_baseline:
+                regression_rejected_attempts.append(attempt + 1)
+            elif selected_quality is None or self._preflight_score(
+                quality
+            ) >= self._preflight_score(selected_quality):
+                selected_candidate_files = dict(merged_candidate)
+                selected_preflight = dict(preflight)
+                selected_quality = quality
             if preflight.get("passed", False):
                 break
-            failed = preflight_failed_paths(preflight)
-            impact_expanded_paths: list[str] = []
-            if preflight.get("phase") == "tests":
-                impact_expanded_paths = self._imported_source_paths(
-                    candidate_files,
-                    [path for path in failed if path.startswith("tests/")],
-                    target_paths,
-                )
-                preflight["impact_expanded_paths"] = impact_expanded_paths
-                failed = list(dict.fromkeys([*failed, *impact_expanded_paths]))
-            if preflight.get("phase") == "fixture_oracle":
-                preflight["behaviorally_unvalidated_paths"] = list(target_paths)
-                active_paths = [path for path in failed if path in target_paths]
-            elif preflight.get("phase") not in {"tests", "semantic_contract"}:
-                preflight["behaviorally_unvalidated_paths"] = list(target_paths)
-                active_paths = list(target_paths)
-            else:
-                active_paths = [path for path in failed if path in target_paths]
-            if not active_paths:
-                active_paths = list(target_paths)
-            current_targets = {
-                path: candidate_files[path]
-                for path in active_paths
-            }
+
+        candidate_files = selected_candidate_files
         preflight_passed = bool(
-            attempts
-            and attempts[-1]["preflight"].get("passed", False)
+            selected_preflight.get("passed", False)
             and set(candidate_files) == set(target_paths)
             and not rejected_paths
         )
@@ -337,6 +370,17 @@ class SubstrateCandidateCompiler:
             "rejected_paths": sorted(set(rejected_paths)),
             "complete_transaction": complete_transaction,
             "preflight_passed": preflight_passed,
+            "baseline_preflight": baseline_preflight,
+            "baseline_preflight_quality": baseline_quality,
+            "selected_preflight": selected_preflight,
+            "selected_preflight_quality": selected_quality or {},
+            "complete_candidate_count": complete_candidate_count,
+            "regression_rejected": bool(
+                complete_candidate_count
+                and not candidate_files
+                and regression_rejected_attempts
+            ),
+            "regression_rejected_attempts": regression_rejected_attempts,
             "handoff_status": (
                 "preflight_passed"
                 if preflight_passed
@@ -360,6 +404,10 @@ class SubstrateCandidateCompiler:
             stop_reason = ""
         elif candidate_files:
             stop_reason = "Complete candidate transaction requires validator-guided repair."
+        elif evidence["regression_rejected"]:
+            stop_reason = (
+                "All generated candidate transactions regressed from the current artifact preflight."
+            )
         else:
             stop_reason = backend_reason or "Complete candidate transaction did not pass executable preflight."
         return RepairPatchCandidate(
@@ -369,6 +417,67 @@ class SubstrateCandidateCompiler:
             rejected_paths=sorted(set(rejected_paths)),
             available=backend_available,
             stop_reason=stop_reason,
+        )
+
+    def _run_preflight(
+        self,
+        candidate_files: dict[str, str],
+        plan: FeasiblePlan,
+        contracts: dict[str, Any],
+        test_paths: list[str],
+    ) -> dict[str, Any]:
+        preflight = run_fixture_oracle_preflight(
+            candidate_files,
+            plan,
+            contracts,
+        )
+        if preflight.get("passed", False):
+            preflight = self.test_preflight_runner(candidate_files, test_paths)
+        if preflight.get("passed", False):
+            preflight = run_semantic_preflight(
+                candidate_files,
+                plan,
+                contracts,
+                preflight,
+            )
+        return preflight
+
+    @classmethod
+    def _preflight_quality(cls, preflight: dict[str, Any]) -> dict[str, Any]:
+        passed = bool(preflight.get("passed", False))
+        phase = str(preflight.get("phase", "unknown"))
+        failed_paths = preflight_failed_paths(preflight)
+        failures = [
+            item
+            for field in ("failures", "failure_details")
+            for item in preflight.get(field, [])
+        ]
+        return {
+            "passed": passed,
+            "phase": phase,
+            "phase_rank": max(cls._PREFLIGHT_PHASE_RANK.values()) + 1
+            if passed
+            else cls._PREFLIGHT_PHASE_RANK.get(phase, -3),
+            "failed_path_count": len(set(failed_paths)),
+            "failure_count": len(failures),
+        }
+
+    @staticmethod
+    def _preflight_score(quality: dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            int(quality.get("phase_rank", -3)),
+            -int(quality.get("failed_path_count", 0)),
+            -int(quality.get("failure_count", 0)),
+        )
+
+    @classmethod
+    def _preflight_regresses(
+        cls,
+        candidate_quality: dict[str, Any],
+        baseline_quality: dict[str, Any],
+    ) -> bool:
+        return cls._preflight_score(candidate_quality) < cls._preflight_score(
+            baseline_quality
         )
 
     @staticmethod
