@@ -201,7 +201,7 @@ Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
 
 The original V2 run scored 6/10. Its legacy summary records external false-verified rate `0.0` without a persisted denominator, so this ledger does not reinterpret it as a schema-v3 rate. Later targeted runs are regression evidence, including a 3/3 rerun of previously failing feasible cases; that result is not reported as a fresh blind 10/10.
 
-V3 exposed requirement extraction, domain routing, semantic test alignment, public module preservation, ambiguity handling, and contradiction-detection gaps. Successive known-case replays improved mechanisms but also exposed false-verification and frozen-oracle defects. The final recorded hybrid replay matched all 12 terminal statuses internally but externally passed 9/12, with external false-verified rate 3/6 (`0.500`). Three failures required oracle adjudication rather than silent score adjustment.
+V3 exposed requirement extraction, domain routing, semantic test alignment, public module preservation, ambiguity handling, and contradiction-detection gaps. Successive known-case replays improved mechanisms but also exposed false-verification and frozen-oracle defects. The final recorded hybrid replay (`execution_kind=post_fix_replay`) matched all 12 terminal statuses internally but externally passed 9/12, with external false-verified rate 3/6 (`0.500`). Three failures required oracle adjudication rather than silent score adjustment.
 
 The V3 manifest remains sealed to its original implementation digest. Every later report keeps `baseline_verified=false`.
 
