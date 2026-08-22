@@ -218,10 +218,26 @@ _LOOP_CONTROL = "loop_control"
 def _returns_non_none_value(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> bool:
+    if isinstance(function, ast.FunctionDef) and _contains_yield(function):
+        return True
     outcomes = _block_exit_outcomes(function.body)
     normal_outcomes = outcomes - {_RAISE}
     return not normal_outcomes or normal_outcomes == {_RETURN_NON_NONE}
 
+
+def _contains_yield(function: ast.FunctionDef) -> bool:
+    stack: list[ast.AST] = list(function.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(
+            node,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda),
+        ):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+    return False
 
 def _block_exit_outcomes(statements: list[ast.stmt]) -> set[str]:
     outcomes = {_FALLTHROUGH}
