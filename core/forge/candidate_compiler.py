@@ -282,8 +282,20 @@ class SubstrateCandidateCompiler:
                     "phase": "candidate_completeness",
                     "failed_paths": omitted,
                 }
+                attempt_record["working_state_restored"] = True
+                attempt_record["routing_preflight_phase"] = safe_preflight.get(
+                    "phase",
+                    "",
+                )
+                attempt_record["routing_active_paths"] = list(safe_active_paths)
                 attempts.append(attempt_record)
-                candidate_files = {}
+                candidate_files = dict(safe_candidate_files)
+                routing_preflight = dict(safe_preflight)
+                active_paths = list(safe_active_paths)
+                current_targets = {
+                    path: candidate_files[path]
+                    for path in active_paths
+                }
                 continue
 
             merged_candidate = dict(candidate_files)
