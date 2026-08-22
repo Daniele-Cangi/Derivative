@@ -174,21 +174,53 @@ def context_manager_binding_mismatches(
                     not isinstance(call, ast.Call)
                     or not isinstance(call.func, ast.Name)
                     or not isinstance(bound, ast.Name)
-                ):
-                    continue
-                class_node = _resolve_context_manager_class(
-                    call.func.id,
-                    node,
-                    module_classes,
-                    local_classes,
-                )
-                enter = _context_enter_method(class_node, enter_name)
-                if (
-                    enter is None
-                    or _returns_non_none_value(enter)
                     or not _bound_attribute_is_used(function, bound, bound.id)
                 ):
                     continue
+                class_node, class_available = _resolve_context_manager_class(
+                    call.func.id,
+                    node,
+                    function,
+                    module_classes,
+                    local_classes,
+                )
+                if not class_available:
+                    enter_line = (
+                        class_node.lineno if class_node is not None else node.lineno
+                    )
+                    mismatches.append(
+                        OracleHarnessMismatch(
+                            contract_id="context_manager_binding",
+                            function=function.name,
+                            class_name=call.func.id,
+                            context_line=node.lineno,
+                            enter_line=enter_line,
+                            bound_name=bound.id,
+                            message=(
+                                f"local class {call.func.id} is not guaranteed to be "
+                                f"bound before the context use assigned to {bound.id}"
+                            ),
+                        )
+                    )
+                    continue
+                enter, protocol_matches = _context_enter_method(
+                    class_node, enter_name
+                )
+                if enter is None or (
+                    protocol_matches and _returns_non_none_value(enter)
+                ):
+                    continue
+                if protocol_matches:
+                    message = (
+                        f"{call.func.id}.{enter.name} does not return a non-None "
+                        f"value on every path bound as {bound.id}, but the oracle "
+                        "dereferences it"
+                    )
+                else:
+                    message = (
+                        f"{call.func.id}.{enter.name} uses an incompatible sync/async "
+                        f"declaration for the context bound as {bound.id}"
+                    )
                 mismatches.append(
                     OracleHarnessMismatch(
                         contract_id="context_manager_binding",
@@ -197,11 +229,7 @@ def context_manager_binding_mismatches(
                         context_line=node.lineno,
                         enter_line=enter.lineno,
                         bound_name=bound.id,
-                        message=(
-                            f"{call.func.id}.{enter.name} does not return a non-None "
-                            f"value on every path bound as {bound.id}, but the oracle "
-                            "dereferences it"
-                        ),
+                        message=message,
                     )
                 )
     return mismatches
@@ -226,29 +254,80 @@ def _local_class_definitions(
 def _resolve_context_manager_class(
     class_name: str,
     context: ast.With | ast.AsyncWith,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
     module_classes: dict[str, ast.ClassDef],
     local_classes: list[ast.ClassDef],
-) -> ast.ClassDef | None:
+) -> tuple[ast.ClassDef | None, bool]:
     matching_local = [node for node in local_classes if node.name == class_name]
-    preceding_local = [
+    available_local = [
         node
         for node in matching_local
-        if _node_position(node) < _node_position(context)
+        if _class_executes_before_context(function, node, context)
     ]
-    if preceding_local:
-        return max(preceding_local, key=_node_position)
+    if available_local:
+        return max(available_local, key=_node_position), True
     if matching_local:
-        return None
-    return module_classes.get(class_name)
+        return max(matching_local, key=_node_position), False
+    return module_classes.get(class_name), True
+
+
+def _class_executes_before_context(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    class_node: ast.ClassDef,
+    context: ast.With | ast.AsyncWith,
+) -> bool:
+    class_path = _statement_path(function.body, class_node)
+    context_path = _statement_path(function.body, context)
+    if class_path is None or context_path is None:
+        return False
+    for depth, (class_block, class_index) in enumerate(class_path):
+        if depth >= len(context_path):
+            return False
+        context_block, context_index = context_path[depth]
+        if class_block is not context_block:
+            return False
+        if class_index == context_index:
+            continue
+        return class_index < context_index and depth == len(class_path) - 1
+    return False
+
+
+def _statement_path(
+    statements: list[ast.stmt],
+    target: ast.stmt,
+) -> list[tuple[list[ast.stmt], int]] | None:
+    for index, statement in enumerate(statements):
+        if statement is target:
+            return [(statements, index)]
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for child_block in _child_statement_blocks(statement):
+            child_path = _statement_path(child_block, target)
+            if child_path is not None:
+                return [(statements, index), *child_path]
+    return None
+
+
+def _child_statement_blocks(statement: ast.stmt) -> list[list[ast.stmt]]:
+    blocks: list[list[ast.stmt]] = []
+    for attribute in ("body", "orelse", "finalbody"):
+        value = getattr(statement, attribute, None)
+        if isinstance(value, list) and all(isinstance(node, ast.stmt) for node in value):
+            blocks.append(value)
+    for handler in getattr(statement, "handlers", ()):
+        blocks.append(handler.body)
+    for case in getattr(statement, "cases", ()):
+        blocks.append(case.body)
+    return blocks
 
 
 def _context_enter_method(
     class_node: ast.ClassDef | None,
     enter_name: str,
-) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef | None, bool]:
     if class_node is None:
-        return None
-    return next(
+        return None, False
+    method = next(
         (
             node
             for node in class_node.body
@@ -257,6 +336,12 @@ def _context_enter_method(
         ),
         None,
     )
+    if method is None:
+        return None, False
+    expected_type = (
+        ast.AsyncFunctionDef if enter_name == "__aenter__" else ast.FunctionDef
+    )
+    return method, isinstance(method, expected_type)
 
 _RETURN_NON_NONE = "return_non_none"
 _RETURN_NONE = "return_none"

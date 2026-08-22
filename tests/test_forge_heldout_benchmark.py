@@ -766,6 +766,78 @@ def test_oracle_sanity_tracks_attribute_and_subscript_targets():
     assert len(subscript_target) == 1
     assert subscript_target[0].contract_id == "context_manager_binding"
 
+
+def test_oracle_sanity_requires_local_class_reachability():
+    unavailable_oracle = (
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        return self\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    if False:\n"
+        "        class capture:\n"
+        "            def __enter__(self):\n"
+        "                return self\n"
+        "            def __exit__(self, *args):\n"
+        "                pass\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    same_branch_oracle = (
+        "def test_output():\n"
+        "    if enabled:\n"
+        "        class capture:\n"
+        "            def __enter__(self):\n"
+        "                return self\n"
+        "            def __exit__(self, *args):\n"
+        "                pass\n"
+        "        with capture() as redir:\n"
+        "            assert redir.stdout\n"
+    )
+    requirement = "Build an importable function and include tests."
+
+    unavailable = oracle_contract_mismatches(unavailable_oracle, requirement)
+    assert len(unavailable) == 1
+    assert "not guaranteed to be bound" in unavailable[0].message
+    assert oracle_contract_mismatches(same_branch_oracle, requirement) == []
+
+
+def test_oracle_sanity_rejects_inverse_context_protocol_declarations():
+    async_enter_for_sync_oracle = (
+        "class capture:\n"
+        "    async def __enter__(self):\n"
+        "        return self\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    sync_enter_for_async_oracle = (
+        "class capture:\n"
+        "    def __aenter__(self):\n"
+        "        return self\n"
+        "    async def __aexit__(self, *args):\n"
+        "        pass\n\n"
+        "async def test_output():\n"
+        "    async with capture() as redir:\n"
+        "        assert redir.stdout\n"
+    )
+    requirement = "Build an importable function and include tests."
+
+    sync_mismatches = oracle_contract_mismatches(
+        async_enter_for_sync_oracle, requirement
+    )
+    async_mismatches = oracle_contract_mismatches(
+        sync_enter_for_async_oracle, requirement
+    )
+    assert len(sync_mismatches) == 1
+    assert "incompatible sync/async" in sync_mismatches[0].message
+    assert len(async_mismatches) == 1
+    assert "incompatible sync/async" in async_mismatches[0].message
+
+
 def test_frozen_v7_001_oracle_is_rejected_by_context_binding_gate():
     dataset = (
         Path(__file__).resolve().parents[1]
