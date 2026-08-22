@@ -1,6 +1,6 @@
 import ast
 import re
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar
 
 from core.forge.contracts import (
     CodeArtifact,
@@ -28,7 +28,7 @@ class SubstrateCandidateCompiler:
     """Compiles one complete, untrusted plan-bound candidate transaction."""
 
     backend_name = "candidate_compiler"
-    _PREFLIGHT_PHASE_RANK = {
+    _PREFLIGHT_PHASE_RANK: ClassVar[dict[str, int]] = {
         "backend_unavailable": -2,
         "candidate_completeness": -1,
         "fixture_oracle": 0,
@@ -159,6 +159,7 @@ class SubstrateCandidateCompiler:
         )
         baseline_quality = self._preflight_quality(baseline_preflight)
         attempts: list[dict[str, Any]] = []
+        safe_candidate_files = dict(current_targets)
         rejected_paths: list[str] = []
         candidate_files: dict[str, str] = {}
         selected_candidate_files: dict[str, str] = {}
@@ -336,15 +337,26 @@ class SubstrateCandidateCompiler:
             )
             attempt_record["preflight_quality"] = quality
             attempt_record["regresses_from_baseline"] = regresses_from_baseline
-            attempts.append(attempt_record)
+            candidate_selected = False
             if regresses_from_baseline:
                 regression_rejected_attempts.append(attempt + 1)
             elif selected_quality is None or self._preflight_score(
                 quality
             ) >= self._preflight_score(selected_quality):
                 selected_candidate_files = dict(merged_candidate)
+                safe_candidate_files = dict(merged_candidate)
                 selected_preflight = dict(preflight)
                 selected_quality = quality
+                candidate_selected = True
+            if not candidate_selected:
+                candidate_files = dict(safe_candidate_files)
+                current_targets = {
+                    path: candidate_files[path]
+                    for path in active_paths
+                }
+            attempt_record["selected_for_handoff"] = candidate_selected
+            attempt_record["working_state_restored"] = not candidate_selected
+            attempts.append(attempt_record)
             if preflight.get("passed", False):
                 break
 
@@ -464,6 +476,8 @@ class SubstrateCandidateCompiler:
 
     @staticmethod
     def _preflight_score(quality: dict[str, Any]) -> tuple[int, int, int]:
+        """Rank phases first and use failure counts only to break phase ties."""
+
         return (
             int(quality.get("phase_rank", -3)),
             -int(quality.get("failed_path_count", 0)),
