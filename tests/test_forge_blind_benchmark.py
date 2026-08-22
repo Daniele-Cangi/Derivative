@@ -304,3 +304,49 @@ def test_v7_post_fix_workflow_validates_frozen_receipt_not_current_baseline():
     assert "baseline['baseline_sha256'] == bundle.baseline_sha256" in workflow
     assert "baseline['baseline_file_count'] == bundle.baseline_file_count" in workflow
     assert "--post-fix-replay" in workflow
+
+
+def test_v7_post_fix_replay_001_preserves_false_verified_evidence():
+    evidence_root = (
+        Path(__file__).resolve().parents[1]
+        / "benchmarks"
+        / "blind_v7"
+        / "external_001"
+    )
+    raw_path = evidence_root / "post_fix_replay_001.json"
+    receipt_path = evidence_root / "post_fix_replay_001_adjudicated_metrics.json"
+    raw_bytes = raw_path.read_bytes()
+    raw = json.loads(raw_bytes)
+    receipt = json.loads(receipt_path.read_bytes())
+
+    assert raw["report_id"] == "forge-blind-v7-external-001-20260822T013302Z"
+    assert raw["execution_kind"] == "post_fix_replay"
+    assert raw["baseline_verified"] is False
+    assert raw["summary"]["status_accuracy"] == 0.5
+    assert raw["summary"]["external_false_verified_rate"] == 1.0
+    assert raw["summary"]["oracle_pass_rate"] == 0.0
+
+    assert receipt["receipt_id"] == (
+        "forge-blind-v7-external-001-post-fix-replay-001-adjudicated-metrics"
+    )
+    assert receipt["execution_kind"] == "post_fix_replay"
+    assert receipt["sources"]["baseline_report_sha256"] == hashlib.sha256(
+        raw_bytes
+    ).hexdigest()
+    assert receipt["metrics"]["status_accuracy"] == {
+        "denominator": 11,
+        "numerator": 5,
+        "value": 5 / 11,
+    }
+    assert receipt["metrics"]["external_verified_at_1"]["value"] == 0.0
+    assert receipt["metrics"]["external_success_after_repair"]["value"] == 0.0
+    assert receipt["metrics"]["external_false_verified_rate"] == {
+        "denominator": 3,
+        "numerator": 3,
+        "value": 1.0,
+    }
+    assert receipt["metrics"]["oracle_pass_rate"] == {
+        "denominator": 3,
+        "numerator": 0,
+        "value": 0.0,
+    }

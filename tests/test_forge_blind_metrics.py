@@ -103,6 +103,8 @@ def _baseline() -> dict:
         "dataset_sha256": "dataset-sha",
         "baseline_sha256": "baseline-sha",
         "baseline_verified": True,
+        "observed_baseline_sha256": "baseline-sha",
+        "observed_baseline_file_count": 1,
         "execution_kind": "sealed_baseline",
         "summary": {
             "case_results": [
@@ -248,4 +250,35 @@ def test_adjudicated_metrics_fail_closed_on_source_mismatch():
             adjudication_receipt=_adjudication(),
             baseline_report_sha256="report-sha",
             adjudication_sha256="adjudication-sha",
+        )
+
+
+def test_adjudicated_replay_metrics_have_distinct_terminal_identity():
+    replay = _baseline()
+    replay.update(
+        execution_kind="post_fix_replay",
+        baseline_verified=False,
+        observed_baseline_sha256="post-fix-sha",
+    )
+    receipt = derive_adjudicated_metrics(
+        bundle=_bundle(),
+        baseline_report=replay,
+        adjudication_receipt=_adjudication(),
+        baseline_report_sha256="replay-sha",
+        adjudication_sha256="adjudication-sha",
+        execution_kind="post_fix_replay",
+        receipt_id="metrics-test-post-fix-replay-001",
+    )
+
+    assert receipt["receipt_id"] == "metrics-test-post-fix-replay-001"
+    assert receipt["execution_kind"] == "post_fix_replay"
+
+    with pytest.raises(ValueError, match="execution kind"):
+        derive_adjudicated_metrics(
+            bundle=_bundle(),
+            baseline_report=_baseline(),
+            adjudication_receipt=_adjudication(),
+            baseline_report_sha256="replay-sha",
+            adjudication_sha256="adjudication-sha",
+            execution_kind="unknown",
         )

@@ -19,6 +19,8 @@ def main(
     adjudication: str = typer.Option(..., "--adjudication"),
     output: str = typer.Option(..., "--output"),
     repository_root: str = typer.Option(".", "--repository-root"),
+    execution_kind: str = typer.Option("sealed_baseline", "--execution-kind"),
+    receipt_id: str | None = typer.Option(None, "--receipt-id"),
 ) -> None:
     try:
         receipt = derive_adjudicated_metrics_from_files(
@@ -27,6 +29,8 @@ def main(
             adjudication_path=adjudication,
             output_path=output,
             repository_root=repository_root,
+            execution_kind=execution_kind,
+            receipt_id=receipt_id,
         )
     except (FileExistsError, ValueError) as exc:
         failure_id = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:12]
