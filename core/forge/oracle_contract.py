@@ -67,17 +67,34 @@ class OraclePatternMismatch:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class OracleHarnessMismatch:
+    contract_id: str
+    function: str
+    class_name: str
+    context_line: int
+    enter_line: int
+    bound_name: str
+    message: str
+
+    def to_evidence(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def oracle_contract_mismatches(
     source: str,
     requirement: str,
-) -> list[OracleContractMismatch | OraclePatternMismatch]:
+) -> list[OracleContractMismatch | OraclePatternMismatch | OracleHarnessMismatch]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return []
 
-    mismatches: list[OracleContractMismatch | OraclePatternMismatch] = [
-        *explicit_pattern_fixture_mismatches(source, requirement, tree=tree)
+    mismatches: list[
+        OracleContractMismatch | OraclePatternMismatch | OracleHarnessMismatch
+    ] = [
+        *explicit_pattern_fixture_mismatches(source, requirement, tree=tree),
+        *context_manager_binding_mismatches(tree),
     ]
     cli_name = _declared_cli_name(requirement)
     if (
@@ -126,6 +143,97 @@ def oracle_contract_mismatches(
                 )
             )
     return mismatches
+
+
+def context_manager_binding_mismatches(
+    tree: ast.Module,
+) -> list[OracleHarnessMismatch]:
+    invalid_context_managers: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    for class_node in (
+        node for node in tree.body if isinstance(node, ast.ClassDef)
+    ):
+        enter = next(
+            (
+                node
+                for node in class_node.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in {"__enter__", "__aenter__"}
+            ),
+            None,
+        )
+        if enter is not None and not _returns_non_none_value(enter):
+            invalid_context_managers[class_node.name] = enter
+
+    mismatches: list[OracleHarnessMismatch] = []
+    if not invalid_context_managers:
+        return mismatches
+    for function in (
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    ):
+        for node in ast.walk(function):
+            if not isinstance(node, (ast.With, ast.AsyncWith)):
+                continue
+            for item in node.items:
+                call = item.context_expr
+                bound = item.optional_vars
+                if (
+                    not isinstance(call, ast.Call)
+                    or not isinstance(call.func, ast.Name)
+                    or call.func.id not in invalid_context_managers
+                    or not isinstance(bound, ast.Name)
+                    or not _bound_attribute_is_used(function, bound.id)
+                ):
+                    continue
+                enter = invalid_context_managers[call.func.id]
+                mismatches.append(
+                    OracleHarnessMismatch(
+                        contract_id="context_manager_binding",
+                        function=function.name,
+                        class_name=call.func.id,
+                        context_line=node.lineno,
+                        enter_line=enter.lineno,
+                        bound_name=bound.id,
+                        message=(
+                            f"{call.func.id}.__enter__ does not return the object "
+                            f"bound as {bound.id}, but the oracle dereferences it"
+                        ),
+                    )
+                )
+    return mismatches
+
+
+def _returns_non_none_value(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    return any(
+        _statement_returns_non_none_value(statement) for statement in function.body
+    )
+
+
+def _statement_returns_non_none_value(statement: ast.stmt) -> bool:
+    if isinstance(statement, ast.Return):
+        return statement.value is not None and not (
+            isinstance(statement.value, ast.Constant) and statement.value.value is None
+        )
+    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return False
+    return any(
+        _statement_returns_non_none_value(child)
+        for child in ast.iter_child_nodes(statement)
+        if isinstance(child, ast.stmt)
+    )
+
+
+def _bound_attribute_is_used(function: ast.AST, bound_name: str) -> bool:
+    return any(
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == bound_name
+        for node in ast.walk(function)
+    )
 
 
 def explicit_pattern_fixture_mismatches(

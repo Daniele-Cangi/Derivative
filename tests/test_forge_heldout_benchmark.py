@@ -376,6 +376,83 @@ def test_oracle_sanity_allows_cli_name_when_requirement_defines_argv_zero(tmp_pa
     assert inspect_oracle_sanity(case) is None
 
 
+def test_oracle_sanity_rejects_unusable_context_manager_binding(tmp_path):
+    oracle_path = tmp_path / "oracle.py"
+    oracle_path.write_text(
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        self.stdout = object()\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_output():\n"
+        "    with capture() as redir:\n"
+        "        result = 1\n"
+        "    assert redir.stdout\n",
+        encoding="utf-8",
+    )
+    case = HeldoutBenchmarkCase(
+        "broken-context-binding",
+        "Build an importable function and include tests.",
+        TERMINAL_VERIFIED,
+        oracle=OracleSpec(path=str(oracle_path)),
+    )
+
+    result = inspect_oracle_sanity(case)
+
+    assert result is not None
+    assert result.valid is False
+    assert result.executed is False
+    assert result.error == (
+        "oracle_invalid: test harness context binding is unusable"
+    )
+    assert result.sanity_failures == [
+        {
+            "contract_id": "context_manager_binding",
+            "function": "test_output",
+            "class_name": "capture",
+            "context_line": 8,
+            "enter_line": 2,
+            "bound_name": "redir",
+            "message": (
+                "capture.__enter__ does not return the object bound as redir, "
+                "but the oracle dereferences it"
+            ),
+        }
+    ]
+
+
+def test_frozen_v7_001_oracle_is_rejected_by_context_binding_gate():
+    dataset = (
+        Path(__file__).resolve().parents[1]
+        / "benchmarks"
+        / "blind_v7"
+        / "external_001"
+        / "cases.json"
+    )
+    case = next(
+        item for item in load_heldout_cases(str(dataset)) if item.case_id == "V7-001"
+    )
+
+    result = inspect_oracle_sanity(case)
+
+    assert result is not None
+    assert result.valid is False
+    assert result.executed is False
+    assert result.error == (
+        "oracle_invalid: test harness context binding is unusable"
+    )
+    assert result.sanity_failures
+    assert {
+        item["contract_id"] for item in result.sanity_failures
+    } == {"context_manager_binding"}
+    assert {
+        item["class_name"] for item in result.sanity_failures
+    } == {"redirect_std"}
+    assert {
+        item["enter_line"] for item in result.sanity_failures
+    } == {54}
+
+
 def test_frozen_v5_001_oracle_is_rejected_by_invocation_contract_gate():
     dataset = (
         Path(__file__).resolve().parents[1]

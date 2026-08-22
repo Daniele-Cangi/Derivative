@@ -350,3 +350,33 @@ def test_v7_post_fix_replay_001_preserves_false_verified_evidence():
         "numerator": 0,
         "value": 0.0,
     }
+
+
+def test_v7_targeted_post_closure_replay_is_preserved_raw():
+    report_path = (
+        Path(__file__).resolve().parents[1]
+        / "benchmarks"
+        / "blind_v7"
+        / "external_001"
+        / "post_fix_replay_002_targeted.json"
+    )
+    report_bytes = report_path.read_bytes()
+    report = json.loads(report_bytes)
+    results = report["summary"]["case_results"]
+
+    assert hashlib.sha256(report_bytes).hexdigest() == (
+        "8412e0886f806415893d27d83939bcf3e18b916d5e64deadeda75572a4008821"
+    )
+    assert report["report_id"] == "forge-blind-v7-external-001-20260822T094625Z"
+    assert report["execution_kind"] == "post_fix_replay"
+    assert report["baseline_verified"] is False
+    assert [item["case_id"] for item in results] == [
+        "V7-001",
+        "V7-002",
+        "V7-003",
+        "V7-004",
+        "V7-005",
+    ]
+    assert report["summary"]["externally_accepted_artifacts"] == 0
+    assert report["summary"]["external_false_verified_rate"] == 1.0
+    assert report["summary"]["total_model_tokens"] == 636018
