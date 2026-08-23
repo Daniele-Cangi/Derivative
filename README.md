@@ -2,13 +2,13 @@
 
 # Derivative
 
-**Requirement-to-software synthesis that packages evidence, not confidence.**
+**A computational invention engine that turns requirements into executable, testable systems.**
 
 [![Forge CI](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml/badge.svg)](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
-![Tests](https://img.shields.io/badge/tests-470%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-475%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V7-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -18,7 +18,13 @@
   <img src="docs/assets/forge-overview.svg" alt="Derivative Forge requirement-to-verification flow" width="100%" />
 </p>
 
-Derivative is an execution-grounded reasoning project. Its product-facing **Forge** pipeline compiles a natural-language software requirement into typed contracts, plans and generates a Python artifact, executes it in an isolated environment, validates independent evidence, and packages only candidates that pass every gate.
+Derivative and Forge are one system. **Derivative** is the computational reasoning substrate: it combines specialized libraries, deterministic solvers, obligation compilation, contradiction detection, execution, audit, and memory. **Forge** is its software-building pipeline: it turns a natural-language requirement into Python software, runs the generated build in isolation, validates it independently, and packages it only when every gate passes.
+
+```text
+requirement -> typed contract -> grounded plan -> generated code
+            -> isolated execution -> independent validation
+            -> verified package or explicit failure evidence
+```
 
 > [!IMPORTANT]
 > `verified` does not mean formally proven or universally correct. It means that the generated artifact satisfied the compiled requirement, quality, execution, and adversarial contracts at that revision. Independent blind-oracle acceptance is measured separately.
@@ -110,9 +116,9 @@ Forge is designed to fail closed.
   <img src="docs/assets/verification-gates.svg" alt="Forge's three independent verification layers" width="100%" />
 </p>
 
-## Derivative and Forge
+## Architecture Boundary
 
-These are connected layers, not two competing agents.
+Derivative is broader than software generation, while Forge gives that substrate a concrete software-engineering contract. They are connected layers, not two competing agents.
 
 | Layer | Responsibility |
 | --- | --- |
@@ -146,7 +152,7 @@ Unsupported or unproven behavior should end as `validation_failed`, never as opt
 
 ## Evidence
 
-The repository currently passes **470 tests with 2 skips** locally and runs both a minimal-runtime gate and the full Docker-backed gate in GitHub Actions.
+The repository currently passes **475 tests with 2 skips** locally and runs both a minimal-runtime gate and the full Docker-backed gate in GitHub Actions.
 
 Blind evidence is immutable and reported without retrospective score repair:
 
@@ -245,7 +251,7 @@ Evaluation protocols and replay commands are documented in [Benchmark Evidence](
 - [Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md): why Forge and Derivative are interconnected and how loading remains capability-driven.
 - [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md): requirements for adding a capability without weakening `verified`.
 - [Blind V5 Evidence Closure](docs/FORGE_V5_EVIDENCE_CLOSURE.md): the frozen evidence semantics established at the V5 checkpoint.
-- [v0.2.0 Release Notes](docs/releases/v0.2.0.md): the evidence-grounded Forge release checkpoint.
+- [v0.2.1 Release Notes](https://github.com/Daniele-Cangi/Derivative/releases/tag/v0.2.1): repair-safety and Qiskit runtime-stability checkpoint.
 - [Contributing](CONTRIBUTING.md): development workflow and acceptance expectations.
 - [MIT License](LICENSE): use and redistribution terms.
 
