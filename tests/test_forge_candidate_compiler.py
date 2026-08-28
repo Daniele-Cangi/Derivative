@@ -1166,8 +1166,10 @@ def test_semantic_preflight_rejects_exact_output_with_added_newline():
             "src/tool.py": (
                 "import sys\n"
                 "def main(argv=None):\n"
-                "    sys.stderr.write('error: invalid input\\n')\n"
-                "    return 1\n"
+                "    if argv == ['invalid']:\n"
+                "        sys.stderr.write('error: invalid input\\n')\n"
+                "        return 1\n"
+                "    return 0\n"
             )
         },
         plan,
@@ -1183,6 +1185,47 @@ def test_semantic_preflight_rejects_exact_output_with_added_newline():
     )
     assert failure["expected"] == "error: invalid input"
     assert failure["observed"] == ["error: invalid input\n"]
+
+
+def test_semantic_preflight_ignores_exact_output_literal_in_test_source():
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=(
+                "If input is invalid, the tool outputs exactly 'error: invalid input' "
+                "to stderr and exits with code 1."
+            ),
+            requirement_atoms=[],
+        ),
+        required_tests=[],
+        interfaces=[],
+        requirement_coverage={},
+    )
+
+    result = run_semantic_preflight(
+        {
+            "src/tool.py": (
+                "import sys\n"
+                "def fail():\n"
+                "    sys.stderr.write('wrong')\n"
+            ),
+            "tests/test_tool.py": (
+                "import sys\n"
+                "def test_output():\n"
+                "    sys.stderr.write('error: invalid input')\n"
+            ),
+        },
+        plan,
+        {},
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is False
+    failure = next(
+        item
+        for item in result["failures"]
+        if item["kind"] == "exact_output_contract_failure"
+    )
+    assert failure["observed"] == ["wrong"]
 
 
 def test_semantic_preflight_accepts_module_path_and_local_target_wrapper():

@@ -137,6 +137,31 @@ def test_shared_evidence_accepts_local_wrapper_that_invokes_target():
     assert report["R001"]["passed"] is True
 
 
+def test_shared_evidence_rejects_wrapper_with_only_unused_nested_target_call():
+    path = "tests/test_word_freq_stats.py"
+    content = (
+        "import word_freq_stats as cli\n"
+        "\n"
+        "def run_cli(argv):\n"
+        "    def unused():\n"
+        "        return cli.main(argv)\n"
+        "    return 0\n"
+        "\n"
+        "def test_contract():\n"
+        "    result = run_cli([])\n"
+        "    assert result == 0\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"word_freq_stats"},
+    )
+
+    assert reasons == {path: ["missing_target_invocation"]}
+
+
 def test_shared_evidence_accepts_literal_getattr_target_alias():
     path = "tests/test_public_api.py"
     content = (

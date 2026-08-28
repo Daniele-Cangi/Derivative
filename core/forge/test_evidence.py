@@ -431,13 +431,41 @@ def _target_wrapper_function_names(
                 continue
             if not any(
                 _call_matches_target(call, known_targets, target_module_aliases)
-                for call in ast.walk(function)
-                if isinstance(call, ast.Call)
+                for call in _direct_function_calls(function)
             ):
                 continue
             wrappers.add(function.name)
             changed = True
     return wrappers
+
+
+def _direct_function_calls(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.Call]:
+    class DirectCallVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.calls: list[ast.Call] = []
+
+        def visit_Call(self, node: ast.Call) -> None:
+            self.calls.append(node)
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return None
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return None
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return None
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return None
+
+    visitor = DirectCallVisitor()
+    for statement in function.body:
+        visitor.visit(statement)
+    return visitor.calls
 
 
 def _module_matches(module_name: str, target_modules: set[str]) -> bool:

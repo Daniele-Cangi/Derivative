@@ -135,6 +135,11 @@ class ObligationValidationLayer(ValidationLayerBase):
                 for generated in code_artifact.files
                 if generated.path.startswith("src/")
             },
+            target_names={
+                interface.name
+                for interface in plan.interfaces
+                if interface.name.isidentifier()
+            },
         )
         exact_output_failures = [
             item for item in exact_output_evidence if not item["passed"]

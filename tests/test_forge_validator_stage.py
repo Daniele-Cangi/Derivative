@@ -912,8 +912,11 @@ def test_exact_output_contract_mismatch_fails_closed(forge_pipeline):
     assert entrypoint is not None
     entrypoint.content += (
         "\nimport sys\n"
-        "def _emit_invalid_input():\n"
-        "    sys.stderr.write('error: invalid input\\n')\n"
+        "def main(argv=None):\n"
+        "    if argv == ['invalid']:\n"
+        "        sys.stderr.write('error: invalid input\\n')\n"
+        "        return 1\n"
+        "    return 0\n"
     )
 
     result = forge_pipeline["validator"].validate(artifact, plan, build_spec)

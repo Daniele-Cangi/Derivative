@@ -381,6 +381,21 @@ def test_logical_contract_detector_does_not_join_opposed_words_across_clauses():
     assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
 
 
+def test_logical_contract_detector_distinguishes_valid_and_invalid_input_classes():
+    problem = "The parser must accept valid input and reject invalid input."
+
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
+def test_logical_contract_detector_accepts_reversed_opposed_term_order():
+    problem = "The parser must reject and accept every input."
+
+    contradictions = ExecutionLoop()._detect_logical_contract_contradictions(problem)
+
+    assert contradictions
+    assert "opposed postconditions" in contradictions[0]
+
+
 def test_blind_v8_zero_sum_requirement_is_not_a_lexical_contradiction():
     problem = (
         "Define a CLI tool called zero_sum_pair_finder that reads a single filename from argv[1], "

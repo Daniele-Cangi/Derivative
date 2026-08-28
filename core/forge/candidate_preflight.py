@@ -104,7 +104,15 @@ def run_semantic_preflight(
         failed_paths,
     )
     source_failures.extend(
-        _exact_output_contract_failures(candidate_files, plan, failed_paths)
+        _exact_output_contract_failures(
+            {
+                path: content
+                for path, content in candidate_files.items()
+                if path.startswith("src/")
+            },
+            plan,
+            failed_paths,
+        )
     )
     if not test_failures and not source_failures:
         return executable_preflight
@@ -417,6 +425,11 @@ def _exact_output_contract_failures(
     for item in exact_output_contract_evidence(
         plan.build_spec.normalized_requirement,
         candidate_files,
+        target_names={
+            interface.name
+            for interface in plan.interfaces
+            if interface.name.isidentifier()
+        },
     ):
         if item["passed"]:
             continue

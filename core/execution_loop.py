@@ -2609,16 +2609,7 @@ class ExecutionLoop:
                     clause
                     for clause in clauses
                     if re.search(r"\b(?:must|shall|required?\s+to|requires?\s+that)\b", clause)
-                    and re.search(rf"\b{re.escape(left)}\b", clause)
-                    and re.search(rf"\b{re.escape(right)}\b", clause)
-                    and (
-                        re.search(r"\b(?:simultaneously|both)\b", clause)
-                        or re.search(
-                            rf"\b{re.escape(left)}\b.{0,80}\b(?:and|but)\b.{0,80}"
-                            rf"\b{re.escape(right)}\b",
-                            clause,
-                        )
-                    )
+                    and self._opposed_terms_share_target(clause, left, right)
                 ),
                 None,
             )
@@ -2651,6 +2642,49 @@ class ExecutionLoop:
                 "decided from a finite prefix; two streams may share every observed value and diverge later."
             )
         return contradictions
+
+    @staticmethod
+    def _opposed_terms_share_target(clause: str, left: str, right: str) -> bool:
+        stopwords = {
+            "a",
+            "an",
+            "both",
+            "must",
+            "shall",
+            "simultaneously",
+            "the",
+            "to",
+        }
+
+        def target_tokens(value: str) -> tuple[str, ...]:
+            bounded = re.split(r"[,;.]|\b(?:while|whereas|then)\b", value, maxsplit=1)[0]
+            return tuple(
+                token
+                for token in re.findall(r"[a-z0-9_-]+", bounded)
+                if token not in stopwords
+            )
+
+        for first, second in ((left, right), (right, left)):
+            relation = re.search(
+                rf"\b{re.escape(first)}\b(?P<middle>.{{0,80}}?)"
+                rf"\b{re.escape(second)}\b(?P<tail>.{{0,80}})",
+                clause,
+            )
+            if relation is None:
+                continue
+            conjunctions = list(re.finditer(r"\b(?:and|but)\b", relation.group("middle")))
+            if not conjunctions:
+                continue
+            conjunction = conjunctions[-1]
+            first_target = target_tokens(relation.group("middle")[: conjunction.start()])
+            second_target = target_tokens(relation.group("tail"))
+            if not first_target:
+                if second_target or re.search(r"\b(?:simultaneously|both)\b", clause):
+                    return True
+                continue
+            if first_target == second_target:
+                return True
+        return False
 
     def _detect_permutation_contract_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
