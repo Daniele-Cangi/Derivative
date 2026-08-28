@@ -9,7 +9,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
 [![CodeTriage](https://www.codetriage.com/daniele-cangi/derivative/badges/users.svg)](https://www.codetriage.com/daniele-cangi/derivative)
-![Tests](https://img.shields.io/badge/tests-475%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-478%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V7-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -153,7 +153,7 @@ Unsupported or unproven behavior should end as `validation_failed`, never as opt
 
 ## Evidence
 
-The repository currently passes **475 tests with 2 skips** locally and runs both a minimal-runtime gate and the full Docker-backed gate in GitHub Actions.
+The repository currently passes **478 tests with 2 skips** locally and runs both a minimal-runtime gate and the full Docker-backed gate in GitHub Actions.
 
 Blind evidence is immutable and reported without retrospective score repair:
 

@@ -45,6 +45,10 @@ from core.model_provider import (
 TextGenerator = Callable[..., str]
 
 
+class _RetryableStructuredOutputError(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class BlindProducerConfig:
     bundle_id: str
@@ -241,26 +245,32 @@ def _generate_requirement_case(
             str(item["requirement"])
             for item in accepted_cases
         ]
-        response = generator(
-            model=model,
-            max_output_tokens=1800,
-            instructions=_requirement_producer_instructions(
-                config,
-                expected_status,
-                index,
-            ),
-            input_text=(
-                f"Create benchmark slot {index} of {config.total_cases}.\n"
-                f"Required terminal status: {expected_status}.\n"
-                "Previously accepted requirements that must not be repeated:\n"
-                + json.dumps(previous_requirements, indent=2)
-                + "\nDo not include oracle code."
-                + feedback
-            ),
-            output_schema=schema,
-            output_schema_name=f"{config.schema_namespace}_requirements",
-        )
-        payload = _parse_json_object(response, f"requirement producer slot {index}")
+        try:
+            payload = _request_json_object(
+                generator,
+                label=f"requirement producer slot {index}",
+                model=model,
+                max_output_tokens=1800,
+                instructions=_requirement_producer_instructions(
+                    config,
+                    expected_status,
+                    index,
+                ),
+                input_text=(
+                    f"Create benchmark slot {index} of {config.total_cases}.\n"
+                    f"Required terminal status: {expected_status}.\n"
+                    "Previously accepted requirements that must not be repeated:\n"
+                    + json.dumps(previous_requirements, indent=2)
+                    + "\nDo not include oracle code."
+                    + feedback
+                ),
+                output_schema=schema,
+                output_schema_name=f"{config.schema_namespace}_requirements",
+            )
+        except _RetryableStructuredOutputError:
+            rejection_classes.append("producer_output")
+            feedback = _structured_output_feedback("requirement")
+            continue
         raw_case = payload.get("case")
         error = _single_case_error(raw_case, accepted_cases)
         if error is None:
@@ -273,24 +283,29 @@ def _generate_requirement_case(
                 expected_status,
             )
             if preflight_error is None:
-                review = _review_requirement_case(
-                    generator=generator,
-                    model=model,
-                    case=candidate,
-                    index=index,
-                    schema_namespace=config.schema_namespace,
-                )
-                review_error = requirement_review_error(review)
-                if review_error is None:
-                    candidate["_requirement_validation"] = {
-                        "static_checks_passed": True,
-                        "independent_review_passed": True,
-                        "review_model": model,
-                        "findings": [],
-                    }
-                    return candidate
-                rejection_classes.append("independent_review")
-                error = review_error
+                try:
+                    review = _review_requirement_case(
+                        generator=generator,
+                        model=model,
+                        case=candidate,
+                        index=index,
+                        schema_namespace=config.schema_namespace,
+                    )
+                except _RetryableStructuredOutputError:
+                    rejection_classes.append("review_output")
+                    error = "independent requirement review returned incomplete structured output"
+                else:
+                    review_error = requirement_review_error(review)
+                    if review_error is None:
+                        candidate["_requirement_validation"] = {
+                            "static_checks_passed": True,
+                            "independent_review_passed": True,
+                            "review_model": model,
+                            "findings": [],
+                        }
+                        return candidate
+                    rejection_classes.append("independent_review")
+                    error = review_error
             else:
                 rejection_classes.append(
                     requirement_preflight_failure_class(preflight_error)
@@ -327,7 +342,9 @@ def _review_requirement_case(
         "required": ["approved", "findings"],
         "additionalProperties": False,
     }
-    response = generator(
+    return _request_json_object(
+        generator,
+        label="requirement reviewer",
         model=model,
         max_output_tokens=1200,
         instructions=requirement_reviewer_instructions(),
@@ -338,7 +355,6 @@ def _review_requirement_case(
         output_schema=schema,
         output_schema_name=f"{schema_namespace}_requirements_review",
     )
-    return _parse_json_object(response, "requirement reviewer")
 
 
 def _materialize_cases_and_oracles(
@@ -416,19 +432,25 @@ def _generate_oracle(
     feedback = ""
     rejection_classes: list[str] = []
     for _ in range(max_attempts):
-        response = generator(
-            model=model,
-            max_output_tokens=6000,
-            instructions=oracle_producer_instructions(),
-            input_text=(
-                f"Case id: {case_id}\nRequirement:\n{requirement}\n"
-                "Produce the complete independent oracle now."
-                + feedback
-            ),
-            output_schema=schema,
-            output_schema_name=f"{schema_namespace}_oracle",
-        )
-        payload = _parse_json_object(response, f"oracle producer {case_id}")
+        try:
+            payload = _request_json_object(
+                generator,
+                label=f"oracle producer {case_id}",
+                model=model,
+                max_output_tokens=6000,
+                instructions=oracle_producer_instructions(),
+                input_text=(
+                    f"Case id: {case_id}\nRequirement:\n{requirement}\n"
+                    "Produce the complete independent oracle now."
+                    + feedback
+                ),
+                output_schema=schema,
+                output_schema_name=f"{schema_namespace}_oracle",
+            )
+        except _RetryableStructuredOutputError:
+            rejection_classes.append("producer_output")
+            feedback = _structured_output_feedback("oracle")
+            continue
         source = str(payload.get("oracle_py", ""))
         error = oracle_preflight_error(
             source,
@@ -436,24 +458,29 @@ def _generate_oracle(
             public_contract=public_contract,
         )
         if error is None:
-            review = _review_oracle(
-                generator=generator,
-                model=model,
-                case_id=case_id,
-                requirement=requirement,
-                source=source,
-                schema_namespace=schema_namespace,
-            )
-            review_error = oracle_review_error(review)
-            if review_error is None:
-                return source, {
-                    "static_checks_passed": True,
-                    "independent_review_passed": True,
-                    "review_model": model,
-                    "findings": [],
-                }
-            rejection_classes.append(oracle_review_failure_class(review_error))
-            error = review_error
+            try:
+                review = _review_oracle(
+                    generator=generator,
+                    model=model,
+                    case_id=case_id,
+                    requirement=requirement,
+                    source=source,
+                    schema_namespace=schema_namespace,
+                )
+            except _RetryableStructuredOutputError:
+                rejection_classes.append("review_output")
+                error = "independent oracle review returned incomplete structured output"
+            else:
+                review_error = oracle_review_error(review)
+                if review_error is None:
+                    return source, {
+                        "static_checks_passed": True,
+                        "independent_review_passed": True,
+                        "review_model": model,
+                        "findings": [],
+                    }
+                rejection_classes.append(oracle_review_failure_class(review_error))
+                error = review_error
         else:
             rejection_classes.append(oracle_preflight_failure_class(error))
         feedback = _oracle_revision_feedback(source, error)
@@ -499,7 +526,9 @@ def _review_oracle(
         "required": ["approved", "findings"],
         "additionalProperties": False,
     }
-    response = generator(
+    return _request_json_object(
+        generator,
+        label=f"oracle reviewer {case_id}",
         model=model,
         max_output_tokens=1800,
         instructions=oracle_reviewer_instructions(),
@@ -511,7 +540,6 @@ def _review_oracle(
         output_schema=schema,
         output_schema_name=f"{schema_namespace}_oracle_review",
     )
-    return _parse_json_object(response, f"oracle reviewer {case_id}")
 
 
 def _case_set_error(cases: object, config: BlindProducerConfig) -> str | None:
@@ -594,6 +622,43 @@ def _parse_json_object(raw: str, label: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"{label} must return a JSON object.")
     return payload
+
+
+def _request_json_object(
+    generator: TextGenerator,
+    *,
+    label: str,
+    **request: Any,
+) -> dict[str, Any]:
+    try:
+        raw = generator(**request)
+        return _parse_json_object(raw, label)
+    except ValueError as exc:
+        if not _is_retryable_structured_output_error(exc):
+            raise
+        raise _RetryableStructuredOutputError(
+            f"{label} returned incomplete structured output"
+        ) from exc
+
+
+def _is_retryable_structured_output_error(exc: ValueError) -> bool:
+    message = str(exc)
+    return any(
+        marker in message
+        for marker in (
+            "OpenAI response did not contain text output",
+            "returned invalid JSON",
+            "must return a JSON object",
+        )
+    )
+
+
+def _structured_output_feedback(subject: str) -> str:
+    return (
+        "\nThe previous response was rejected because its structured output was "
+        f"incomplete or invalid. Return one complete replacement {subject} object "
+        "that matches the requested schema."
+    )
 
 
 def _requirement_producer_instructions(

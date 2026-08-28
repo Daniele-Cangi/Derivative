@@ -13,6 +13,7 @@ from core.forge.blind_requirement import requirement_preflight_error
 from core.forge.blind_producer import (
     BlindProducerConfig,
     _generate_oracle,
+    _generate_requirement_case,
     produce_and_freeze_blind_bundle,
 )
 
@@ -353,6 +354,125 @@ def test_one_shot_producer_regenerates_case_set_rejected_by_requirement_review(t
         if call["output_schema_name"] == "forge_blind_v4_requirements"
     ]
     assert "independent requirement review rejected" in requirement_calls[1]["input_text"]
+
+
+def test_requirement_producer_retries_incomplete_generation_and_review_output():
+    calls: list[dict] = []
+    requirement_attempts = 0
+    review_attempts = 0
+    source_case = _case_payload()["cases"][0]
+
+    def generator(**kwargs):
+        nonlocal requirement_attempts, review_attempts
+        calls.append(kwargs)
+        if kwargs["output_schema_name"].endswith("_requirements_review"):
+            review_attempts += 1
+            if review_attempts == 1:
+                return "{"
+            return json.dumps({"approved": True, "findings": []})
+        requirement_attempts += 1
+        if requirement_attempts == 1:
+            raise ValueError(
+                "OpenAI response did not contain text output "
+                "(status=incomplete, reason=max_output_tokens)."
+            )
+        return json.dumps(
+            {
+                "case": {
+                    "requirement": source_case["requirement"],
+                    "public_contract": source_case["public_contract"],
+                    "tags": source_case["tags"],
+                }
+            }
+        )
+
+    candidate = _generate_requirement_case(
+        generator=generator,
+        model="external-test-model",
+        config=BlindProducerConfig(
+            bundle_id="blind-v8-retry-test",
+            benchmark_version="v8",
+            verified_cases=1,
+            validation_failed_cases=1,
+            infeasible_cases=1,
+            max_generation_attempts=3,
+        ),
+        index=1,
+        expected_status="verified",
+        accepted_cases=[],
+    )
+
+    assert candidate["requirement"] == source_case["requirement"]
+    assert requirement_attempts == 3
+    assert review_attempts == 2
+    assert "incomplete or invalid" in calls[1]["input_text"]
+    assert "incomplete structured output" in calls[3]["input_text"]
+
+
+def test_oracle_producer_retries_incomplete_generation_and_review_output():
+    calls: list[dict] = []
+    oracle_attempts = 0
+    review_attempts = 0
+
+    def generator(**kwargs):
+        nonlocal oracle_attempts, review_attempts
+        calls.append(kwargs)
+        if kwargs["output_schema_name"].endswith("_oracle_review"):
+            review_attempts += 1
+            if review_attempts == 1:
+                raise ValueError(
+                    "OpenAI response did not contain text output "
+                    "(status=incomplete, reason=max_output_tokens)."
+                )
+            return json.dumps({"approved": True, "findings": []})
+        oracle_attempts += 1
+        if oracle_attempts == 1:
+            return "{"
+        return json.dumps(_oracle_payload())
+
+    source, validation = _generate_oracle(
+        generator=generator,
+        model="external-test-model",
+        case_id="V8-001",
+        requirement=_case_payload()["cases"][0]["requirement"],
+        max_attempts=3,
+        schema_namespace="forge_blind_v8",
+    )
+
+    assert source == _oracle_payload()["oracle_py"]
+    assert validation["independent_review_passed"] is True
+    assert oracle_attempts == 3
+    assert review_attempts == 2
+    assert "incomplete or invalid" in calls[1]["input_text"]
+    assert "incomplete structured output" in calls[3]["input_text"]
+
+
+def test_requirement_producer_does_not_retry_non_structured_generator_errors():
+    calls = 0
+
+    def generator(**_kwargs):
+        nonlocal calls
+        calls += 1
+        raise ValueError("unsupported model request")
+
+    with pytest.raises(ValueError, match="unsupported model request"):
+        _generate_requirement_case(
+            generator=generator,
+            model="external-test-model",
+            config=BlindProducerConfig(
+                bundle_id="blind-v8-nonretryable-test",
+                benchmark_version="v8",
+                verified_cases=1,
+                validation_failed_cases=1,
+                infeasible_cases=1,
+                max_generation_attempts=3,
+            ),
+            index=1,
+            expected_status="verified",
+            accepted_cases=[],
+        )
+
+    assert calls == 1
 
 
 def test_oracle_preflight_rejects_discarded_entrypoint_return_value():
