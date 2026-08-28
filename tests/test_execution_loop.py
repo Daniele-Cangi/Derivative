@@ -405,6 +405,17 @@ def test_logical_contract_detector_recognizes_implicit_predicate_target():
     assert "case-sensitive" in contradictions[0]
 
 
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "The parser must accept input and the validator must reject input.",
+        "The parser must accept input and may reject input.",
+    ],
+)
+def test_logical_contract_detector_binds_subject_and_modality(problem):
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
 def test_blind_v8_zero_sum_requirement_is_not_a_lexical_contradiction():
     problem = (
         "Define a CLI tool called zero_sum_pair_finder that reads a single filename from argv[1], "

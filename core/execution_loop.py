@@ -2676,6 +2676,13 @@ class ExecutionLoop:
             if not conjunctions:
                 continue
             conjunction = conjunctions[-1]
+            second_prefix = relation.group("middle")[conjunction.end() :]
+            if not ExecutionLoop._predicates_share_mandatory_subject(
+                clause,
+                relation.start(),
+                second_prefix,
+            ):
+                continue
             first_target = target_tokens(relation.group("middle")[: conjunction.start()])
             second_target = target_tokens(relation.group("tail"))
             if first_target == second_target:
@@ -2685,6 +2692,43 @@ class ExecutionLoop:
                     return True
                 continue
         return False
+
+    @staticmethod
+    def _predicates_share_mandatory_subject(
+        clause: str,
+        first_predicate_start: int,
+        second_prefix: str,
+    ) -> bool:
+        modality_pattern = re.compile(
+            r"\b(?:must|shall|required\s+to|requires?\s+that|may|can|should)\b"
+        )
+        mandatory = {"must", "shall", "required to", "require that", "requires that"}
+
+        def subject(value: str) -> str:
+            tokens = [
+                token
+                for token in re.findall(r"[a-z0-9_-]+", value)
+                if token not in {"a", "also", "an", "be", "both", "simultaneously", "the", "to"}
+            ]
+            return tokens[-1] if tokens else ""
+
+        first_prefix = clause[:first_predicate_start]
+        first_modalities = list(modality_pattern.finditer(first_prefix))
+        if not first_modalities:
+            return False
+        first_modality = first_modalities[-1]
+        if first_modality.group(0) not in mandatory:
+            return False
+        first_subject = subject(first_prefix[: first_modality.start()])
+
+        second_modalities = list(modality_pattern.finditer(second_prefix))
+        if not second_modalities:
+            return not subject(second_prefix)
+        second_modality = second_modalities[-1]
+        if second_modality.group(0) not in mandatory:
+            return False
+        second_subject = subject(second_prefix[: second_modality.start()])
+        return not second_subject or second_subject == first_subject
 
     def _detect_permutation_contract_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
