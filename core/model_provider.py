@@ -8,6 +8,10 @@ DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 _NON_LIVE_KEYS = {"", "dummy_key_for_testing", "your-api-key-here"}
 
 
+class MissingTextOutputError(ValueError):
+    """The provider returned a response without usable text output."""
+
+
 def resolve_openai_api_key(api_key: str | None = None) -> str:
     return (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
 
@@ -76,6 +80,6 @@ def generate_text(
     incomplete_details = getattr(response, "incomplete_details", None)
     incomplete_reason = getattr(incomplete_details, "reason", None)
     reason_suffix = f", reason={incomplete_reason}" if incomplete_reason else ""
-    raise ValueError(
+    raise MissingTextOutputError(
         f"OpenAI response did not contain text output (status={status}{reason_suffix})."
     )

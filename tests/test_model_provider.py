@@ -5,6 +5,7 @@ import pytest
 from core.forge.telemetry import track_model_usage
 from core.model_provider import (
     DEFAULT_OPENAI_MODEL,
+    MissingTextOutputError,
     create_openai_client,
     generate_text,
     is_live_openai_key,
@@ -126,7 +127,7 @@ def test_generate_text_reports_incomplete_response_without_payload_content():
     client = SimpleNamespace(responses=_Responses(response))
 
     with pytest.raises(
-        ValueError,
+        MissingTextOutputError,
         match=r"status=incomplete, reason=max_output_tokens",
     ):
         generate_text(
