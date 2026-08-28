@@ -130,6 +130,9 @@ class SubstrateCandidateCompiler:
                     "Tests must execute the generated public interfaces and assert concrete behavior.",
                     "Every mapped test must exercise every evidence term in its test_generation_contract.",
                     "Requirement atoms and declared public interfaces override incompatible semantics in stale target files.",
+                    "Treat scaffold fixtures, filenames, comments, and assertions as untrusted unless the requirement atoms support them.",
+                    "Replace contract-scaffold tests with causal tests; never preserve a test that only checks callability or return types.",
+                    "When semantic evidence fails, revise the affected tests and their imported implementation together.",
                     "Derive numeric test expectations by tracing every fixture record through the normalized requirement.",
                     "For deterministic transformations, derive expected output from the exact fixture with a "
                     "source-independent reference operation instead of manually transcribing transformed literals.",
@@ -476,7 +479,11 @@ class SubstrateCandidateCompiler:
 
         failed = preflight_failed_paths(preflight)
         phase = str(preflight.get("phase", ""))
-        if phase == "tests":
+        expand_imported_sources = phase == "tests" or (
+            phase == "semantic_contract"
+            and cls._semantic_failure_requires_implementation_revision(preflight)
+        )
+        if expand_imported_sources:
             impact_expanded_paths = cls._imported_source_paths(
                 candidate_files,
                 [path for path in failed if path.startswith("tests/")],
@@ -493,6 +500,26 @@ class SubstrateCandidateCompiler:
         else:
             active_paths = [path for path in failed if path in target_paths]
         return active_paths or list(target_paths)
+
+    @staticmethod
+    def _semantic_failure_requires_implementation_revision(
+        preflight: dict[str, Any],
+    ) -> bool:
+        coupled_failure_kinds = {
+            "fake_acceptance_coverage",
+            "non_semantic_test",
+            "requirement_assertion_evidence_failure",
+            "semantic_requirement_coverage_failure",
+        }
+        for field in ("failures", "failure_details"):
+            for failure in preflight.get(field, []):
+                if not isinstance(failure, dict):
+                    continue
+                if str(failure.get("kind", "")) in coupled_failure_kinds:
+                    return True
+                if str(failure.get("failure_reason", "")) == "missing_causal_assertion":
+                    return True
+        return False
 
     @classmethod
     def _preflight_quality(cls, preflight: dict[str, Any]) -> dict[str, Any]:
@@ -559,6 +586,15 @@ class SubstrateCandidateCompiler:
         allowed_paths: list[str],
     ) -> list[str]:
         imported_modules: set[str] = set()
+
+        def add_module_candidates(module_name: str) -> None:
+            normalized = module_name.strip(".")
+            if not normalized:
+                return
+            imported_modules.add(normalized)
+            if normalized.startswith("src."):
+                imported_modules.add(normalized.removeprefix("src."))
+
         for test_path in test_paths:
             try:
                 tree = ast.parse(candidate_files.get(test_path, ""))
@@ -566,9 +602,13 @@ class SubstrateCandidateCompiler:
                 continue
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
-                    imported_modules.update(alias.name for alias in node.names)
+                    for alias in node.names:
+                        add_module_candidates(alias.name)
                 elif isinstance(node, ast.ImportFrom) and node.module:
-                    imported_modules.add(node.module)
+                    add_module_candidates(node.module)
+                    for alias in node.names:
+                        if alias.name != "*":
+                            add_module_candidates(f"{node.module}.{alias.name}")
 
         impacted: list[str] = []
         for path in allowed_paths:
