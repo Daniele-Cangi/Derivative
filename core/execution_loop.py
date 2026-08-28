@@ -2678,12 +2678,12 @@ class ExecutionLoop:
             conjunction = conjunctions[-1]
             first_target = target_tokens(relation.group("middle")[: conjunction.start()])
             second_target = target_tokens(relation.group("tail"))
+            if first_target == second_target:
+                return True
             if not first_target:
                 if second_target or re.search(r"\b(?:simultaneously|both)\b", clause):
                     return True
                 continue
-            if first_target == second_target:
-                return True
         return False
 
     def _detect_permutation_contract_contradictions(self, problem: str) -> List[str]:

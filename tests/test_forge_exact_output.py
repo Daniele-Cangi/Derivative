@@ -127,6 +127,25 @@ def test_exact_output_contract_accepts_helper_called_from_matching_target_branch
     assert evidence[0]["passed"] is True
 
 
+def test_exact_output_contract_accepts_value_error_branch():
+    evidence = exact_output_contract_evidence(
+        REQUIREMENT,
+        {
+            "src/tool.py": (
+                "import sys\n"
+                "def main(value):\n"
+                "    try:\n"
+                "        int(value)\n"
+                "    except ValueError:\n"
+                "        sys.stderr.write('error: invalid input')\n"
+            )
+        },
+        target_names={"main"},
+    )
+
+    assert evidence[0]["passed"] is True
+
+
 def test_exact_output_contract_does_not_decode_bytes_literals():
     evidence = exact_output_contract_evidence(
         REQUIREMENT,

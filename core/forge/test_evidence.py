@@ -462,6 +462,9 @@ def _direct_function_calls(
         def visit_ClassDef(self, node: ast.ClassDef) -> None:
             return None
 
+        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+            return None
+
     visitor = DirectCallVisitor()
     for statement in function.body:
         visitor.visit(statement)
@@ -485,8 +488,10 @@ def _call_matches_target(
     name = _expression_name(call.func)
     if not name:
         return False
-    if name in target_names or name.rsplit(".", 1)[-1] in target_names:
+    if name in target_names:
         return True
+    if "." in name and name.rsplit(".", 1)[-1] in target_names:
+        return name.split(".", 1)[0] in target_module_aliases
     root = name.split(".", 1)[0]
     return root in target_module_aliases
 

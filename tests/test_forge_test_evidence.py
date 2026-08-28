@@ -162,6 +162,37 @@ def test_shared_evidence_rejects_wrapper_with_only_unused_nested_target_call():
     assert reasons == {path: ["missing_target_invocation"]}
 
 
+@pytest.mark.parametrize(
+    "wrapper_body",
+    [
+        "    return other.main(argv)\n",
+        "    return (cli.main(argv) for item in argv)\n",
+    ],
+)
+def test_shared_evidence_rejects_nonexecuted_or_unrelated_wrapper_calls(wrapper_body):
+    path = "tests/test_word_freq_stats.py"
+    content = (
+        "import word_freq_stats as cli\n"
+        "import other\n"
+        "\n"
+        "def run_cli(argv):\n"
+        f"{wrapper_body}"
+        "\n"
+        "def test_contract():\n"
+        "    result = run_cli([])\n"
+        "    assert result is not None\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"word_freq_stats"},
+    )
+
+    assert reasons == {path: ["missing_target_invocation"]}
+
+
 def test_shared_evidence_accepts_literal_getattr_target_alias():
     path = "tests/test_public_api.py"
     content = (

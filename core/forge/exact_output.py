@@ -300,7 +300,8 @@ def _reachable_function_contexts(
 
 
 def _semantic_features(value: str) -> set[str]:
-    lowered = re.sub(r"[_-]+", " ", value.lower())
+    split_identifiers = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    lowered = re.sub(r"[_-]+", " ", split_identifiers.lower())
     features = {
         token
         for token in re.findall(r"[a-z0-9]+", lowered)
