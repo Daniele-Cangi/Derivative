@@ -410,6 +410,10 @@ def test_logical_contract_detector_recognizes_implicit_predicate_target():
     [
         "The parser must accept input and the validator must reject input.",
         "The parser must accept input and may reject input.",
+        (
+            "The parser is required to accept input and the validator is required "
+            "to reject input."
+        ),
     ],
 )
 def test_logical_contract_detector_binds_subject_and_modality(problem):

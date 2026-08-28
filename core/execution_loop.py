@@ -2708,7 +2708,27 @@ class ExecutionLoop:
             tokens = [
                 token
                 for token in re.findall(r"[a-z0-9_-]+", value)
-                if token not in {"a", "also", "an", "be", "both", "simultaneously", "the", "to"}
+                if token not in {
+                    "a",
+                    "also",
+                    "an",
+                    "and",
+                    "are",
+                    "be",
+                    "been",
+                    "being",
+                    "both",
+                    "but",
+                    "had",
+                    "has",
+                    "have",
+                    "is",
+                    "simultaneously",
+                    "the",
+                    "to",
+                    "was",
+                    "were",
+                }
             ]
             return tokens[-1] if tokens else ""
 
