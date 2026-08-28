@@ -1,3 +1,4 @@
+import ast
 from typing import List, Set
 
 from core.forge.contracts import FeasiblePlan, PlanInterface, PlanTest
@@ -43,113 +44,153 @@ class BaseDomainAdapter:
             "    return 0\n"
         )
 
+    def _template_plan_contract_module(
+        self,
+        plan: FeasiblePlan,
+        path: str,
+        interfaces: List[PlanInterface],
+    ) -> str:
+        interface = self._interface_for_path(plan, path, interfaces)
+        function_name = interface.name if interface is not None else "run"
+        signature = interface.signature.strip() if interface is not None else ""
+        if not self._valid_function_signature(function_name, signature):
+            signature = f"{function_name}() -> int"
+        return (
+            "from __future__ import annotations\n"
+            "\n"
+            "\n"
+            f"def {signature}:\n"
+            "    raise NotImplementedError(\n"
+            f"        'Uncompiled plan contract for {plan.plan_id}: {path}'\n"
+            "    )\n"
+        )
+
     def _template_generic_requirement_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
-        src_modules = [
-            path.path.split("/")[-1].replace(".py", "")
-            for path in plan.file_tree_plan
-            if path.path.startswith("src/") and path.path.endswith(".py")
-        ]
-        is_invoice = self._is_invoice_plan(plan)
-        has_cli = "cli" in src_modules
-        has_main = "main" in src_modules and any(
-            interface.interface_type == "cli_entrypoint"
-            or interface.name == "main"
-            for interface in plan.interfaces
-        )
-        if has_cli or has_main:
-            module_name = "cli" if has_cli else "main"
-            if is_invoice:
-                return (
-                    "import csv\n"
-                    "from pathlib import Path\n"
-                    "import sys\n"
-                    "\n"
-                    "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
-                    "\n"
-                    f"import {module_name}\n"
-                    "\n"
-                    "\n"
-                    "def test_generated_requirement_exercises_cli_flow(tmp_path):\n"
-                    "    input_path = tmp_path / 'input.csv'\n"
-                    "    output_path = tmp_path / 'output.csv'\n"
-                    "    input_path.write_text(\n"
-                    "        'invoice_id,due_date,amount,customer_name\\nINV-1,2026-01-10,10,Acme\\nINV-2,2026-01-20,15,Beta\\n',\n"
-                    "        encoding='utf-8',\n"
-                    "    )\n"
-                    f"    result = {module_name}.main([str(input_path), str(output_path), '--horizon-days', '0'])\n"
-                    "    assert result == 0\n"
-                    "    with output_path.open('r', encoding='utf-8', newline='') as handle:\n"
-                    "        rows = list(csv.DictReader(handle))\n"
-                    "    assert len(rows) == 2\n"
-                    "    assert rows[0]['total_amount'] == '25'\n"
-                    "    assert rows[1]['invoice_count'] == '2'\n"
-                )
-            return (
-                "from pathlib import Path\n"
-                "import sys\n"
-                "\n"
-                "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
-                "\n"
-                f"import {module_name}\n"
-                "\n"
-                "\n"
-                "def test_generated_requirement_exercises_cli_flow(tmp_path):\n"
-                "    input_path = tmp_path / 'input.csv'\n"
-                "    output_path = tmp_path / 'output.csv'\n"
-                "    input_path.write_text('contract_id,expiration_date\\nA,2026-01-15\\n', encoding='utf-8')\n"
-                f"    result = {module_name}.main([str(input_path), str(output_path)])\n"
-                "    assert result == 0\n"
-                "    assert output_path.exists()\n"
-            )
-
-        module_name = src_modules[0] if src_modules else ""
-        interface_name = plan.interfaces[0].name if plan.interfaces else "run"
-        if module_name and interface_name.isidentifier():
-            return (
-                "from pathlib import Path\n"
-                "import sys\n"
-                "\n"
-                "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
-                "\n"
-                f"import {module_name}\n"
-                "\n"
-                "\n"
-                "def test_generated_requirement_invokes_target_code():\n"
-                f"    target = getattr({module_name}, {interface_name!r}, None)\n"
-                "    assert callable(target)\n"
-                "    result = target()\n"
-                "    assert isinstance(result, (int, type(None)))\n"
-            )
-
-        raise DomainAdapterError(
-            "Unable to generate semantic test template for required test "
-            f"'{plan_test.test_name}'. Plan does not provide a runnable module/interface mapping."
+        return self._template_contract_test(
+            plan,
+            requirement_ids=plan_test.requirement_ids,
         )
 
-    def _template_generic_planned_test(self, plan: FeasiblePlan) -> str:
+    def _template_generic_planned_test(self, plan: FeasiblePlan, path: str) -> str:
+        plan_file = next(
+            (
+                item
+                for item in plan.file_tree_plan
+                if item.path.replace("\\", "/") == path.replace("\\", "/")
+            ),
+            None,
+        )
+        requirement_ids = plan_file.source_requirement_refs if plan_file is not None else []
+        return self._template_contract_test(plan, requirement_ids=requirement_ids)
+
+    def _template_contract_test(
+        self,
+        plan: FeasiblePlan,
+        requirement_ids: List[str],
+    ) -> str:
+        interface = self._interface_for_path(
+            plan,
+            plan.implementation_blueprint.entrypoint_path,
+            plan.interfaces,
+        )
+        if interface is None or not interface.name.isidentifier():
+            raise DomainAdapterError(
+                "Unable to generate a contract-bound test scaffold without a declared entrypoint."
+            )
+        module_name = interface.module_path or self._module_name_from_path(
+            plan.implementation_blueprint.entrypoint_path
+        )
         source_modules = [
-            item.path.split("/")[-1].removesuffix(".py")
+            self._module_name_from_path(item.path)
             for item in plan.file_tree_plan
-            if item.path.startswith("src/") and item.path.endswith(".py")
+            if item.path.replace("\\", "/").startswith("src/")
+            and item.path.lower().endswith(".py")
         ]
-        if not source_modules:
-            raise DomainAdapterError("Generic planned test requires at least one Python source module.")
-        module_name = source_modules[0]
-        entrypoint_name = self._entrypoint_name(plan)
+        if not module_name and len(source_modules) == 1:
+            module_name = source_modules[0]
+        if not module_name:
+            raise DomainAdapterError(
+                "Unable to generate semantic test template without a declared module."
+            )
+        module_path = f"src/{module_name.replace('.', '/')}.py"
+        planned_paths = {
+            item.path.replace("\\", "/")
+            for item in plan.file_tree_plan
+        }
+        if module_path not in planned_paths:
+            raise DomainAdapterError(
+                "Unable to generate semantic test template without a planned source module."
+            )
+        atoms_by_id = {
+            atom.requirement_id: atom.text
+            for atom in plan.build_spec.requirement_atoms
+        }
+        normalized_ids = [
+            requirement_id
+            for requirement_id in requirement_ids
+            if requirement_id in atoms_by_id
+        ]
+        if not normalized_ids:
+            normalized_ids = [atom.requirement_id for atom in plan.build_spec.requirement_atoms]
+        requirement_text = tuple(atoms_by_id[item] for item in normalized_ids)
         return (
             "from pathlib import Path\n"
             "import sys\n"
             "\n"
             "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))\n"
             "\n"
-            f"import {module_name}\n"
+            f"import {module_name} as target_module\n"
+            "\n"
+            f"REQUIREMENT_IDS = {tuple(normalized_ids)!r}\n"
+            f"REQUIREMENT_TEXT = {requirement_text!r}\n"
             "\n"
             "\n"
-            "def test_planned_entrypoint_smoke(tmp_path, monkeypatch):\n"
-            "    monkeypatch.chdir(tmp_path)\n"
-            f"    result = {module_name}.{entrypoint_name}()\n"
-            "    assert result == 0\n"
+            "def test_requirement_contract_requires_candidate_implementation():\n"
+            f"    target = getattr(target_module, {interface.name!r}, None)\n"
+            "    assert callable(target)\n"
+            "    raise AssertionError(\n"
+            "        'Candidate compiler must replace contract scaffold: ' + ','.join(REQUIREMENT_IDS)\n"
+            "    )\n"
         )
+
+    def _interface_for_path(
+        self,
+        plan: FeasiblePlan,
+        path: str,
+        interfaces: List[PlanInterface],
+    ) -> PlanInterface | None:
+        normalized_path = path.replace("\\", "/").removeprefix("src/").removesuffix(".py")
+        normalized_path = normalized_path.replace("/", ".")
+        for interface in interfaces:
+            if interface.module_path and interface.module_path == normalized_path:
+                return interface
+        entrypoint_path = plan.implementation_blueprint.entrypoint_path.replace("\\", "/")
+        if path.replace("\\", "/") == entrypoint_path:
+            for interface in interfaces:
+                if interface.interface_type in {"entrypoint", "cli_entrypoint"}:
+                    return interface
+        return next(
+            (
+                interface
+                for interface in interfaces
+                if interface.interface_type in {"entrypoint", "cli_entrypoint"}
+            ),
+            interfaces[0] if interfaces else None,
+        )
+
+    @staticmethod
+    def _valid_function_signature(function_name: str, signature: str) -> bool:
+        if not signature.startswith(f"{function_name}("):
+            return False
+        try:
+            ast.parse(f"def {signature}:\n    pass\n")
+        except SyntaxError:
+            return False
+        return True
+
+    @staticmethod
+    def _module_name_from_path(path: str) -> str:
+        return path.replace("\\", "/").removeprefix("src/").removesuffix(".py").replace("/", ".")
 
     def _is_invoice_plan(self, plan: FeasiblePlan) -> bool:
         atom_text = " ".join(atom.text.lower() for atom in plan.build_spec.requirement_atoms)
@@ -167,7 +208,7 @@ class GenericDomainAdapter(BaseDomainAdapter):
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
         if path.replace("\\", "/").lower().startswith("tests/"):
-            return self._template_generic_planned_test(plan)
+            return self._template_generic_planned_test(plan, path)
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:

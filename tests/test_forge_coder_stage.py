@@ -117,6 +117,22 @@ JSON_RECORD_SORT_REQUIREMENT = (
     "records with ValueError, and includes behavioral tests."
 )
 
+REVERSE_CHUNKS_REQUIREMENT = (
+    "Define a CLI tool reverse_chunks that reads a filename from argv[1], decodes it as UTF-8, "
+    "and writes the file's content to stdout in reversed fixed-size chunks. The chunk size is "
+    "provided as an integer in argv[2] (a positive decimal string). The tool reads the entire "
+    "file, divides the decoded Unicode text into consecutive chunks of exactly the given size "
+    "(except possibly the last chunk, which may be shorter), and outputs these chunks concatenated "
+    "in reverse order (the last chunk in the file is written first, the first chunk last). No "
+    "separator is inserted between chunks or at boundaries. The entire transformed output is "
+    "encoded as UTF-8 and written to stdout. If argv[2] is not a valid positive integer, or if "
+    "there are not exactly two arguments, or if file reading/decoding fails, the tool outputs "
+    "exactly 'error: invalid input' to stderr and exits with code 1, producing no output to stdout. "
+    "If the file is empty, or chunk size exceeds input length, output is empty with exit code 0. "
+    "Edge cases cover invalid chunk sizes, empty files, non-integer chunk size values, and files "
+    "whose byte content is not valid UTF-8. Public import contract: from reverse_chunks import main."
+)
+
 
 @pytest.fixture(scope="module")
 def feasible_plan(tmp_path_factory) -> FeasiblePlan:
@@ -226,6 +242,47 @@ def test_domain_registry_routes_typed_plans(
     assert "recursive_json_merge" not in cli_capabilities
 
 
+def test_unrecognized_cli_uses_contract_bound_scaffolds_without_csv_semantics(tmp_path):
+    spec = RequirementCompiler().compile(REVERSE_CHUNKS_REQUIREMENT)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+
+    assert isinstance(plan, FeasiblePlan)
+    adapter = DomainAdapterRegistry().select(plan)
+    assert adapter.name == "cli"
+    assert adapter.implements_plan_semantics(plan) is False
+
+    artifact = CoderStage().generate(plan)
+    source = _find_generated_file(artifact, "src/reverse_chunks.py")
+    planned_test = _find_generated_file(artifact, "tests/test_reverse_chunks.py")
+    assert source is not None
+    assert planned_test is not None
+    assert "def main(argv:" in source.content
+    assert "NotImplementedError" in source.content
+    assert "REQUIREMENT_IDS" in planned_test.content
+    assert "reversed fixed-size chunks" in planned_test.content
+
+    generated_test_source = "\n".join(
+        generated.content
+        for generated in artifact.files
+        if generated.path.startswith("tests/")
+    )
+    contaminated_terms = (
+        "contracts.csv",
+        "summary.csv",
+        "horizon-days",
+        "expiration_date",
+        "assert isinstance(result",
+    )
+    assert all(term not in generated_test_source for term in contaminated_terms)
+    assert "Candidate compiler must replace contract scaffold" in generated_test_source
+    assert artifact.artifact_manifest["metadata"]["adapter_capabilities"] == []
+
+
 def test_typed_library_target_outranks_service_module_filename(tmp_path):
     spec = RequirementCompiler().compile(
         "Create a service module exposing def hash_stream(stream: bytes) -> str that returns "
@@ -331,10 +388,10 @@ def test_script_main_path_does_not_route_to_cli_adapter(feasible_plan):
     required_test = _find_generated_file(artifact, "tests/test_script_workflow.py")
     assert planned_test is not None
     assert required_test is not None
-    assert "result = main.run()" in planned_test.content
-    assert "assert result == 0" in planned_test.content
-    assert "getattr(main, 'run', None)" in required_test.content
-    assert "main.main(" not in required_test.content
+    assert "Candidate compiler must replace contract scaffold" in planned_test.content
+    assert "Candidate compiler must replace contract scaffold" in required_test.content
+    assert "assert isinstance(result" not in planned_test.content
+    assert "assert isinstance(result" not in required_test.content
 
 
 def test_coder_stage_returns_typed_code_artifact(feasible_plan):

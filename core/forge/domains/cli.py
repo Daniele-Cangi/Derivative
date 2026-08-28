@@ -36,6 +36,11 @@ class CliDomainAdapter(BaseDomainAdapter):
         return "src/cli.py" in paths or cli_modules.issubset(paths)
 
     def render_file(self, plan: FeasiblePlan, path: str, interfaces: List[PlanInterface]) -> str:
+        if not self.implements_plan_semantics(plan):
+            normalized = path.replace("\\", "/").lower()
+            if normalized.startswith("tests/"):
+                return self._template_generic_planned_test(plan, path)
+            return self._template_plan_contract_module(plan, path, interfaces)
         if is_json_log_cli(plan):
             rendered = render_json_log_file(plan, path, interfaces)
             if rendered is not None:
@@ -62,6 +67,8 @@ class CliDomainAdapter(BaseDomainAdapter):
         return self._template_generic_module(path, interfaces)
 
     def render_test(self, plan: FeasiblePlan, plan_test: PlanTest) -> str:
+        if not self.implements_plan_semantics(plan):
+            return self._template_generic_requirement_test(plan, plan_test)
         if is_json_log_cli(plan):
             return render_json_log_test(plan, plan_test)
         if is_recursive_json_merge_cli(plan):
@@ -71,6 +78,8 @@ class CliDomainAdapter(BaseDomainAdapter):
         return self._template_for_test(plan, plan_test)
 
     def provided_capabilities(self, plan: FeasiblePlan) -> Set[str]:
+        if not self.implements_plan_semantics(plan):
+            return set()
         if is_json_log_cli(plan):
             return {
                 "cli_entrypoint",
@@ -640,4 +649,4 @@ class CliDomainAdapter(BaseDomainAdapter):
                 "    assert output_rows[0]['days_to_expiration'] == '14'\n"
                 "    assert output_rows[0]['is_expiring_within_horizon'] == 'True'\n"
             )
-        return self._template_generic_requirement_test(plan, plan_test)
+        return self._template_plan_test_module(plan, "tests/test_cli_flow.py")

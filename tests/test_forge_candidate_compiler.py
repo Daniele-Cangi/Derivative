@@ -816,6 +816,45 @@ def test_executable_test_failure_expands_correction_to_imported_source(json_merg
     assert first_preflight["impact_expanded_paths"] == ["src/cli.py"]
 
 
+def test_non_semantic_test_failure_reopens_imported_source(json_merge_case):
+    _, _, artifact, _ = json_merge_case
+    files = {
+        generated.path: generated.content
+        for generated in artifact.files
+        if generated.path != "forge_artifact_manifest.json"
+    }
+    failed_test = next(
+        path
+        for path in artifact.test_paths
+        if "import cli" in files[path]
+    )
+    preflight = {
+        "ran": True,
+        "passed": False,
+        "phase": "semantic_contract",
+        "failed_paths": [failed_test],
+        "source_failed_paths": [],
+        "test_failed_paths": [failed_test],
+        "failures": [
+            {
+                "path": failed_test,
+                "kind": "non_semantic_test",
+                "failure_reason": "missing_causal_assertion",
+            }
+        ],
+    }
+
+    active_paths = SubstrateCandidateCompiler._preflight_active_paths(
+        files,
+        preflight,
+        sorted(files),
+    )
+
+    assert failed_test in active_paths
+    assert "src/cli.py" in active_paths
+    assert preflight["impact_expanded_paths"] == ["src/cli.py"]
+
+
 def test_candidate_correction_receives_structured_pytest_failure(json_merge_case):
     _, plan, artifact, validation = json_merge_case
     kernel = _MonotonicCorrectionKernel()
