@@ -548,6 +548,15 @@ class RequirementCompiler:
             flags.append(
                 "Requirement explicitly declares behavior materially unspecified or unprovable."
             )
+        if re.search(
+            r"\bleft\s+to\s+the\s+implementation\b|"
+            r"\bcanonical\s+(?:result|behavior|output|semantics?)\b.{0,40}\bundefined\b|"
+            r"\bundefined\b.{0,40}\bcanonical\s+(?:result|behavior|output|semantics?)\b",
+            lowered,
+        ):
+            flags.append(
+                "Requirement leaves canonical behavior materially unspecified."
+            )
         if (
             re.search(r"\b(?:pseudo[- ]random|prng|random\s+generator)\b", lowered)
             and re.search(r"\bseed(?:ed)?\b", lowered)

@@ -2589,7 +2589,11 @@ class ExecutionLoop:
     def _detect_logical_contract_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
         contradictions: List[str] = []
-        simultaneous = bool(re.search(r"\b(?:simultaneously|both)\b", lowered))
+        clauses = [
+            clause.strip()
+            for clause in re.split(r"(?<=[.!?;])\s+|;", lowered)
+            if clause.strip()
+        ]
         opposed_terms = (
             ("ignore", "enforce"),
             ("include", "exclude"),
@@ -2600,9 +2604,25 @@ class ExecutionLoop:
             ("case sensitive", "case insensitive"),
         )
         for left, right in opposed_terms:
-            if simultaneous and re.search(rf"\b{re.escape(left)}\b", lowered) and re.search(
-                rf"\b{re.escape(right)}\b", lowered
-            ):
+            contradictory_clause = next(
+                (
+                    clause
+                    for clause in clauses
+                    if re.search(r"\b(?:must|shall|required?\s+to|requires?\s+that)\b", clause)
+                    and re.search(rf"\b{re.escape(left)}\b", clause)
+                    and re.search(rf"\b{re.escape(right)}\b", clause)
+                    and (
+                        re.search(r"\b(?:simultaneously|both)\b", clause)
+                        or re.search(
+                            rf"\b{re.escape(left)}\b.{0,80}\b(?:and|but)\b.{0,80}"
+                            rf"\b{re.escape(right)}\b",
+                            clause,
+                        )
+                    )
+                ),
+                None,
+            )
+            if contradictory_clause is not None:
                 contradictions.append(
                     "INFEASIBLE: the requirement simultaneously mandates opposed postconditions "
                     f"('{left}' and '{right}'), so no single result can satisfy both."

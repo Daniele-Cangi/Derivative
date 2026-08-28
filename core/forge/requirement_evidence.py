@@ -37,6 +37,12 @@ def requirement_assertion_evidence(
                     term
                     for term in terms
                     if matcher(term, function_source.lower())
+                    or _target_contract_term_covered(
+                        term,
+                        function,
+                        expected_target_names,
+                        expected_target_modules,
+                    )
                 ]
                 causal_functions.append(
                     {
@@ -79,6 +85,24 @@ def requirement_assertion_evidence(
             ),
         }
     return report
+
+
+def _target_contract_term_covered(
+    term: str,
+    function: Mapping[str, object],
+    target_names: tuple[str, ...],
+    target_modules: tuple[str, ...],
+) -> bool:
+    if not function.get("target_invoked", False):
+        return False
+    normalized = term.lower().replace("-", "_").replace(" ", "_")
+    normalized_modules = {
+        module.lower().replace("-", "_").replace(" ", "_")
+        for module in target_modules
+    }
+    if normalized in normalized_modules:
+        return True
+    return normalized in {"cli_entrypoint", "cli_flow"} and "main" in target_names
 
 
 def _default_term_matcher(term: str, content: str) -> bool:

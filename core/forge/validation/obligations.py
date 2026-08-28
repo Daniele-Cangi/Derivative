@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.exact_output import exact_output_contract_evidence
 from core.forge.execution import ProcessExecutor, SandboxProcessRequest
 from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.semantic_contracts import (
@@ -126,6 +127,26 @@ class ObligationValidationLayer(ValidationLayerBase):
         for signature in semantic_signatures:
             self._append_unique(signatures, signature)
         evidence["requirement_semantic_checks"] = semantic_evidence
+
+        exact_output_evidence = exact_output_contract_evidence(
+            build_spec.normalized_requirement,
+            {
+                generated.path: generated.content
+                for generated in code_artifact.files
+                if generated.path.startswith("src/")
+            },
+        )
+        exact_output_failures = [
+            item for item in exact_output_evidence if not item["passed"]
+        ]
+        if exact_output_failures:
+            failures.append(
+                "Exact output contracts are not satisfied by generated source: "
+                f"{exact_output_failures}."
+            )
+            self._append_unique(signatures, "exact_output_mismatch")
+            self._append_unique(signatures, "semantic_content_mismatch")
+        evidence["exact_output_contract_checks"] = exact_output_evidence
 
         quality_contract_failures, quality_contract_evidence = self.quality_checker.check(
             materialized=materialized,
@@ -386,7 +407,10 @@ class ObligationValidationLayer(ValidationLayerBase):
                 for name in coverage.get("tests", [])
                 if f"tests/{name}.py" in files_by_path
             ]
-            source_corpus = "\n".join(files_by_path[path].content.lower() for path in source_paths)
+            source_corpus = "\n".join(
+                f"{path.lower()}\n{files_by_path[path].content.lower()}"
+                for path in source_paths
+            )
             source_content = "\n\n".join(
                 files_by_path[path].content for path in source_paths
             )

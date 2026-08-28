@@ -250,6 +250,15 @@ def test_explicitly_unprovable_or_ambiguous_semantics_are_material_flags():
         assert any("materially unspecified or unprovable" in flag for flag in spec.ambiguity_flags)
 
 
+def test_undefined_canonical_behavior_is_materially_ambiguous():
+    spec = RequirementCompiler().compile(
+        "Define a CLI that lists mixed-case Unicode words. The treatment of non-cased "
+        "letters is left to the implementation, and the canonical result is undefined."
+    )
+
+    assert "Requirement leaves canonical behavior materially unspecified." in spec.ambiguity_flags
+
+
 def test_normative_must_not_clause_remains_a_hard_requirement():
     spec = RequirementCompiler().compile(
         "Create a service module exposing def hash_stream(stream) -> str. "
