@@ -1,0 +1,31 @@
+{
+  "bundle_id": "forge-blind-v8-external-001",
+  "dataset": {
+    "path": "cases.json",
+    "sha256": "00411604f01e8f976a21bdd6b2621cc0eaf69b9262e90fd7d75cbd88f0aef995"
+  },
+  "forge_baseline": {
+    "digest_mode": "canonical_lf_v1",
+    "file_count": 62,
+    "sha256": "03353edd938ac6de324fe69e29e6a086ad0b3b2d4227ff74975a638bccdf727f"
+  },
+  "frozen_at": "2026-08-28T07:55:23Z",
+  "oracle_sha256": {
+    "V8-001": "7146297491237cbbe40ea58bd1a7ed36b00da0fa03d4b5527eeeb9d269af95a4",
+    "V8-002": "64bb31cb19218c28da919e39e04a6c46baff6353345fd58393256242aad35df1",
+    "V8-003": "1fa4cc946679b72bcf4c35b232eb0370b9368d197ee96c9b09a3dc50d946eee2",
+    "V8-004": "04fe0827b625da743eebcb0bb39e4a3aa61dd1f719c03970d1ffef727953cdb2",
+    "V8-005": "ad6446735154308dc0ed79d56a86ad1e051b146bd9ae63e0c5700fa0db07527d",
+    "V8-006": "54a76e7476bf474b068f5c730c9ed481e0a7fc679b308f8cd08248ad1ad84155"
+  },
+  "provenance": {
+    "declaration": "Requirements and black-box oracles were generated, causally checked, independently reviewed, and sealed in one transaction before any case was executed by Forge.",
+    "independent_of_forge": true,
+    "oracle_origin": "Separate stateless generation and review requests per verified requirement; no Forge source or candidate implementation was supplied.",
+    "producer": "OpenAI Responses API isolated producer (gpt-4.1-2025-04-14)",
+    "requirements_origin": "Separate stateless generation and review requests per requirement from a domain-neutral benchmark brief; no Forge source, generated artifact, or prior blind case was supplied.",
+    "sealed_before_first_execution": true
+  },
+  "schema_version": 3,
+  "source_urls": []
+}

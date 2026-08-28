@@ -1,0 +1,357 @@
+[
+  {
+    "case_id": "V8-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V8-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "word_freq_stats",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool word_freq_stats that reads a single filename from argv[1], decodes it as UTF-8, and analyzes the text for word frequency statistics. A 'word' is any contiguous sequence of Unicode alphabetic characters as determined by Python's str.isalpha() method. The tool emits exactly two lines to stdout: the first line is the total number of words, and the second line is the casefolded word (using str.casefold()) with the highest frequency and its count, separated by a space. In case of ties, the lexicographically smallest candidate by casefolded form is used. If the file is empty or has no valid words, both lines output '0'. On file I/O or UTF-8 decode error, the process outputs a single line 'error: cannot read file' to stderr and exits with code 1, with no output to stdout. Outputs are always terminated by a single newline. Edge cases include handling empty files, files with no valid words, ties in frequency, and correct Unicode character handling. Public import contract: from word_freq_stats import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "text-processing",
+      "unicode",
+      "deterministic",
+      "terminal-io"
+    ]
+  },
+  {
+    "case_id": "V8-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V8-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "uniq_lines",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool uniq_lines that reads a single filename from argv[1], decodes it as UTF-8, and writes to stdout only the first occurrence of each unique line in order of appearance from the file. Uniqueness is determined by the exact line content including all whitespace and line endings (lines are not stripped or normalized in any way). All lines, including empty lines, must be considered. On file I/O or UTF-8 decode error, the process outputs exactly 'error: cannot read file' to stderr and exits with code 1 with no output to stdout. An empty input file must result in no stdout output and a zero exit code. Edge cases include files with only repeated lines, empty files, repeated empty lines, and lines that differ only in line endings or whitespace. Outputs are to be terminated as in the input file, preserving any exact original line terminators. Public import contract: from uniq_lines import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "file-processing",
+      "line-deduplication",
+      "terminal-verified",
+      "utf8",
+      "order-preserving"
+    ]
+  },
+  {
+    "case_id": "V8-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V8-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "line_tail_sort",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool line_tail_sort that reads a single filename from argv[1], opens it in text mode and decodes as UTF-8, and outputs all its lines to stdout sorted by their last non-whitespace character in lexicographical order, retaining the original line endings from the file. When two or more lines share the same last non-whitespace character (or if they are wholly whitespace or empty), their original order of appearance in the input is preserved relative to each other. A line containing zero non-whitespace characters is treated as having a last non-whitespace character of U+0000 (null character) for sorting purposes. The tool emits each output line exactly as it appeared in the input, including all whitespace and line endings. If the input file cannot be opened or decoded as UTF-8, the process writes 'error: cannot read file' to stderr (UTF-8 encoded), writes nothing to stdout, and exits with code 1. Standard output is always encoded as UTF-8. An empty file results in no output and a zero exit code. Canonical edge cases include lines with only whitespace, zero-length lines, preservation of embedded and trailing whitespace, lines with identical tails, and handling of non-UTF-8 bytes. Public import contract: from line_tail_sort import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "file-processing",
+      "line-sorting",
+      "whitespace-handling",
+      "stable-sort",
+      "utf8"
+    ]
+  },
+  {
+    "case_id": "V8-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V8-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "doubled_lines",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool doubled_lines that reads a single filename from argv[1], decodes it as UTF-8, and writes to stdout only those lines from the file that appear more than once, preserving their original order and line endings the first time they are encountered. That is, only the first occurrence of each duplicate line is emitted, and duplicate determination is based on exact line content (including whitespace and line endings). Lines with no duplicates are never output, and all instances after the first are ignored. If the input file is empty or contains only unique lines, the tool produces no output to stdout and exits with code 0. On file I/O or UTF-8 decode failure, the process outputs exactly 'error: cannot read file' to stderr and exits with code 1, producing no standard output. Every output line must match the original input line byte-for-byte, including all whitespace or special characters. Edge cases include files where all lines are unique, files with only repeated empty lines, and handling of lines that differ solely by line endings. Public import contract: from doubled_lines import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "utf-8",
+      "file-io",
+      "line-duplicates",
+      "terminal-verified",
+      "order-preserving"
+    ]
+  },
+  {
+    "case_id": "V8-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V8-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "reverse_chunks",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool reverse_chunks that reads a filename from argv[1], decodes it as UTF-8, and writes the file's content to stdout in reversed fixed-size chunks. The chunk size is provided as an integer in argv[2] (a positive decimal string). The tool reads the entire file, divides the decoded Unicode text into consecutive chunks of exactly the given size (except possibly the last chunk, which may be shorter), and outputs these chunks concatenated in reverse order (the last chunk in the file is written first, the first chunk last). No separator is inserted between chunks or at boundaries. The entire transformed output is encoded as UTF-8 and written to stdout. If argv[2] is not a valid positive integer, or if there are not exactly two arguments, or if file reading/decoding fails, the tool outputs exactly 'error: invalid input' to stderr and exits with code 1, producing no output to stdout. If the file is empty, or chunk size exceeds input length, output is empty with exit code 0. Edge cases cover invalid chunk sizes, empty files, non-integer chunk size values, and files whose byte content is not valid UTF-8. Public import contract: from reverse_chunks import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "utf-8",
+      "file",
+      "reverse",
+      "chunking",
+      "deterministic-failure"
+    ]
+  },
+  {
+    "case_id": "V8-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V8-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "col_run_length_encode",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool called col_run_length_encode that reads a single filename from argv[1], decodes it as UTF-8, and outputs to stdout each input line transformed by run-length encoding of its individual Unicode characters, with each run represented as a count (integer, no leading zeros) immediately followed by the repeated character (no separator). For example, the line 'aabcc' becomes '2a1b2c'. Each input line is encoded and written separately to stdout, including the original line ending (which is not encoded, but appended exactly as in the input). If the input file cannot be read or decoded as UTF-8, the tool outputs 'error: cannot read file' to stderr and exits with code 1, writing nothing to stdout. An empty file produces no output and exits with code 0. Edge cases: lines with zero length produce just their original line ending; input lines with only one character result in '1X' where X is the character; all Unicode codepoints must be handled; output lines preserve the input's exact line separator (e.g., '\\r', '\\n', '\\r\\n'); transformation operates on codepoints, not bytes or grapheme clusters; invalid input (wrong argv count) triggers 'error: invalid input' to stderr with exit code 1. Public import contract: from col_run_length_encode import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "terminal",
+      "run-length-encoding",
+      "unicode",
+      "file-processing",
+      "edge-cases-verified"
+    ]
+  },
+  {
+    "case_id": "V8-007",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "byte_offset_lister",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool called byte_offset_lister that reads a filename from argv[1], opens it in binary mode, and outputs to stdout a newline-separated list of all non-overlapping byte offsets within the file where the byte value 0x00 (zero byte) occurs. Each line contains the integer offset (zero-based) of a matched byte. The output lines are ordered by increasing file offset. If the file contains no zero bytes, the process emits 'none' to stdout and exits with code 0. If the file cannot be opened, the process outputs 'error: cannot read file' to stderr, writes nothing to stdout, and exits with code 1. If the file is empty, outputs 'none' and exits with code 0. If the file exceeds the platform's maximum memory size or in any case where reading the file's actual size is impossible, the behavior is implementation-dependent. The filtering logic must identify zero bytes in all possible file contents, but for files containing embedded NUL characters in encodings other than UTF-8 or when the specification of binary offset is ambiguous with respect to underlying filesystem representation, the canonical output is undefined. Only the Python standard library is permitted. Public import contract: from byte_offset_lister import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "file-analysis",
+      "binary-processing",
+      "ambiguous-requirement",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V8-008",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "mixed_unicode_case_list",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool called mixed_unicode_case_list that reads a single filename from argv[1], decodes the file as UTF-8, and emits to stdout all unique words that contain a mix of uppercase and lowercase Unicode letters as determined by Python's str.isupper() and str.islower() methods when applied to each character. A word is any maximal contiguous sequence of Unicode alphabetic characters according to str.isalpha(). Words must be listed in lexicographical order, one per line, encoded as UTF-8. Empty files produce no output and a zero exit code. If the file cannot be read or decoded as UTF-8, the tool writes 'error: cannot read file' to stderr and exits with code 1, outputting nothing to stdout. The definition of 'mix of uppercase and lowercase' for words containing characters beyond BMP or with locale-dependent case mapping is left to the implementation, as is the treatment of words consisting only of characters for which neither isupper() nor islower() is true. Edge cases include filenames that are empty, words with non-cased letters, words containing only combining marks, and normalization differences in Unicode casing; but the canonical result for such words is undefined. Public import contract: from mixed_unicode_case_list import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "text-processing",
+      "unicode",
+      "case-analysis",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V8-009",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "palindromic_bytes",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool palindromic_bytes that reads a single filename from argv[1], opens it in binary mode, and emits to stdout the total number of contiguous byte subsequences (length \u2265 1) that are palindromic within the entire file content. A (byte) palindrome is defined as a slice that reads the same forwards and backwards (e.g., b'abcba'), and overlapping palindromes must be counted separately. The output is a single decimal integer (the count) followed by a newline. If the input file is empty, output '0' and exit with code 0. If the input file cannot be opened, the process must write exactly 'error: cannot read file' to stderr, write nothing to stdout, and exit with code 1. There is no upper bound imposed on file size, but for files exceeding available memory, behavior is implementation-defined. For any input containing more than one possible palindrome of a given length starting at the same offset, all must be counted as distinct. The precise definition of overlapping palindromic subsequences in the presence of byte values that may represent multi-byte encodings, non-characters, or platform-specific code units is left to the implementation, which may result in ambiguous counts for such inputs and prevents objective certification. Edge cases include an input consisting only of repeated single bytes, maximal-length palindromes, and single-byte files. Public import contract: from palindromic_bytes import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "file-bytes",
+      "palindrome-counting",
+      "validation_failed",
+      "ambiguous_definition"
+    ]
+  },
+  {
+    "case_id": "V8-010",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "inverse_text_map",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool called inverse_text_map that reads two filenames from argv[1] and argv[2], each decoded as UTF-8, with the first file specifying a bijective mapping via lines of the form 'A->B' (where both A and B are nonempty, single Unicode characters, str.isprintable() True, and A != B), and the second file containing text to transform. The tool must apply the inverse of this mapping to the text file, character by character, replacing only mapped targets with their unique sources; characters not in the mapping targets are unchanged. The output is the full transformed text written to stdout. If the mapping file is not bijective (e.g., duplicate A or B values, same B mapped from multiple A, etc.), or contains any malformed line (invalid format, blank line, non-printable chars, or A == B), the process must output exactly 'error: invalid mapping' to stderr and exit with code 1, writing nothing else. If either file cannot be opened or decoded as UTF-8, output 'error: cannot read file' to stderr with exit code 1. If the mapping and text are both empty, tool writes nothing to stdout and exits with code 0. Edge cases include: mapping files with inconsistent whitespace, duplicate or conflicting rules, multi-character A or B (invalid), or mappings that omit some text file characters. It is formally impossible to apply the inverse map for all valid Python-str Unicode texts and mapping files while enforcing strict bijection and single-codepoint mapping rules\u2014since any mapping file containing a Unicode surrogate, non-printable, or duplicate codepoint will contradict the unique 1-to-1 constraint or cannot appear legally in all valid decoded texts. Public import contract: from inverse_text_map import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "utf8",
+      "unicode",
+      "mapping",
+      "bijection",
+      "impossible-constraint"
+    ]
+  },
+  {
+    "case_id": "V8-011",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "zero_sum_pair_finder",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool called zero_sum_pair_finder that reads a single filename from argv[1], decodes it as UTF-8, and treats the file contents as a list of decimal integers separated by line breaks. The tool must scan all unique unordered pairs of these integers and output to stdout all pairs whose sum is exactly zero, formatted as 'X,Y' (where X and Y are decimal integers from the input), one per line. Each valid pair (X,Y) must be output only once, regardless of order; that is, output 'X,Y' but never both 'X,Y' and 'Y,X'. Pairs with both values the same (i.e., X == Y == 0) must be shown if they appear at least twice in input. In case of file read error or any line not containing a valid integer (including blank lines, overflows, or extra spaces), the process must exit with code 1, output 'error: invalid input' to stderr, and write nothing to stdout. If no valid pairs are found, stdout must be empty. All output must be in lexicographical order of string format. Edge cases: empty input, less than two integers, inputs with duplicate zeroes, extremely large or small values, and invalid integer representations (including signs or whitespace). It is mathematically impossible, using only the Python standard library, to provide a fully deterministic ordering for all integer pairs whose value representations may differ due to the presence of Unicode numeric digits (str.isdecimal()), alternate digits, or non-ASCII signs or spaces, especially since built-in int() will reject such digits in some legal Unicode files but accept them in others, and lexicographical order as strings cannot be made consistent for all Unicode inputs representing the same value. Public import contract: from zero_sum_pair_finder import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "integers",
+      "pair-search",
+      "unicode",
+      "constraint-contradiction",
+      "infeasible_proven"
+    ]
+  },
+  {
+    "case_id": "V8-012",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "unique_count_k_substrings",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI tool called unique_count_k_substrings that reads exactly two arguments from argv[1] and argv[2]: the filename of a UTF-8 text file, and a decimal integer k (k >= 1). It must decode the file as UTF-8 and output to stdout a single line: the total number of unique length-k substrings (in terms of Unicode codepoints, not bytes) appearing anywhere in the text. Overlapping substrings are counted separately if distinct; identical substrings are counted only once. An empty file or k greater than the total number of characters in the text yields output '0' and exit code 0. If the file cannot be read or decoded as UTF-8, or k is not a valid positive integer, it writes exactly 'error: invalid input' to stderr and exits with code 1, outputting nothing to stdout. Output is always a single decimal integer and a single trailing newline. For inputs with fewer than k codepoints, output is '0'. Edge cases: an empty file, k equal to file's codepoint length, text shorter than k, file with only combining marks, non-NFC normalized input, and text containing surrogates or non-character codepoints. It is mathematically impossible to define a unique length-k substring set for all valid Python-str Unicode inputs containing unpaired surrogates, combining marks that do not cluster or reorder in all environments, or certain rare noncharacters whose codepoint logic violates the deterministic substring uniqueness when interpreted strictly by codepoint, as required by the problem statement. Public import contract: from unique_count_k_substrings import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v8",
+      "cli",
+      "infeasible_proven",
+      "unicode",
+      "substring",
+      "finite contradiction"
+    ]
+  }
+]
