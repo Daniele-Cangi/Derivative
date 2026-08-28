@@ -1434,6 +1434,34 @@ def test_imported_source_expansion_resolves_nested_module_basename():
     assert impacted == ["src/library/core.py"]
 
 
+@pytest.mark.parametrize(
+    "import_statement",
+    [
+        "import component",
+        "from component import run",
+        "from src.component import run",
+        "from src import component",
+    ],
+)
+def test_imported_source_expansion_resolves_src_qualified_imports(import_statement):
+    files = {
+        "src/component.py": "def run():\n    return 0\n",
+        "tests/test_component.py": (
+            f"{import_statement}\n\n"
+            "def test_component():\n"
+            "    assert True\n"
+        ),
+    }
+
+    impacted = SubstrateCandidateCompiler._imported_source_paths(
+        files,
+        ["tests/test_component.py"],
+        list(files),
+    )
+
+    assert impacted == ["src/component.py"]
+
+
 def test_semantic_preflight_rejects_return_code_only_rejection_test(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {

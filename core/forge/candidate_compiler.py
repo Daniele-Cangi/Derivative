@@ -586,6 +586,15 @@ class SubstrateCandidateCompiler:
         allowed_paths: list[str],
     ) -> list[str]:
         imported_modules: set[str] = set()
+
+        def add_module_candidates(module_name: str) -> None:
+            normalized = module_name.strip(".")
+            if not normalized:
+                return
+            imported_modules.add(normalized)
+            if normalized.startswith("src."):
+                imported_modules.add(normalized.removeprefix("src."))
+
         for test_path in test_paths:
             try:
                 tree = ast.parse(candidate_files.get(test_path, ""))
@@ -593,9 +602,13 @@ class SubstrateCandidateCompiler:
                 continue
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
-                    imported_modules.update(alias.name for alias in node.names)
+                    for alias in node.names:
+                        add_module_candidates(alias.name)
                 elif isinstance(node, ast.ImportFrom) and node.module:
-                    imported_modules.add(node.module)
+                    add_module_candidates(node.module)
+                    for alias in node.names:
+                        if alias.name != "*":
+                            add_module_candidates(f"{node.module}.{alias.name}")
 
         impacted: list[str] = []
         for path in allowed_paths:
