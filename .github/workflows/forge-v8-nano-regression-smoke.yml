@@ -1,0 +1,74 @@
+name: Forge V8 nano regression smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v8-005-post-fix-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Require main branch dispatch
+        shell: bash
+        run: test "$GITHUB_REF" = "refs/heads/main"
+
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install locked Blind V8 dependencies
+        run: python -m pip install --require-hashes -r requirements/blind-v8-linux-py311.lock
+
+      - name: Record execution context
+        env:
+          OPENAI_MODEL: gpt-5-nano
+        run: |
+          mkdir -p generated_artifacts/forge_v8_nano_smoke
+          printf '{"case_id":"V8-005","execution_backend":"docker","git_sha":"%s","model":"%s","run_attempt":"%s","run_id":"%s"}\n' "$GITHUB_SHA" "$OPENAI_MODEL" "$GITHUB_RUN_ATTEMPT" "$GITHUB_RUN_ID" > generated_artifacts/forge_v8_nano_smoke/execution_context.json
+
+      - name: Verify frozen inputs and structural regressions
+        run: |
+          python -c "from core.forge.blind_benchmark import load_blind_bundle; bundle = load_blind_bundle('benchmarks/blind_v8/external_001/manifest.json', verify_baseline=False); assert bundle.bundle_id == 'forge-blind-v8-external-001'; assert bundle.schema_version == 3; assert len(bundle.cases) == 12; assert bundle.manifest_sha256 == '071c7d11d5a6d6cab46198b1464cd03f8b8afcdcceaad23e7f93d7e283ae12c1'"
+          python -m pytest -q -p no:cacheprovider tests/test_forge_exact_output.py tests/test_execution_loop.py -k "exact_output or logical_contract or blind_v8"
+
+      - name: Build Forge sandbox image
+        run: docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+
+      - name: Execute V8-005 post-fix smoke with GPT-5 nano
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-5-nano
+          OPENAI_INPUT_COST_PER_1M_TOKENS: "0.05"
+          OPENAI_OUTPUT_COST_PER_1M_TOKENS: "0.40"
+        run: >
+          python forge_blind_benchmark.py
+          --manifest benchmarks/blind_v8/external_001/manifest.json
+          --mode hybrid
+          --execution-backend docker
+          --sandbox-image derivative-forge-sandbox:py311
+          --post-fix-replay
+          --case-id V8-005
+          --max-planner-attempts 1
+          --max-coder-attempts 2
+          --output-root generated_artifacts/forge_v8_nano_smoke/runs
+          --packaging-root generated_artifacts/forge_v8_nano_smoke/packages
+          --benchmark-output-root generated_artifacts/forge_v8_nano_smoke/reports
+          --no-enforce-thresholds
+
+      - name: Upload complete smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: forge-v8-005-gpt-5-nano-smoke
+          path: generated_artifacts/forge_v8_nano_smoke/
+          if-no-files-found: error
+          retention-days: 30
