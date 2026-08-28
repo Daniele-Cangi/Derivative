@@ -16,6 +16,7 @@ from core.forge.blind_producer import (
     _generate_requirement_case,
     produce_and_freeze_blind_bundle,
 )
+from core.model_provider import MissingTextOutputError
 
 
 def _case_payload() -> dict:
@@ -372,7 +373,7 @@ def test_requirement_producer_retries_incomplete_generation_and_review_output():
             return json.dumps({"approved": True, "findings": []})
         requirement_attempts += 1
         if requirement_attempts == 1:
-            raise ValueError(
+            raise MissingTextOutputError(
                 "OpenAI response did not contain text output "
                 "(status=incomplete, reason=max_output_tokens)."
             )
@@ -420,7 +421,7 @@ def test_oracle_producer_retries_incomplete_generation_and_review_output():
         if kwargs["output_schema_name"].endswith("_oracle_review"):
             review_attempts += 1
             if review_attempts == 1:
-                raise ValueError(
+                raise MissingTextOutputError(
                     "OpenAI response did not contain text output "
                     "(status=incomplete, reason=max_output_tokens)."
                 )
@@ -453,9 +454,12 @@ def test_requirement_producer_does_not_retry_non_structured_generator_errors():
     def generator(**_kwargs):
         nonlocal calls
         calls += 1
-        raise ValueError("unsupported model request")
+        raise ValueError(
+            "OpenAI response did not contain text output "
+            "(status=incomplete, reason=max_output_tokens)."
+        )
 
-    with pytest.raises(ValueError, match="unsupported model request"):
+    with pytest.raises(ValueError, match="OpenAI response did not contain text output"):
         _generate_requirement_case(
             generator=generator,
             model="external-test-model",

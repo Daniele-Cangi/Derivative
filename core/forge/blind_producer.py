@@ -34,6 +34,7 @@ from core.forge.public_contract import (
     requirement_public_import_error,
 )
 from core.model_provider import (
+    MissingTextOutputError,
     create_openai_client,
     generate_text,
     is_live_openai_key,
@@ -632,25 +633,16 @@ def _request_json_object(
 ) -> dict[str, Any]:
     try:
         raw = generator(**request)
-        return _parse_json_object(raw, label)
-    except ValueError as exc:
-        if not _is_retryable_structured_output_error(exc):
-            raise
+    except MissingTextOutputError as exc:
         raise _RetryableStructuredOutputError(
             f"{label} returned incomplete structured output"
         ) from exc
-
-
-def _is_retryable_structured_output_error(exc: ValueError) -> bool:
-    message = str(exc)
-    return any(
-        marker in message
-        for marker in (
-            "OpenAI response did not contain text output",
-            "returned invalid JSON",
-            "must return a JSON object",
-        )
-    )
+    try:
+        return _parse_json_object(raw, label)
+    except ValueError as exc:
+        raise _RetryableStructuredOutputError(
+            f"{label} returned incomplete structured output"
+        ) from exc
 
 
 def _structured_output_feedback(subject: str) -> str:
