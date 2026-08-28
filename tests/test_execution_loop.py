@@ -372,6 +372,67 @@ def test_logical_contract_detector_does_not_infer_unstated_impossibility(problem
     assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
 
 
+def test_logical_contract_detector_does_not_join_opposed_words_across_clauses():
+    problem = (
+        "Pairs with both values equal to zero must be included when present twice. "
+        "Python int may reject some Unicode representations but accept others."
+    )
+
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
+def test_logical_contract_detector_distinguishes_valid_and_invalid_input_classes():
+    problem = "The parser must accept valid input and reject invalid input."
+
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
+def test_logical_contract_detector_accepts_reversed_opposed_term_order():
+    problem = "The parser must reject and accept every input."
+
+    contradictions = ExecutionLoop()._detect_logical_contract_contradictions(problem)
+
+    assert contradictions
+    assert "opposed postconditions" in contradictions[0]
+
+
+def test_logical_contract_detector_recognizes_implicit_predicate_target():
+    problem = "The parser must be case-sensitive and case-insensitive."
+
+    contradictions = ExecutionLoop()._detect_logical_contract_contradictions(problem)
+
+    assert contradictions
+    assert "case-sensitive" in contradictions[0]
+
+
+@pytest.mark.parametrize(
+    "problem",
+    [
+        "The parser must accept input and the validator must reject input.",
+        "The parser must accept input and may reject input.",
+        (
+            "The parser is required to accept input and the validator is required "
+            "to reject input."
+        ),
+    ],
+)
+def test_logical_contract_detector_binds_subject_and_modality(problem):
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
+def test_blind_v8_zero_sum_requirement_is_not_a_lexical_contradiction():
+    problem = (
+        "Define a CLI tool called zero_sum_pair_finder that reads a single filename from argv[1], "
+        "decodes it as UTF-8, and treats the file contents as decimal integers separated by line "
+        "breaks. The tool must scan all unique unordered pairs and output pairs whose sum is zero. "
+        "Pairs with both values equal to zero must be shown if they appear at least twice. In case "
+        "of any invalid line, the process must reject the input. Python int may reject some Unicode "
+        "numeric representations but accept others."
+    )
+
+    assert ExecutionLoop()._detect_logical_contract_contradictions(problem) == []
+
+
 def test_execution_loop_routes_linear_recurrence_to_symbolic_mode():
     from sympy import N, sqrt, sympify
 

@@ -104,6 +104,95 @@ def test_shared_anti_stub_contract_accepts_post_target_file_observation():
     assert reasons == {}
 
 
+def test_shared_evidence_accepts_local_wrapper_that_invokes_target():
+    path = "tests/test_word_freq_stats.py"
+    content = (
+        "import word_freq_stats as cli\n"
+        "\n"
+        "def run_cli(argv):\n"
+        "    return cli.main(argv)\n"
+        "\n"
+        "def test_contract(tmp_path):\n"
+        "    source = tmp_path / 'input.txt'\n"
+        "    source.write_text('Alpha alpha', encoding='utf-8')\n"
+        "    result = run_cli([str(source)])\n"
+        "    assert result == 0\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"word_freq_stats"},
+    )
+    report = requirement_assertion_evidence(
+        {"R001": ["cli_entrypoint", "word_freq_stats"]},
+        {"R001": [path]},
+        {path: content},
+        target_names={"main"},
+        target_modules={"word_freq_stats"},
+    )
+
+    assert reasons == {}
+    assert report["R001"]["passed"] is True
+
+
+def test_shared_evidence_rejects_wrapper_with_only_unused_nested_target_call():
+    path = "tests/test_word_freq_stats.py"
+    content = (
+        "import word_freq_stats as cli\n"
+        "\n"
+        "def run_cli(argv):\n"
+        "    def unused():\n"
+        "        return cli.main(argv)\n"
+        "    return 0\n"
+        "\n"
+        "def test_contract():\n"
+        "    result = run_cli([])\n"
+        "    assert result == 0\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"word_freq_stats"},
+    )
+
+    assert reasons == {path: ["missing_target_invocation"]}
+
+
+@pytest.mark.parametrize(
+    "wrapper_body",
+    [
+        "    return other.main(argv)\n",
+        "    return (cli.main(argv) for item in argv)\n",
+    ],
+)
+def test_shared_evidence_rejects_nonexecuted_or_unrelated_wrapper_calls(wrapper_body):
+    path = "tests/test_word_freq_stats.py"
+    content = (
+        "import word_freq_stats as cli\n"
+        "import other\n"
+        "\n"
+        "def run_cli(argv):\n"
+        f"{wrapper_body}"
+        "\n"
+        "def test_contract():\n"
+        "    result = run_cli([])\n"
+        "    assert result is not None\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"word_freq_stats"},
+    )
+
+    assert reasons == {path: ["missing_target_invocation"]}
+
+
 def test_shared_evidence_accepts_literal_getattr_target_alias():
     path = "tests/test_public_api.py"
     content = (

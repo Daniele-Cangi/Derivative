@@ -2589,7 +2589,11 @@ class ExecutionLoop:
     def _detect_logical_contract_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
         contradictions: List[str] = []
-        simultaneous = bool(re.search(r"\b(?:simultaneously|both)\b", lowered))
+        clauses = [
+            clause.strip()
+            for clause in re.split(r"(?<=[.!?;])\s+|;", lowered)
+            if clause.strip()
+        ]
         opposed_terms = (
             ("ignore", "enforce"),
             ("include", "exclude"),
@@ -2600,9 +2604,16 @@ class ExecutionLoop:
             ("case sensitive", "case insensitive"),
         )
         for left, right in opposed_terms:
-            if simultaneous and re.search(rf"\b{re.escape(left)}\b", lowered) and re.search(
-                rf"\b{re.escape(right)}\b", lowered
-            ):
+            contradictory_clause = next(
+                (
+                    clause
+                    for clause in clauses
+                    if re.search(r"\b(?:must|shall|required?\s+to|requires?\s+that)\b", clause)
+                    and self._opposed_terms_share_target(clause, left, right)
+                ),
+                None,
+            )
+            if contradictory_clause is not None:
                 contradictions.append(
                     "INFEASIBLE: the requirement simultaneously mandates opposed postconditions "
                     f"('{left}' and '{right}'), so no single result can satisfy both."
@@ -2631,6 +2642,113 @@ class ExecutionLoop:
                 "decided from a finite prefix; two streams may share every observed value and diverge later."
             )
         return contradictions
+
+    @staticmethod
+    def _opposed_terms_share_target(clause: str, left: str, right: str) -> bool:
+        stopwords = {
+            "a",
+            "an",
+            "both",
+            "must",
+            "shall",
+            "simultaneously",
+            "the",
+            "to",
+        }
+
+        def target_tokens(value: str) -> tuple[str, ...]:
+            bounded = re.split(r"[,;.]|\b(?:while|whereas|then)\b", value, maxsplit=1)[0]
+            return tuple(
+                token
+                for token in re.findall(r"[a-z0-9_-]+", bounded)
+                if token not in stopwords
+            )
+
+        for first, second in ((left, right), (right, left)):
+            relation = re.search(
+                rf"\b{re.escape(first)}\b(?P<middle>.{{0,80}}?)"
+                rf"\b{re.escape(second)}\b(?P<tail>.{{0,80}})",
+                clause,
+            )
+            if relation is None:
+                continue
+            conjunctions = list(re.finditer(r"\b(?:and|but)\b", relation.group("middle")))
+            if not conjunctions:
+                continue
+            conjunction = conjunctions[-1]
+            second_prefix = relation.group("middle")[conjunction.end() :]
+            if not ExecutionLoop._predicates_share_mandatory_subject(
+                clause,
+                relation.start(),
+                second_prefix,
+            ):
+                continue
+            first_target = target_tokens(relation.group("middle")[: conjunction.start()])
+            second_target = target_tokens(relation.group("tail"))
+            if first_target == second_target:
+                return True
+            if not first_target:
+                if second_target or re.search(r"\b(?:simultaneously|both)\b", clause):
+                    return True
+                continue
+        return False
+
+    @staticmethod
+    def _predicates_share_mandatory_subject(
+        clause: str,
+        first_predicate_start: int,
+        second_prefix: str,
+    ) -> bool:
+        modality_pattern = re.compile(
+            r"\b(?:must|shall|required\s+to|requires?\s+that|may|can|should)\b"
+        )
+        mandatory = {"must", "shall", "required to", "require that", "requires that"}
+
+        def subject(value: str) -> str:
+            tokens = [
+                token
+                for token in re.findall(r"[a-z0-9_-]+", value)
+                if token not in {
+                    "a",
+                    "also",
+                    "an",
+                    "and",
+                    "are",
+                    "be",
+                    "been",
+                    "being",
+                    "both",
+                    "but",
+                    "had",
+                    "has",
+                    "have",
+                    "is",
+                    "simultaneously",
+                    "the",
+                    "to",
+                    "was",
+                    "were",
+                }
+            ]
+            return tokens[-1] if tokens else ""
+
+        first_prefix = clause[:first_predicate_start]
+        first_modalities = list(modality_pattern.finditer(first_prefix))
+        if not first_modalities:
+            return False
+        first_modality = first_modalities[-1]
+        if first_modality.group(0) not in mandatory:
+            return False
+        first_subject = subject(first_prefix[: first_modality.start()])
+
+        second_modalities = list(modality_pattern.finditer(second_prefix))
+        if not second_modalities:
+            return not subject(second_prefix)
+        second_modality = second_modalities[-1]
+        if second_modality.group(0) not in mandatory:
+            return False
+        second_subject = subject(second_prefix[: second_modality.start()])
+        return not second_subject or second_subject == first_subject
 
     def _detect_permutation_contract_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())

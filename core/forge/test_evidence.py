@@ -61,6 +61,13 @@ def non_semantic_test_reasons(
             expected_names,
             expected_modules,
         )
+        imported_target_names.update(
+            _target_wrapper_function_names(
+                tree,
+                expected_names | imported_target_names,
+                module_aliases,
+            )
+        )
         states = [
             _test_function_semantic_state(
                 function,
@@ -99,6 +106,13 @@ def analyze_test_functions(
         tree,
         expected_names,
         expected_modules,
+    )
+    imported_target_names.update(
+        _target_wrapper_function_names(
+            tree,
+            expected_names | imported_target_names,
+            module_aliases,
+        )
     )
     evidence: list[dict[str, object]] = []
     for function in (
@@ -396,6 +410,67 @@ def _target_import_context(
     return module_aliases, callable_aliases
 
 
+def _target_wrapper_function_names(
+    tree: ast.Module,
+    target_names: set[str],
+    target_module_aliases: set[str],
+) -> set[str]:
+    wrappers: set[str] = set()
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and not node.name.startswith("test_")
+    ]
+    changed = True
+    while changed:
+        changed = False
+        known_targets = target_names | wrappers
+        for function in functions:
+            if function.name in wrappers:
+                continue
+            if not any(
+                _call_matches_target(call, known_targets, target_module_aliases)
+                for call in _direct_function_calls(function)
+            ):
+                continue
+            wrappers.add(function.name)
+            changed = True
+    return wrappers
+
+
+def _direct_function_calls(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.Call]:
+    class DirectCallVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.calls: list[ast.Call] = []
+
+        def visit_Call(self, node: ast.Call) -> None:
+            self.calls.append(node)
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return None
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return None
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return None
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return None
+
+        def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+            return None
+
+    visitor = DirectCallVisitor()
+    for statement in function.body:
+        visitor.visit(statement)
+    return visitor.calls
+
+
 def _module_matches(module_name: str, target_modules: set[str]) -> bool:
     return any(
         module_name == candidate
@@ -413,8 +488,10 @@ def _call_matches_target(
     name = _expression_name(call.func)
     if not name:
         return False
-    if name in target_names or name.rsplit(".", 1)[-1] in target_names:
+    if name in target_names:
         return True
+    if "." in name and name.rsplit(".", 1)[-1] in target_names:
+        return name.split(".", 1)[0] in target_module_aliases
     root = name.split(".", 1)[0]
     return root in target_module_aliases
 

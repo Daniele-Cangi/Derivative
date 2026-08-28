@@ -899,6 +899,35 @@ def test_materially_underspecified_requirement_fails_closed(forge_pipeline):
     assert result.layer2_result.evidence["material_ambiguities"]
 
 
+def test_exact_output_contract_mismatch_fails_closed(forge_pipeline):
+    build_spec = copy.deepcopy(forge_pipeline["build_spec"])
+    plan = copy.deepcopy(forge_pipeline["plan"])
+    artifact = copy.deepcopy(forge_pipeline["artifact"])
+    build_spec.normalized_requirement += (
+        " If input is invalid, the tool outputs exactly 'error: invalid input' "
+        "to stderr and exits with code 1."
+    )
+    plan.build_spec = build_spec
+    entrypoint = _find_file(artifact, artifact.runnable_entrypoints[0])
+    assert entrypoint is not None
+    entrypoint.content += (
+        "\nimport sys\n"
+        "def main(argv=None):\n"
+        "    if argv == ['invalid']:\n"
+        "        sys.stderr.write('error: invalid input\\n')\n"
+        "        return 1\n"
+        "    return 0\n"
+    )
+
+    result = forge_pipeline["validator"].validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "exact_output_mismatch" in result.failure_signatures
+    checks = result.layer2_result.evidence["exact_output_contract_checks"]
+    assert checks[0]["expected"] == "error: invalid input"
+    assert checks[0]["observed"] == ["error: invalid input\n"]
+
+
 def test_unspecified_seeded_prng_contract_fails_closed_after_compilation(tmp_path):
     spec = RequirementCompiler().compile(
         "Define a CLI command 'random_walk' that accepts integer arguments steps and seed and "

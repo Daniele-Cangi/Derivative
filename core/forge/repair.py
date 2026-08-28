@@ -27,6 +27,7 @@ class RepairPolicy:
         "missing_acceptance_coverage": "restore_acceptance_tests",
         "missing_obligation": "restore_obligation_provenance",
         "semantic_content_mismatch": "implement_missing_requirement_semantics",
+        "exact_output_mismatch": "implement_missing_requirement_semantics",
         "missing_semantic_requirement_coverage": "rerender_semantic_tests",
         "missing_requirement_assertion_evidence": "repair_requirement_assertions",
         "quality_contract_violation": "rerender_quality_contract_targets",
@@ -226,6 +227,13 @@ class RepairPolicy:
                     self._extend_strings(paths, mismatch.get("source_paths"))
                 self._extend_strings(paths, mismatch.get("test_paths"))
             refs.append("layer2.requirement_semantic_checks")
+
+        if "exact_output_mismatch" in signatures:
+            for item in self._list(layer2.get("exact_output_contract_checks")):
+                if not isinstance(item, dict) or item.get("passed", False):
+                    continue
+                self._extend_strings(paths, item.get("paths"))
+            refs.append("layer2.exact_output_contract_checks")
 
         if "missing_entrypoint" in signatures:
             paths.extend(artifact.runnable_entrypoints)

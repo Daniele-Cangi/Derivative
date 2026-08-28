@@ -1147,6 +1147,142 @@ def test_semantic_preflight_rejects_tautological_acceptance_assertion(json_merge
     )
 
 
+def test_semantic_preflight_rejects_exact_output_with_added_newline():
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=(
+                "If input is invalid, the tool outputs exactly 'error: invalid input' "
+                "to stderr and exits with code 1."
+            ),
+            requirement_atoms=[],
+        ),
+        required_tests=[],
+        interfaces=[],
+        requirement_coverage={},
+    )
+
+    result = run_semantic_preflight(
+        {
+            "src/tool.py": (
+                "import sys\n"
+                "def main(argv=None):\n"
+                "    if argv == ['invalid']:\n"
+                "        sys.stderr.write('error: invalid input\\n')\n"
+                "        return 1\n"
+                "    return 0\n"
+            )
+        },
+        plan,
+        {},
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is False
+    failure = next(
+        item
+        for item in result["failures"]
+        if item["kind"] == "exact_output_contract_failure"
+    )
+    assert failure["expected"] == "error: invalid input"
+    assert failure["observed"] == ["error: invalid input\n"]
+
+
+def test_semantic_preflight_ignores_exact_output_literal_in_test_source():
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=(
+                "If input is invalid, the tool outputs exactly 'error: invalid input' "
+                "to stderr and exits with code 1."
+            ),
+            requirement_atoms=[],
+        ),
+        required_tests=[],
+        interfaces=[],
+        requirement_coverage={},
+    )
+
+    result = run_semantic_preflight(
+        {
+            "src/tool.py": (
+                "import sys\n"
+                "def fail():\n"
+                "    sys.stderr.write('wrong')\n"
+            ),
+            "tests/test_tool.py": (
+                "import sys\n"
+                "def test_output():\n"
+                "    sys.stderr.write('error: invalid input')\n"
+            ),
+        },
+        plan,
+        {},
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is False
+    failure = next(
+        item
+        for item in result["failures"]
+        if item["kind"] == "exact_output_contract_failure"
+    )
+    assert failure["observed"] == ["wrong"]
+
+
+def test_semantic_preflight_accepts_module_path_and_local_target_wrapper():
+    atom = SimpleNamespace(
+        requirement_id="R001",
+        category="functional",
+        evidence_terms=["cli_entrypoint", "word_freq_stats"],
+        text="Define the word_freq_stats CLI entrypoint.",
+    )
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement="Define the word_freq_stats CLI entrypoint.",
+            requirement_atoms=[atom],
+        ),
+        required_tests=[SimpleNamespace(test_name="test_word_freq_stats", required=True)],
+        interfaces=[SimpleNamespace(name="main", interface_type="cli_entrypoint")],
+        requirement_coverage={
+            "R001": {
+                "files": ["src/word_freq_stats.py"],
+                "tests": ["test_word_freq_stats"],
+                "acceptance_criteria": ["AC001"],
+            }
+        },
+    )
+    test_path = "tests/test_word_freq_stats.py"
+    files = {
+        "src/word_freq_stats.py": "def main(argv=None):\n    return 0\n",
+        test_path: (
+            "import word_freq_stats as cli\n\n"
+            "def run_cli(argv):\n"
+            "    return cli.main(argv)\n\n"
+            "def test_word_freq_stats():\n"
+            "    result = run_cli([])\n"
+            "    assert result == 0\n"
+        ),
+    }
+    contracts = {
+        test_path: {
+            "requirements": [
+                {
+                    "id": "R001",
+                    "evidence_terms": ["cli_entrypoint", "word_freq_stats"],
+                }
+            ]
+        }
+    }
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is True, result
+
+
 def test_semantic_preflight_rejects_assertion_disconnected_from_target(json_merge_case):
     _, plan, artifact, _ = json_merge_case
     files = {

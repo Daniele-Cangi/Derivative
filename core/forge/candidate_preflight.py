@@ -2,6 +2,7 @@ import re
 from typing import Any
 
 from core.forge.contracts import FeasiblePlan
+from core.forge.exact_output import exact_output_contract_evidence
 from core.forge.fixture_oracle import (
     fixture_oracle_capability,
     fixture_oracle_mismatches,
@@ -101,6 +102,17 @@ def run_semantic_preflight(
         candidate_files,
         plan,
         failed_paths,
+    )
+    source_failures.extend(
+        _exact_output_contract_failures(
+            {
+                path: content
+                for path, content in candidate_files.items()
+                if path.startswith("src/")
+            },
+            plan,
+            failed_paths,
+        )
     )
     if not test_failures and not source_failures:
         return executable_preflight
@@ -365,7 +377,10 @@ def _source_contract_failures(
         ]
         if not source_paths:
             continue
-        source_corpus = "\n".join(candidate_files[path].lower() for path in source_paths)
+        source_corpus = "\n".join(
+            f"{path.lower()}\n{candidate_files[path].lower()}"
+            for path in source_paths
+        )
         source_content = "\n\n".join(candidate_files[path] for path in source_paths)
         test_corpus = "\n\n".join(
             candidate_files[path]
@@ -398,6 +413,39 @@ def _source_contract_failures(
                     "missing_evidence_terms": missing_terms,
                 }
             )
+    return failures
+
+
+def _exact_output_contract_failures(
+    candidate_files: dict[str, str],
+    plan: FeasiblePlan,
+    failed_paths: list[str],
+) -> list[dict[str, Any]]:
+    failures: list[dict[str, Any]] = []
+    for item in exact_output_contract_evidence(
+        plan.build_spec.normalized_requirement,
+        candidate_files,
+        target_names={
+            interface.name
+            for interface in plan.interfaces
+            if interface.name.isidentifier()
+        },
+    ):
+        if item["passed"]:
+            continue
+        paths = list(item["paths"]) or [
+            path for path in candidate_files if path.startswith("src/")
+        ]
+        for path in paths:
+            if path not in failed_paths:
+                failed_paths.append(path)
+        failures.append(
+            {
+                "paths": paths,
+                "kind": "exact_output_contract_failure",
+                **item,
+            }
+        )
     return failures
 
 
@@ -493,6 +541,13 @@ def correction_requirements(
             )
     for failure in source_failures:
         paths = ", ".join(str(path) for path in failure.get("paths", []))
+        if failure.get("kind") == "exact_output_contract_failure":
+            requirements.append(
+                f"{paths}: emit exactly {failure.get('expected')!r} to "
+                f"{failure.get('stream')} with no added separators or line terminators; "
+                f"observed literal outputs were {failure.get('observed', [])!r}."
+            )
+            continue
         requirement_id = str(failure.get("requirement_id", ""))
         atom = atoms_by_id.get(requirement_id)
         atom_text = atom.text if atom is not None else requirement_id
