@@ -151,6 +151,10 @@ def test_generation_contracts(
         atom.requirement_id: atom
         for atom in plan.build_spec.requirement_atoms
     }
+    obligations_by_id = {
+        obligation.obligation_id: obligation
+        for obligation in plan.build_spec.conditional_obligations
+    }
     requirement_corpus = " ".join(
         atom.text.lower()
         for atom in plan.build_spec.requirement_atoms
@@ -207,6 +211,30 @@ def test_generation_contracts(
                 for requirement_id in requirement_ids
                 if requirement_id in atoms_by_id
             ],
+            "conditional_obligations": [
+                {
+                    "id": obligation_id,
+                    "parent_requirement_id": obligations_by_id[obligation_id].parent_requirement_id,
+                    "trigger": obligations_by_id[obligation_id].trigger,
+                    "precondition": dict(obligations_by_id[obligation_id].precondition),
+                    "observable_channel": obligations_by_id[obligation_id].observable_channel,
+                    "comparison_relation": obligations_by_id[obligation_id].comparison_relation,
+                    "expected_value": obligations_by_id[obligation_id].expected_value,
+                    "polarity": obligations_by_id[obligation_id].polarity,
+                    "observation_fidelity": obligations_by_id[obligation_id].observation_fidelity,
+                    "verification_method": obligations_by_id[obligation_id].verification_method,
+                    "source_fragment": obligations_by_id[obligation_id].source_fragment,
+                    "witness_class": obligations_by_id[obligation_id].witness_class,
+                }
+                for obligation_id in (
+                    list(planned.conditional_obligation_ids) if planned else []
+                )
+                if obligation_id in obligations_by_id
+            ],
+            "witness_classes": list(planned.witness_classes) if planned else [],
+            "observation_fidelities": (
+                list(planned.observation_fidelities) if planned else []
+            ),
             "traceability": list(traceability),
             "declared_plan_interfaces": [
                 {

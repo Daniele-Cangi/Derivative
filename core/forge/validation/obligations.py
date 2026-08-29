@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
+from core.forge.conditional_evidence import ConditionalEvidenceValidator
 from core.forge.exact_output import exact_output_contract_evidence
 from core.forge.execution import ProcessExecutor, SandboxProcessRequest
 from core.forge.requirement_evidence import requirement_assertion_evidence
@@ -33,6 +34,10 @@ class ObligationValidationLayer(ValidationLayerBase):
         self.quality_checker = quality_checker
         self.capability_checker = CapabilityContractChecker()
         self.adapter_capability_checker = AdapterCapabilityContractChecker()
+        self.conditional_evidence_validator = ConditionalEvidenceValidator(
+            executor,
+            timeout_seconds,
+        )
 
     def validate(
         self,
@@ -100,7 +105,12 @@ class ObligationValidationLayer(ValidationLayerBase):
             self._append_unique(signatures, "missing_obligation")
         evidence["missing_provenance_obligations"] = missing_provenance_obligations
 
-        required_acceptance = set(plan.acceptance_criterion_ids)
+        required_acceptance = {
+            criterion.criterion_id
+            for criterion in build_spec.acceptance_contract.criteria
+            if criterion.verification_method
+            not in {"interface_contract", "static_analysis", "coverage_directive"}
+        }
         provenance_acceptance = self._collect_prefixed_tokens(code_artifact, prefix="acceptance:")
         missing_acceptance = sorted(required_acceptance - provenance_acceptance)
         if missing_acceptance:
@@ -127,6 +137,19 @@ class ObligationValidationLayer(ValidationLayerBase):
         for signature in semantic_signatures:
             self._append_unique(signatures, signature)
         evidence["requirement_semantic_checks"] = semantic_evidence
+
+        conditional_failures, conditional_signatures, conditional_evidence = (
+            self.conditional_evidence_validator.validate(
+                build_spec=build_spec,
+                plan=plan,
+                materialized=materialized,
+                workspace=workspace,
+            )
+        )
+        failures.extend(conditional_failures)
+        for signature in conditional_signatures:
+            self._append_unique(signatures, signature)
+        evidence["conditional_obligation_checks"] = conditional_evidence
 
         exact_output_evidence = exact_output_contract_evidence(
             build_spec.normalized_requirement,
@@ -185,6 +208,7 @@ class ObligationValidationLayer(ValidationLayerBase):
         evidence["adapter_capability_checks"] = adapter_evidence
 
         declared_test_paths = set(code_artifact.test_paths)
+        tests_required = bool(expected_test_paths or declared_test_paths)
         test_result = self._run_required_tests(
             workspace,
             expected_test_paths | declared_test_paths,
@@ -192,15 +216,16 @@ class ObligationValidationLayer(ValidationLayerBase):
         )
         evidence["test_execution"] = test_result
         evidence["declared_test_paths"] = sorted(declared_test_paths)
-        if not test_result["ran"]:
+        if tests_required and not test_result["ran"]:
             failures.append("Required tests were not executed.")
             self._append_unique(signatures, "test_execution_failure")
-        elif test_result["returncode"] != 0:
+        elif tests_required and test_result["returncode"] != 0:
             failures.append("Required test execution failed.")
             self._append_unique(
                 signatures,
                 "sandbox_unavailable" if test_result.get("launch_error") else "test_execution_failure",
             )
+        test_result["required"] = tests_required
 
         evidence["failure_signatures"] = signatures
         elapsed_ms = int((time.perf_counter() - started) * 1000)
@@ -290,7 +315,11 @@ class ObligationValidationLayer(ValidationLayerBase):
         signatures: List[str] = []
         evidence: Dict[str, object] = {"requirements": {}}
 
-        atoms = [atom for atom in build_spec.requirement_atoms if atom.category != "ambiguity"]
+        atoms = [
+            atom
+            for atom in build_spec.requirement_atoms
+            if atom.category not in {"ambiguity", "coverage_directive"}
+        ]
         artifact_requirement_ids = self._collect_prefixed_tokens(code_artifact, prefix="requirement:")
         universal_proofs = self._collect_prefixed_tokens(code_artifact, prefix="universal_proof:")
         acceptance_requirement_ids = set()
@@ -312,7 +341,11 @@ class ObligationValidationLayer(ValidationLayerBase):
             has_plan_mapping = bool(files or tests or acceptance)
             has_artifact_mapping = atom.requirement_id in artifact_requirement_ids
             has_acceptance_mapping = atom.requirement_id in acceptance_requirement_ids and bool(acceptance)
-            has_test_mapping = bool(tests)
+            structural_only = atom.verification_method in {
+                "interface_contract",
+                "static_analysis",
+            }
+            has_test_mapping = structural_only or bool(tests)
 
             evidence["requirements"][atom.requirement_id] = {
                 "text": atom.text,
@@ -325,6 +358,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "has_plan_mapping": has_plan_mapping,
                 "has_artifact_mapping": has_artifact_mapping,
                 "has_acceptance_mapping": has_acceptance_mapping,
+                "structural_only": structural_only,
             }
 
             if not has_plan_mapping or not has_artifact_mapping:
@@ -399,7 +433,7 @@ class ObligationValidationLayer(ValidationLayerBase):
         )
 
         for atom in build_spec.requirement_atoms:
-            if atom.category == "ambiguity":
+            if atom.category in {"ambiguity", "coverage_directive"}:
                 continue
             coverage = plan.requirement_coverage.get(atom.requirement_id, {})
             source_paths = [
@@ -423,6 +457,10 @@ class ObligationValidationLayer(ValidationLayerBase):
             behavioral_test_corpus = "\n\n".join(
                 files_by_path[path].content for path in test_paths
             )
+            structural_only = atom.verification_method in {
+                "interface_contract",
+                "static_analysis",
+            }
             source_evidence_required = self._requires_source_semantic_evidence(atom)
             missing_source_terms = (
                 [
@@ -443,7 +481,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 if source_evidence_required
                 else []
             )
-            missing_test_terms = [
+            missing_test_terms = [] if structural_only else [
                 term
                 for term in atom.evidence_terms
                 if not self._semantic_term_present(term, test_corpus, is_test=True)
@@ -461,14 +499,23 @@ class ObligationValidationLayer(ValidationLayerBase):
                     public_interface_names,
                 )
             ]
-            assertion_evidence = assertion_report.get(
-                atom.requirement_id,
+            assertion_evidence = (
                 {
-                    "passed": False,
-                    "failure_reason": "missing_mapped_test",
-                    "missing_terms": list(atom.evidence_terms),
+                    "passed": True,
+                    "failure_reason": "structural_verification",
+                    "missing_terms": [],
                     "assertions": [],
-                },
+                }
+                if structural_only
+                else assertion_report.get(
+                    atom.requirement_id,
+                    {
+                        "passed": False,
+                        "failure_reason": "missing_mapped_test",
+                        "missing_terms": list(atom.evidence_terms),
+                        "assertions": [],
+                    },
+                )
             )
             item = {
                 "text": atom.text,
@@ -476,6 +523,7 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "source_paths": source_paths,
                 "test_paths": test_paths,
                 "source_evidence_required": source_evidence_required,
+                "structural_only": structural_only,
                 "missing_source_terms": missing_source_terms,
                 "missing_test_terms": missing_test_terms,
                 "assertion_evidence": assertion_evidence,
