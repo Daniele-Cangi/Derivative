@@ -27,7 +27,16 @@ This ledger separates immutable blind evidence from regression work. It is inten
 
 ## Repository Gates
 
-At the V7 oracle-preflight checkpoint:
+At the current behavioral-contract propagation checkpoint (`7158eaf`):
+
+- Linux/Python 3.11 Forge CI: **533 passed**;
+- complete local Windows suite: **531 passed, 2 skipped**;
+- full Docker-backed 30-case internal benchmark: all configured thresholds passed;
+- CodeQL: passing.
+
+These are repository regression gates, not independent blind proof. The corresponding Forge CI receipt is [run 33254930851](https://github.com/Daniele-Cangi/Derivative/actions/runs/33254930851).
+
+At the V7 oracle-preflight checkpoint (historical):
 
 - local suite: **470 passed, 2 skipped**;
 - minimal Forge runtime workflow: passing;
@@ -277,6 +286,6 @@ This command makes no model calls, validates bundle hashes and case IDs, writes 
 
 ## Next Evaluation Rule
 
-V5, V6, and V7 are known regression corpora. They must not be optimized into new blind claims. The next generality measurement must use a new schema-v3 bundle frozen before Forge sees its requirements or oracles.
+V5, V6, V7, and V8 are known regression corpora. They must not be optimized into new blind claims. V8-005 may be used only as a known regression case and never as new blind evidence. The next generality measurement must use a new schema-v3 bundle frozen before Forge sees its requirements or oracles.
 
 The target metrics are reported together: External Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, median/P95 latency, tokens, configured cost per externally accepted artifact, and repairs per successful build.

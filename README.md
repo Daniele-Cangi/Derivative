@@ -9,7 +9,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
 [![CodeTriage](https://www.codetriage.com/daniele-cangi/derivative/badges/users.svg)](https://www.codetriage.com/daniele-cangi/derivative)
-![Tests](https://img.shields.io/badge/tests-478%20passing-2f855a)
+![Tests](https://img.shields.io/badge/tests-533%20passing-2f855a)
 ![Evidence](https://img.shields.io/badge/evidence-blind%20V7-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
@@ -153,7 +153,7 @@ Unsupported or unproven behavior should end as `validation_failed`, never as opt
 
 ## Evidence
 
-The repository currently passes **478 tests with 2 skips** locally and runs both a minimal-runtime gate and the full Docker-backed gate in GitHub Actions.
+The current `main` checkpoint passes **533 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **531 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
 
 Blind evidence is immutable and reported without retrospective score repair:
 
@@ -163,6 +163,8 @@ Blind evidence is immutable and reported without retrospective score repair:
 - A targeted V7 post-fix replay remained `0/5` externally accepted and exposed one invalid frozen oracle plus four genuine candidate-generation failures. The raw receipt is unchanged; oracle preflight now rejects the broken harness before spending model tokens.
 
 These results show a strong fail-closed architecture, not completed generality. Known blind cases are regression evidence after first execution; future generality must be measured on a newly frozen distribution.
+
+Blind V8 has already been executed and is therefore a known regression corpus. In particular, V8-005 may be replayed for regression diagnosis only and must not be reported as new blind evidence.
 
 Full metrics, hashes, denominators, replay labels, and commands are in [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md).
 
