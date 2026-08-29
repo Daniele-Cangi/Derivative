@@ -63,6 +63,7 @@ class _JsonMergeKernel:
 
     def propose_code_revision(self, repair_context, target_files, lens_framings):
         assert repair_context["candidate_transaction_required"] is True
+        assert "behavioral_contracts" in repair_context
         assert set(repair_context["current_target_paths"]) == set(target_files)
         files = {}
         for path in target_files:

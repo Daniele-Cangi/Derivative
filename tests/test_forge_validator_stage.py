@@ -459,6 +459,9 @@ def test_validator_passes_when_all_layers_pass(forge_pipeline):
     assert "executed_tests" in result.evidence
     assert "manifest_provenance_checks" in result.evidence
     assert "obligation_acceptance_checks" in result.evidence
+    obligation_checks = result.evidence["obligation_acceptance_checks"]
+    assert "conditional_obligation_checks" in obligation_checks
+    assert "exact_output_contract_checks" in obligation_checks
 
 
 def test_missing_required_file_is_detected(forge_pipeline):

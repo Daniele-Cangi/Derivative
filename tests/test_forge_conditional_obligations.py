@@ -9,13 +9,20 @@ from core.forge.contracts import (
     ArtifactTargetType,
     CodeArtifact,
     FeasiblePlan,
+    ForgeRoute,
     GeneratedFile,
     PlanFile,
     PlanInterface,
+    RepairDirective,
+    ValidationArtifact,
 )
 from core.forge.execution import LocalProcessExecutor
 from core.forge.planner_stage import PlannerStage
-from core.forge.repair_support import test_generation_contracts as build_test_generation_contracts
+from core.forge.repair_backend import SubstrateRepairBackend
+from core.forge.repair_support import (
+    behavioral_generation_contracts,
+    test_generation_contracts as build_test_generation_contracts,
+)
 from core.forge.requirement_compiler import RequirementCompiler
 
 
@@ -177,6 +184,55 @@ def test_planner_and_generation_contracts_are_branch_aware():
         if path in artifact.test_paths:
             assert contract["conditional_obligations"]
             assert contract["observation_fidelities"]
+
+
+def test_shared_generation_context_preserves_branch_and_exact_output_contracts():
+    spec = RequirementCompiler().compile(
+        COMPOUND_REQUIREMENT
+        + " If the chunk size is invalid, the tool outputs exactly "
+        + "'error: invalid input' to stderr and exits with code 1."
+    )
+    plan = _plan_for(spec)
+
+    contracts = behavioral_generation_contracts(plan)
+    context = SubstrateRepairBackend._repair_context(
+        plan,
+        ValidationArtifact(
+            passed=False,
+            failures=["Behavioral contract mismatch."],
+            failure_signatures=["semantic_content_mismatch"],
+        ),
+        RepairDirective(
+            repair_id="repair-behavioral-context",
+            attempt=2,
+            route=ForgeRoute.TO_CODER,
+            failure_signatures=["semantic_content_mismatch"],
+            target_paths=["src/branch_tool.py"],
+            operations=["implement_missing_requirement_semantics"],
+        ),
+    )
+
+    assert context["behavioral_contracts"] == contracts
+    assert {
+        item["trigger"] for item in contracts["conditional_obligations"]
+    } >= {
+        "the file is empty",
+        "chunk size exceeds input length",
+        "the chunk size is invalid",
+    }
+    exact = contracts["exact_output_contracts"]
+    assert exact == [
+        {
+            "stream": "stderr",
+            "expected": "error: invalid input",
+            "source_fragment": "outputs exactly 'error: invalid input' to stderr",
+            "precondition": "the chunk size is invalid",
+            "observation_fidelity": "exact_text",
+            "additional_output_allowed": False,
+            "trailing_newline_included": False,
+        }
+    ]
+    assert contracts["coverage_directives"][0]["referenced_obligation_ids"]
 
 
 def test_supplementary_test_contradiction_is_detected_without_traceability_mapping():

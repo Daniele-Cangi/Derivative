@@ -291,6 +291,14 @@ class ValidatorStage:
             "quality_contract_checks": layer2.evidence.get("quality_contract_checks", []),
             "capability_contract_checks": layer2.evidence.get("capability_contract_checks", {}),
             "adapter_capability_checks": layer2.evidence.get("adapter_capability_checks", {}),
+            "conditional_obligation_checks": layer2.evidence.get(
+                "conditional_obligation_checks",
+                {},
+            ),
+            "exact_output_contract_checks": layer2.evidence.get(
+                "exact_output_contract_checks",
+                [],
+            ),
             "semantic_requirement_test_coverage": layer3.evidence.get("semantic_requirement_test_coverage", {}),
         }
 

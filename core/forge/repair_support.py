@@ -4,7 +4,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from core.forge.contracts import CodeArtifact, FeasiblePlan
+from core.forge.contracts import CodeArtifact, ConditionalObligation, FeasiblePlan
+from core.forge.exact_output import extract_exact_output_contracts
 from core.forge.execution import LocalProcessExecutor, ProcessExecutor, SandboxProcessRequest
 
 
@@ -141,6 +142,70 @@ def source_api_contracts(source_files: dict[str, str]) -> dict[str, Any]:
     return contracts
 
 
+def behavioral_generation_contracts(plan: FeasiblePlan) -> dict[str, Any]:
+    """Expose validator-owned behavioral contracts to untrusted generation backends."""
+
+    build_spec = plan.build_spec
+    return {
+        "conditional_obligations": [
+            _conditional_obligation_contract(obligation)
+            for obligation in build_spec.conditional_obligations
+        ],
+        "coverage_directives": [
+            {
+                "id": directive.directive_id,
+                "parent_requirement_id": directive.parent_requirement_id,
+                "referenced_obligation_ids": list(directive.referenced_obligation_ids),
+                "witness_classes": list(directive.witness_classes),
+                "source_fragment": directive.source_fragment,
+            }
+            for directive in build_spec.coverage_directives
+        ],
+        "conditional_normalization_issues": [
+            {
+                "parent_requirement_id": issue.parent_requirement_id,
+                "source_fragment": issue.source_fragment,
+                "reason": issue.reason,
+                "hard": issue.hard,
+            }
+            for issue in build_spec.conditional_normalization_issues
+        ],
+        "exact_output_contracts": [
+            {
+                "stream": contract.stream,
+                "expected": contract.expected,
+                "source_fragment": contract.source_fragment,
+                "precondition": contract.precondition,
+                "observation_fidelity": "exact_text",
+                "additional_output_allowed": False,
+                "trailing_newline_included": contract.expected.endswith(("\n", "\r")),
+            }
+            for contract in extract_exact_output_contracts(
+                build_spec.normalized_requirement
+            )
+        ],
+    }
+
+
+def _conditional_obligation_contract(
+    obligation: ConditionalObligation,
+) -> dict[str, Any]:
+    return {
+        "id": obligation.obligation_id,
+        "parent_requirement_id": obligation.parent_requirement_id,
+        "trigger": obligation.trigger,
+        "precondition": dict(obligation.precondition),
+        "observable_channel": obligation.observable_channel,
+        "comparison_relation": obligation.comparison_relation,
+        "expected_value": obligation.expected_value,
+        "polarity": obligation.polarity,
+        "observation_fidelity": obligation.observation_fidelity,
+        "verification_method": obligation.verification_method,
+        "source_fragment": obligation.source_fragment,
+        "witness_class": obligation.witness_class,
+    }
+
+
 def test_generation_contracts(
     test_paths: list[str],
     plan: FeasiblePlan,
@@ -212,20 +277,7 @@ def test_generation_contracts(
                 if requirement_id in atoms_by_id
             ],
             "conditional_obligations": [
-                {
-                    "id": obligation_id,
-                    "parent_requirement_id": obligations_by_id[obligation_id].parent_requirement_id,
-                    "trigger": obligations_by_id[obligation_id].trigger,
-                    "precondition": dict(obligations_by_id[obligation_id].precondition),
-                    "observable_channel": obligations_by_id[obligation_id].observable_channel,
-                    "comparison_relation": obligations_by_id[obligation_id].comparison_relation,
-                    "expected_value": obligations_by_id[obligation_id].expected_value,
-                    "polarity": obligations_by_id[obligation_id].polarity,
-                    "observation_fidelity": obligations_by_id[obligation_id].observation_fidelity,
-                    "verification_method": obligations_by_id[obligation_id].verification_method,
-                    "source_fragment": obligations_by_id[obligation_id].source_fragment,
-                    "witness_class": obligations_by_id[obligation_id].witness_class,
-                }
+                _conditional_obligation_contract(obligations_by_id[obligation_id])
                 for obligation_id in (
                     list(planned.conditional_obligation_ids) if planned else []
                 )

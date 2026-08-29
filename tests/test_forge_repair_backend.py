@@ -407,6 +407,26 @@ def test_repair_context_compacts_validator_evidence_without_losing_execution_sig
         },
         "obligation_acceptance_checks": {"duplicated": oversized_output},
     }
+    evidence["obligation_acceptance_checks"].update(
+        {
+            "conditional_obligation_checks": {
+                "validator_branch_probes": [
+                    {
+                        "obligation_ids": ["R001.C01.O01"],
+                        "status": "failed",
+                    }
+                ]
+            },
+            "exact_output_contract_checks": [
+                {
+                    "stream": "stderr",
+                    "expected": "error: invalid input",
+                    "observed": ["error: invalid input\n"],
+                    "passed": False,
+                }
+            ],
+        }
+    )
 
     compact = SubstrateRepairBackend._compact_validator_evidence(evidence)
     serialized = json.dumps(compact, sort_keys=True)
@@ -418,7 +438,11 @@ def test_repair_context_compacts_validator_evidence_without_losing_execution_sig
     }
     assert "requirement_semantic_checks" not in compact["layer2"]
     assert "semantic_requirement_test_coverage" not in compact["layer3"]
-    assert "obligation_acceptance_checks" not in compact
+    contract_checks = compact["obligation_acceptance_checks"]
+    assert contract_checks["conditional_obligation_checks"][
+        "validator_branch_probes"
+    ][0]["status"] == "failed"
+    assert contract_checks["exact_output_contract_checks"][0]["passed"] is False
 
 
 def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_tests():

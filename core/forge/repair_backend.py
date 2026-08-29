@@ -11,6 +11,7 @@ from core.forge.execution import ProcessExecutor
 from core.kernel import ReasoningKernel
 from core.substrate import CognitiveSubstrate
 from core.forge.repair_support import (
+    behavioral_generation_contracts,
     preflight_failed_paths,
     preflight_has_source_failure,
     run_test_preflight,
@@ -497,6 +498,7 @@ class SubstrateRepairBackend:
             ],
             "quality_contract": vars(plan.quality_contract),
             "required_obligations": list(plan.required_obligations),
+            "behavioral_contracts": behavioral_generation_contracts(plan),
             "failure_signatures": list(validation.failure_signatures),
             "failures": list(validation.failures),
             "validator_evidence_summary": SubstrateRepairBackend._compact_validator_evidence(
@@ -516,6 +518,13 @@ class SubstrateRepairBackend:
         layer1 = SubstrateRepairBackend._mapping(evidence.get("layer1"))
         layer2 = SubstrateRepairBackend._mapping(evidence.get("layer2"))
         layer3 = SubstrateRepairBackend._mapping(evidence.get("layer3"))
+        obligation_checks = SubstrateRepairBackend._mapping(
+            evidence.get("obligation_acceptance_checks")
+        )
+        behavioral_check_names = (
+            "conditional_obligation_checks",
+            "exact_output_contract_checks",
+        )
         summary = {
             "layer_status": evidence.get("layer_status", {}),
             "validated_entrypoints": evidence.get("validated_entrypoints", {}),
@@ -523,6 +532,15 @@ class SubstrateRepairBackend:
                 "manifest_provenance_checks",
                 {},
             ),
+            "obligation_acceptance_checks": {
+                key: (
+                    obligation_checks[key]
+                    if key in obligation_checks
+                    else layer2.get(key)
+                )
+                for key in behavioral_check_names
+                if key in obligation_checks or key in layer2
+            },
             "layer1": {
                 key: layer1.get(key)
                 for key in (
