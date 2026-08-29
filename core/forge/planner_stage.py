@@ -599,6 +599,10 @@ class PlannerStage:
                         interface_type="cli_entrypoint",
                         signature="main(argv: Optional[list[str]] = None) -> int",
                         description="Parses CLI paths and delegates exactly once to run.",
+                        explicit_argv_excludes_program_name=(
+                            self._explicit_cli_argv_excludes_program_name(build_spec)
+                        ),
+                        explicit_argv_count=self._explicit_cli_argv_count(build_spec),
                     ),
                 ]
             return [
@@ -625,6 +629,10 @@ class PlannerStage:
                     signature=f"{public_symbol}(argv: Optional[list[str]] = None) -> int",
                     description="Runs the CLI workflow and returns process exit code.",
                     module_path=build_spec.public_module,
+                    explicit_argv_excludes_program_name=(
+                        self._explicit_cli_argv_excludes_program_name(build_spec)
+                    ),
+                    explicit_argv_count=self._explicit_cli_argv_count(build_spec),
                 )
             ]
             if not self._is_csv_date_cli(build_spec):
@@ -712,6 +720,28 @@ class PlannerStage:
                 description="Runs the planned workflow and returns status code.",
             )
         ]
+
+    @staticmethod
+    def _explicit_cli_argv_count(build_spec: BuildSpec) -> Optional[int]:
+        indices = [
+            int(value)
+            for value in re.findall(
+                r"\bargv\s*\[\s*(\d+)\s*\]",
+                build_spec.normalized_requirement,
+                re.IGNORECASE,
+            )
+            if int(value) > 0
+        ]
+        return max(indices) if indices else None
+
+    @staticmethod
+    def _explicit_cli_argv_excludes_program_name(build_spec: BuildSpec) -> bool:
+        return re.search(
+            r"\bargv\s*\[\s*0\s*\]|\bfull\s+sys\.argv\b|"
+            r"\bargv\s+(?:includes?|contains?)\s+(?:the\s+)?(?:executable|program)(?:\s+name)?\b",
+            build_spec.normalized_requirement,
+            re.IGNORECASE,
+        ) is None
 
     def _derive_required_tests(self, build_spec: BuildSpec) -> List[PlanTest]:
         tests_by_name: Dict[str, PlanTest] = {}

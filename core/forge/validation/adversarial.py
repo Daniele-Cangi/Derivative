@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from core.forge.cli_contract import cli_invocation_contract_failures
 from core.forge.contracts import BuildSpec, CodeArtifact, FeasiblePlan, ValidationLayerResult
 from core.forge.requirement_evidence import requirement_assertion_evidence
 from core.forge.semantic_contracts import behaviorally_evidences, semantic_term_present
@@ -101,6 +102,7 @@ class AdversarialValidationLayer(ValidationLayerBase):
             for reason in reasons
         }
         for signature in (
+            "ambiguous_exit_status_assertion",
             "disconnected_assertion",
             "missing_target_invocation",
             "tautological_assertion",
@@ -202,6 +204,16 @@ class AdversarialValidationLayer(ValidationLayerBase):
                     for name in decorators
                 ):
                     mismatches.append(f"{path}:{node.name}:decorated_cli_command")
+        contents = {
+            path: target.read_text(encoding="utf-8")
+            for path, target in materialized.items()
+            if target.exists() and path.endswith(".py")
+        }
+        for failure in cli_invocation_contract_failures(contents, plan):
+            mismatches.append(
+                f"{failure['path']}:{failure['interface']}:{failure['reason']}:"
+                f"line={failure['line']}"
+            )
         return mismatches
 
     @staticmethod

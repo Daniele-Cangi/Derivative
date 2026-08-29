@@ -42,6 +42,26 @@ def test_shared_anti_stub_contract_accepts_observable_equality():
     assert non_semantic_test_paths([path], {path: content}) == []
 
 
+def test_shared_anti_stub_contract_rejects_ambiguous_exit_status():
+    path = "tests/test_cli_contract.py"
+    content = (
+        "import cli\n"
+        "\n"
+        "def test_invalid_input():\n"
+        "    rc = cli.main(['invalid'])\n"
+        "    assert rc == 1 or rc == 0\n"
+    )
+
+    reasons = non_semantic_test_reasons(
+        [path],
+        {path: content},
+        target_names={"main"},
+        target_modules={"cli"},
+    )
+
+    assert reasons == {path: ["ambiguous_exit_status_assertion"]}
+
+
 def test_shared_anti_stub_contract_rejects_assertion_disconnected_from_target():
     path = "tests/test_contract.py"
     content = (

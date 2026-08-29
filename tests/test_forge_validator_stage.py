@@ -1207,6 +1207,33 @@ def test_non_cli_workflow_cannot_be_replaced_by_click_command(forge_pipeline):
     assert "interface_contract_mismatch" in result.failure_signatures
 
 
+def test_cli_full_sys_argv_contract_mismatch_is_rejected(tmp_path, forge_pipeline):
+    plan = copy.deepcopy(forge_pipeline["plan"])
+    interface = next(item for item in plan.interfaces if item.name == "main")
+    interface.module_path = "cli"
+    interface.explicit_argv_excludes_program_name = True
+    interface.explicit_argv_count = 2
+    source = tmp_path / "cli.py"
+    source.write_text(
+        "import sys\n"
+        "def main(argv=None):\n"
+        "    if argv is None:\n"
+        "        argv = sys.argv\n"
+        "    if len(argv) != 3:\n"
+        "        return 1\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+
+    mismatches = AdversarialValidationLayer()._detect_interface_contract_mismatches(
+        plan,
+        {"src/cli.py": source},
+    )
+
+    assert any("explicit_argv_uses_full_sys_argv" in item for item in mismatches)
+    assert any("explicit_argv_arity_mismatch" in item for item in mismatches)
+
+
 def _validate_runtime_cli_source(tmp_path, requirement, source):
     build_spec = RequirementCompiler().compile(requirement)
     plan = FeasiblePlan(

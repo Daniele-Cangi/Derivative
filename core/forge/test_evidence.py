@@ -56,6 +56,14 @@ def non_semantic_test_reasons(
         ):
             reasons_by_path[test_path] = ["tautological_assertion"]
             continue
+        if any(
+            _is_ambiguous_exit_status_assertion(node)
+            for function in test_functions
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assert)
+        ):
+            reasons_by_path[test_path] = ["ambiguous_exit_status_assertion"]
+            continue
         module_aliases, imported_target_names = _target_import_context(
             tree,
             expected_names,
@@ -685,7 +693,7 @@ def _statements_contain_target_call(
 
 
 def _is_semantic_assertion(node: ast.Assert) -> bool:
-    if _is_tautological_assertion(node):
+    if _is_tautological_assertion(node) or _is_ambiguous_exit_status_assertion(node):
         return False
     test = node.test
     if isinstance(test, ast.Constant):
@@ -710,6 +718,58 @@ def _is_semantic_assertion(node: ast.Assert) -> bool:
 
 def _is_tautological_assertion(node: ast.Assert) -> bool:
     return _expression_is_tautological(node.test)
+
+
+def _is_ambiguous_exit_status_assertion(node: ast.Assert) -> bool:
+    if not isinstance(node.test, ast.BoolOp) or not isinstance(node.test.op, ast.Or):
+        return False
+    comparisons: dict[str, tuple[ast.expr, set[int]]] = {}
+    for expression in _flatten_boolean_or(node.test):
+        comparison = _single_comparison(expression)
+        if comparison is None:
+            continue
+        left, operator, right = comparison
+        if not isinstance(operator, (ast.Eq, ast.Is)):
+            continue
+        subject, value = _integer_comparison_operands(left, right)
+        if subject is None or value is None or not _is_exit_status_expression(subject):
+            continue
+        key = ast.dump(subject, include_attributes=False)
+        existing_subject, values = comparisons.setdefault(key, (subject, set()))
+        values.add(value)
+        comparisons[key] = (existing_subject, values)
+    return any(
+        0 in values and any(value != 0 for value in values)
+        for _, values in comparisons.values()
+    )
+
+
+def _integer_comparison_operands(
+    left: ast.expr,
+    right: ast.expr,
+) -> tuple[ast.expr | None, int | None]:
+    if isinstance(right, ast.Constant) and isinstance(right.value, int):
+        return left, right.value
+    if isinstance(left, ast.Constant) and isinstance(left.value, int):
+        return right, left.value
+    return None, None
+
+
+def _is_exit_status_expression(node: ast.expr) -> bool:
+    if isinstance(node, ast.Name):
+        name = node.id.lower()
+    elif isinstance(node, ast.Attribute):
+        name = node.attr.lower()
+    else:
+        return False
+    return name in {
+        "exit_code",
+        "exit_status",
+        "rc",
+        "return_code",
+        "returncode",
+        "status_code",
+    }
 
 
 def _expression_is_tautological(node: ast.expr) -> bool:
