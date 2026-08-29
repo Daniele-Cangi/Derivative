@@ -2,6 +2,10 @@ import re
 from typing import Any
 
 from core.forge.cli_contract import cli_invocation_contract_failures
+from core.forge.conditional_test_evidence import (
+    analyze_observation_fidelity,
+    analyze_test_expectations,
+)
 from core.forge.contracts import FeasiblePlan
 from core.forge.exact_output import exact_output_contract_evidence
 from core.forge.fixture_oracle import (
@@ -96,6 +100,13 @@ def run_semantic_preflight(
             candidate_files,
             plan,
             contracts,
+            failed_paths,
+        )
+    )
+    test_failures.extend(
+        _conditional_test_contract_failures(
+            candidate_files,
+            plan,
             failed_paths,
         )
     )
@@ -362,6 +373,60 @@ def _non_semantic_test_failures(
     return failures
 
 
+def _conditional_test_contract_failures(
+    candidate_files: dict[str, str],
+    plan: FeasiblePlan,
+    failed_paths: list[str],
+) -> list[dict[str, Any]]:
+    build_spec = plan.build_spec
+    if not getattr(build_spec, "conditional_obligations", []):
+        return []
+
+    contents = {
+        path: content
+        for path, content in candidate_files.items()
+        if path.startswith("tests/") and path.endswith(".py")
+    }
+    failures: list[dict[str, Any]] = []
+    for item in analyze_test_expectations(contents, build_spec, plan):
+        contradictions = list(item["contradictions"])
+        if not contradictions:
+            continue
+        path = str(item["path"])
+        if path not in failed_paths:
+            failed_paths.append(path)
+        failures.append(
+            {
+                "path": path,
+                "kind": "conditional_test_expectation_contradiction",
+                "function": item["function"],
+                "witness_classes": list(item["witness_classes"]),
+                "conditional_obligation_ids": list(
+                    item["exercised_obligation_ids"]
+                ),
+                "contradictions": contradictions,
+            }
+        )
+
+    for item in analyze_observation_fidelity(contents, build_spec, plan):
+        lossy_observations = list(item["lossy_observations"])
+        if not lossy_observations:
+            continue
+        path = str(item["path"])
+        if path not in failed_paths:
+            failed_paths.append(path)
+        failures.append(
+            {
+                "path": path,
+                "kind": "conditional_observation_fidelity_failure",
+                "function": item["function"],
+                "conditional_obligation_ids": list(item["exact_obligation_ids"]),
+                "lossy_observations": lossy_observations,
+            }
+        )
+    return failures
+
+
 def _source_contract_failures(
     candidate_files: dict[str, str],
     plan: FeasiblePlan,
@@ -528,6 +593,45 @@ def correction_requirements(
                 f"{path}: replace callable/type/file-presence or placeholder checks with a test that invokes "
                 "a declared public interface using concrete input and asserts an observable behavioral result "
                 f"for requirements {requirement_ids}."
+            )
+            continue
+        if failure.get("kind") == "conditional_test_expectation_contradiction":
+            function = str(failure.get("function", "generated test"))
+            contradictions = [
+                {
+                    "obligation_id": item.get("obligation_id"),
+                    "trigger": item.get("trigger"),
+                    "channel": item.get("channel"),
+                    "expected_relation": item.get("expected_relation"),
+                    "expected_value": item.get("expected_value"),
+                    "asserted_relation": item.get("asserted_relation"),
+                    "asserted_value": item.get("asserted_value"),
+                }
+                for item in failure.get("contradictions", [])
+                if isinstance(item, dict)
+            ]
+            requirements.append(
+                f"{path}:{function}: replace assertions that contradict the typed conditional "
+                f"obligations {contradictions}; derive the fixture from each declared trigger and "
+                "assert its exact required observation. Do not change the implementation to satisfy "
+                "a contradictory generated expectation."
+            )
+            continue
+        if failure.get("kind") == "conditional_observation_fidelity_failure":
+            function = str(failure.get("function", "generated test"))
+            lossy = [
+                {
+                    "obligation_id": item.get("obligation_id"),
+                    "channel": item.get("channel"),
+                    "transformations": item.get("transformations", []),
+                }
+                for item in failure.get("lossy_observations", [])
+                if isinstance(item, dict)
+            ]
+            requirements.append(
+                f"{path}:{function}: compare exact conditional observations without lossy "
+                f"normalization {lossy}; preserve whitespace, case, ordering, separators, and line "
+                "terminators required by the typed obligation."
             )
             continue
         requirement_id = str(failure.get("requirement_id", ""))

@@ -5,6 +5,7 @@ from core.forge.conditional_evidence import (
     analyze_observation_fidelity,
     analyze_test_expectations,
 )
+from core.forge.candidate_preflight import run_semantic_preflight
 from core.forge.contracts import (
     ArtifactTargetType,
     CodeArtifact,
@@ -294,6 +295,108 @@ def test_empty_file(tmp_path, capsys):
     ]
     assert lossy
     assert "strip" in lossy[0]["transformations"]
+
+
+def test_candidate_preflight_rejects_conditional_expectation_contradiction():
+    spec = RequirementCompiler().compile(COMPOUND_REQUIREMENT)
+    plan = _plan_for(spec)
+    supplementary = '''from branch_tool import main
+
+
+def test_size_exceeds_input_length(tmp_path, capsys):
+    path = tmp_path / "input.txt"
+    path.write_text("abc", encoding="utf-8")
+    result = main([str(path), "4"])
+    captured = capsys.readouterr()
+    assert captured.out == "abc"
+    assert result == 0
+'''
+
+    result = run_semantic_preflight(
+        {"tests/test_supplementary.py": supplementary},
+        plan,
+        {},
+        {"phase": "tests", "passed": True, "failures": []},
+    )
+
+    failure = next(
+        item
+        for item in result["failures"]
+        if item["kind"] == "conditional_test_expectation_contradiction"
+    )
+    assert result["passed"] is False
+    assert result["test_failed_paths"] == ["tests/test_supplementary.py"]
+    assert failure["contradictions"][0]["channel"] == "stdout"
+    assert any(
+        "Do not change the implementation" in requirement
+        for requirement in result["correction_requirements"]
+    )
+
+
+def test_candidate_preflight_rejects_lossy_conditional_observation():
+    spec = RequirementCompiler().compile(COMPOUND_REQUIREMENT)
+    plan = _plan_for(spec)
+    empty_test = next(
+        test for test in plan.required_tests if "empty_input" in test.witness_classes
+    )
+    path = f"tests/{empty_test.test_name}.py"
+    source = '''from branch_tool import main
+
+
+def test_empty_file(tmp_path, capsys):
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("", encoding="utf-8")
+    result = main([str(input_path), "2"])
+    captured = capsys.readouterr()
+    assert captured.out.strip() == ""
+    assert result == 0
+'''
+
+    result = run_semantic_preflight(
+        {path: source},
+        plan,
+        {},
+        {"phase": "tests", "passed": True, "failures": []},
+    )
+
+    failure = next(
+        item
+        for item in result["failures"]
+        if item["kind"] == "conditional_observation_fidelity_failure"
+    )
+    assert result["passed"] is False
+    assert result["test_failed_paths"] == [path]
+    assert failure["lossy_observations"][0]["transformations"] == ["strip"]
+    assert any(
+        "without lossy normalization" in requirement
+        for requirement in result["correction_requirements"]
+    )
+
+
+def test_candidate_preflight_preserves_consistent_exact_branch_evidence():
+    spec = RequirementCompiler().compile(COMPOUND_REQUIREMENT)
+    plan = _plan_for(spec)
+    source = '''from branch_tool import main
+
+
+def test_size_exceeds_input_length(tmp_path, capsys):
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("abc", encoding="utf-8")
+    result = main([str(input_path), "4"])
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert result == 0
+'''
+
+    result = run_semantic_preflight(
+        {"tests/test_consistent_branch.py": source},
+        plan,
+        {},
+        {"phase": "tests", "passed": True, "failures": []},
+    )
+
+    assert result["passed"] is True
+    assert result["phase"] == "tests"
 
 
 def test_interface_contract_is_structural_and_does_not_require_behavioral_test():

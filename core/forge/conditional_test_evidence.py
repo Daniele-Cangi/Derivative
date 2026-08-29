@@ -66,6 +66,9 @@ def analyze_test_expectations(
                         contradictions.append(
                             {
                                 "obligation_id": obligation.obligation_id,
+                                "trigger": obligation.trigger,
+                                "witness_class": obligation.witness_class,
+                                "channel": obligation.observable_channel,
                                 "expected_relation": obligation.comparison_relation,
                                 "expected_value": obligation.expected_value,
                                 "asserted_relation": item["relation"],
