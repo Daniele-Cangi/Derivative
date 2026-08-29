@@ -170,6 +170,10 @@ class PlannerStage:
         acceptance_ids = [criterion.criterion_id for criterion in build_spec.acceptance_contract.criteria]
         obligation_mode = build_spec.obligation_contract.mode if build_spec.obligation_contract else "none"
         requirement_coverage = self._build_requirement_coverage(build_spec, file_tree, required_tests)
+        conditional_obligation_coverage = self._build_conditional_obligation_coverage(
+            build_spec,
+            required_tests,
+        )
 
         return FeasiblePlan(
             plan_id=f"plan-{build_spec.build_id}",
@@ -183,6 +187,7 @@ class PlannerStage:
             required_obligations=required_obligations,
             acceptance_criterion_ids=acceptance_ids,
             requirement_coverage=requirement_coverage,
+            conditional_obligation_coverage=conditional_obligation_coverage,
             obligation_mode=obligation_mode,
             validation_strategy=strategy,
             implementation_notes=implementation_notes,
@@ -745,12 +750,70 @@ class PlannerStage:
 
     def _derive_required_tests(self, build_spec: BuildSpec) -> List[PlanTest]:
         tests_by_name: Dict[str, PlanTest] = {}
+        obligations_by_id = {
+            obligation.obligation_id: obligation
+            for obligation in build_spec.conditional_obligations
+        }
         obligation_fields = (
             list(build_spec.obligation_contract.required_fields)
             if build_spec.obligation_contract is not None
             else []
         )
         for index, criterion in enumerate(build_spec.acceptance_contract.criteria, start=1):
+            if criterion.verification_method in {
+                "interface_contract",
+                "static_analysis",
+                "coverage_directive",
+            }:
+                continue
+            child_obligations = [
+                obligations_by_id[obligation_id]
+                for obligation_id in criterion.conditional_obligation_ids
+                if obligation_id in obligations_by_id
+            ]
+            if child_obligations:
+                branches: Dict[str, List[Any]] = {}
+                for obligation in child_obligations:
+                    branch_id = obligation.obligation_id.rsplit(".O", 1)[0]
+                    branches.setdefault(branch_id, []).append(obligation)
+                for branch_index, branch in enumerate(branches.values(), start=1):
+                    lead = branch[0]
+                    base_name, test_type = self._semantic_test_spec(
+                        criterion.description,
+                        index,
+                    )
+                    suffix = self._test_identifier(
+                        lead.witness_class or f"branch_{branch_index}"
+                    )
+                    name = f"{base_name}_{suffix}"
+                    expected = "; ".join(
+                        f"{item.observable_channel} {item.comparison_relation} {item.expected_value!r}"
+                        for item in branch
+                    )
+                    tests_by_name[name] = PlanTest(
+                        test_name=name,
+                        objective=(
+                            f"{criterion.description} Branch trigger: {lead.trigger}. "
+                            f"Expected observation: {expected}."
+                        ),
+                        test_type=test_type,
+                        required=criterion.required,
+                        acceptance_criterion_ids=[criterion.criterion_id],
+                        obligation_fields=obligation_fields,
+                        requirement_ids=list(criterion.requirement_ids),
+                        conditional_obligation_ids=[
+                            item.obligation_id for item in branch
+                        ],
+                        witness_classes=[
+                            item.witness_class
+                            for item in branch
+                            if item.witness_class
+                        ],
+                        observation_fidelities=sorted(
+                            {item.observation_fidelity for item in branch}
+                        ),
+                    )
+                continue
             name, test_type = self._semantic_test_spec(criterion.description, index)
             existing = tests_by_name.get(name)
             if existing is None:
@@ -771,7 +834,12 @@ class PlannerStage:
                     existing.requirement_ids.append(requirement_id)
             existing.objective = f"{existing.objective} {criterion.description}".strip()
         tests = list(tests_by_name.values())
-        if not tests:
+        has_behavioral_criterion = any(
+            criterion.verification_method
+            not in {"interface_contract", "static_analysis", "coverage_directive"}
+            for criterion in build_spec.acceptance_contract.criteria
+        )
+        if not tests and has_behavioral_criterion:
             tests.append(
                 PlanTest(
                     test_name="test_smoke",
@@ -784,6 +852,11 @@ class PlannerStage:
                 )
             )
         return tests
+
+    @staticmethod
+    def _test_identifier(value: str) -> str:
+        normalized = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+        return normalized or "branch"
 
     def _library_requirement_ids(self, build_spec: BuildSpec) -> List[str]:
         return [
@@ -1336,4 +1409,41 @@ class PlannerStage:
             for req_id in criterion.requirement_ids:
                 if req_id in coverage and criterion.criterion_id not in coverage[req_id]["acceptance_criteria"]:
                     coverage[req_id]["acceptance_criteria"].append(criterion.criterion_id)
+        obligation_tests = {
+            obligation_id: plan_test.test_name
+            for plan_test in required_tests
+            for obligation_id in plan_test.conditional_obligation_ids
+        }
+        for directive in build_spec.coverage_directives:
+            entry = coverage.get(directive.parent_requirement_id)
+            if entry is None:
+                continue
+            for obligation_id in directive.referenced_obligation_ids:
+                test_name = obligation_tests.get(obligation_id)
+                if test_name and test_name not in entry["tests"]:
+                    entry["tests"].append(test_name)
+        return coverage
+
+    @staticmethod
+    def _build_conditional_obligation_coverage(
+        build_spec: BuildSpec,
+        required_tests: List[PlanTest],
+    ) -> Dict[str, Dict[str, List[str]]]:
+        coverage = {
+            obligation.obligation_id: {
+                "tests": [],
+                "acceptance_criteria": [],
+                "parent_requirements": [obligation.parent_requirement_id],
+            }
+            for obligation in build_spec.conditional_obligations
+        }
+        for plan_test in required_tests:
+            for obligation_id in plan_test.conditional_obligation_ids:
+                if obligation_id not in coverage:
+                    continue
+                if plan_test.test_name not in coverage[obligation_id]["tests"]:
+                    coverage[obligation_id]["tests"].append(plan_test.test_name)
+                for criterion_id in plan_test.acceptance_criterion_ids:
+                    if criterion_id not in coverage[obligation_id]["acceptance_criteria"]:
+                        coverage[obligation_id]["acceptance_criteria"].append(criterion_id)
         return coverage

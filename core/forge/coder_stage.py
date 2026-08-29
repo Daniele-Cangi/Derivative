@@ -380,7 +380,12 @@ class CoderStage:
             raise MalformedPlanError("FeasiblePlan.file_tree_plan is required.")
         if not plan.interfaces:
             raise MalformedPlanError("FeasiblePlan.interfaces is required.")
-        if not plan.required_tests:
+        behavioral_acceptance = any(
+            criterion.verification_method
+            not in {"interface_contract", "static_analysis", "coverage_directive"}
+            for criterion in plan.build_spec.acceptance_contract.criteria
+        )
+        if not plan.required_tests and behavioral_acceptance:
             raise MalformedPlanError("FeasiblePlan.required_tests is required.")
 
         missing_paths = [file.path for file in plan.file_tree_plan if not file.path.strip()]
@@ -518,6 +523,18 @@ class CoderStage:
         generated_from.extend(f"acceptance:{criterion_id}" for criterion_id in plan_test.acceptance_criterion_ids)
         generated_from.extend(f"obligation:{field}" for field in plan_test.obligation_fields)
         generated_from.extend(f"requirement:{requirement_id}" for requirement_id in plan_test.requirement_ids)
+        generated_from.extend(
+            f"conditional_obligation:{obligation_id}"
+            for obligation_id in plan_test.conditional_obligation_ids
+        )
+        generated_from.extend(
+            f"witness_class:{witness_class}"
+            for witness_class in plan_test.witness_classes
+        )
+        generated_from.extend(
+            f"observation_fidelity:{fidelity}"
+            for fidelity in plan_test.observation_fidelities
+        )
         return GeneratedFile(
             path=path,
             content=content,
@@ -586,6 +603,7 @@ class CoderStage:
             "required_obligations": list(plan.required_obligations),
             "acceptance_criterion_ids": list(plan.acceptance_criterion_ids),
             "requirement_coverage": plan.requirement_coverage,
+            "conditional_obligation_coverage": plan.conditional_obligation_coverage,
             "quality_contract": asdict(plan.quality_contract),
             "implementation_blueprint": asdict(plan.implementation_blueprint),
             "validation_strategy": asdict(plan.validation_strategy),

@@ -43,12 +43,47 @@ class RequirementAtom:
 
 
 @dataclass
+class ConditionalObligation:
+    obligation_id: str
+    parent_requirement_id: str
+    trigger: str
+    precondition: Dict[str, Any]
+    observable_channel: str
+    comparison_relation: str
+    expected_value: Any
+    polarity: str
+    observation_fidelity: str
+    verification_method: str
+    source_fragment: str
+    witness_class: str = ""
+
+
+@dataclass
+class CoverageDirective:
+    directive_id: str
+    parent_requirement_id: str
+    referenced_obligation_ids: List[str] = field(default_factory=list)
+    witness_classes: List[str] = field(default_factory=list)
+    source_fragment: str = ""
+
+
+@dataclass
+class ConditionalNormalizationIssue:
+    parent_requirement_id: str
+    source_fragment: str
+    reason: str
+    hard: bool = True
+
+
+@dataclass
 class AcceptanceCriterion:
     criterion_id: str
     description: str
     required: bool = True
     verification_hint: str = ""
     requirement_ids: List[str] = field(default_factory=list)
+    verification_method: str = "behavioral_test"
+    conditional_obligation_ids: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +174,9 @@ class BuildSpec:
     functional_goals: List[str] = field(default_factory=list)
     non_functional_constraints: List[str] = field(default_factory=list)
     requirement_atoms: List[RequirementAtom] = field(default_factory=list)
+    conditional_obligations: List[ConditionalObligation] = field(default_factory=list)
+    coverage_directives: List[CoverageDirective] = field(default_factory=list)
+    conditional_normalization_issues: List[ConditionalNormalizationIssue] = field(default_factory=list)
     acceptance_contract: AcceptanceContract = field(default_factory=AcceptanceContract)
     obligation_contract: Optional[ObligationContract] = None
     quality_contract: QualityContract = field(default_factory=QualityContract)
@@ -177,6 +215,9 @@ class PlanTest:
     acceptance_criterion_ids: List[str] = field(default_factory=list)
     obligation_fields: List[str] = field(default_factory=list)
     requirement_ids: List[str] = field(default_factory=list)
+    conditional_obligation_ids: List[str] = field(default_factory=list)
+    witness_classes: List[str] = field(default_factory=list)
+    observation_fidelities: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -200,6 +241,7 @@ class FeasiblePlan:
     required_obligations: List[str] = field(default_factory=list)
     acceptance_criterion_ids: List[str] = field(default_factory=list)
     requirement_coverage: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
+    conditional_obligation_coverage: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
     obligation_mode: str = "none"
     validation_strategy: ValidationStrategy = field(default_factory=ValidationStrategy)
     implementation_notes: List[str] = field(default_factory=list)

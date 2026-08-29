@@ -7,10 +7,12 @@ from core.forge.contracts import (
     AcceptanceCriterion,
     ArtifactTargetType,
     BuildSpec,
+    ConditionalObligation,
     ObligationContract,
     QualityContract,
     RequirementAtom,
 )
+from core.forge.conditional_obligations import ConditionalObligationNormalizer
 from core.forge.public_contract import extract_public_import_contract
 from core.obligation_compiler import ObligationCompiler
 from core.problem_classifier import ProblemClassifier
@@ -20,6 +22,7 @@ class RequirementCompiler:
     def __init__(self):
         self.problem_classifier = ProblemClassifier()
         self.obligation_compiler = ObligationCompiler()
+        self.conditional_normalizer = ConditionalObligationNormalizer()
 
     def compile(self, requirement: str) -> BuildSpec:
         normalized = self._normalize_requirement(requirement)
@@ -27,6 +30,7 @@ class RequirementCompiler:
             raise ValueError("Requirement cannot be empty.")
 
         requirement_atoms = self._extract_requirement_atoms(normalized)
+        conditional_normalization = self.conditional_normalizer.normalize(requirement_atoms)
         functional_goals = [atom.text for atom in requirement_atoms if atom.category in {"functional", "validation"}]
         if not functional_goals:
             functional_goals = self._extract_functional_goals(normalized)
@@ -56,10 +60,19 @@ class RequirementCompiler:
             non_functional_constraints,
             target_artifact_type,
         )
+        ambiguity_flags.extend(
+            (
+                "Materially unspecified conditional semantics: "
+                f"{issue.parent_requirement_id} ({issue.reason})."
+            )
+            for issue in conditional_normalization.issues
+            if issue.hard
+        )
         acceptance_contract = self._build_acceptance_contract(
             functional_goals,
             non_functional_constraints,
             requirement_atoms,
+            conditional_normalization.obligations,
         )
         obligation_contract = self._build_obligation_contract(
             normalized,
@@ -76,6 +89,9 @@ class RequirementCompiler:
             functional_goals=functional_goals,
             non_functional_constraints=non_functional_constraints,
             requirement_atoms=requirement_atoms,
+            conditional_obligations=conditional_normalization.obligations,
+            coverage_directives=conditional_normalization.coverage_directives,
+            conditional_normalization_issues=conditional_normalization.issues,
             acceptance_contract=acceptance_contract,
             obligation_contract=obligation_contract,
             quality_contract=quality_contract,
@@ -592,18 +608,26 @@ class RequirementCompiler:
         functional_goals: List[str],
         non_functional_constraints: List[str],
         requirement_atoms: List[RequirementAtom],
+        conditional_obligations: List[ConditionalObligation],
     ) -> AcceptanceContract:
         criteria: List[AcceptanceCriterion] = []
         index = 1
         for atom in requirement_atoms:
-            if atom.category == "ambiguity":
+            if atom.category in {"ambiguity", "coverage_directive"}:
                 continue
             if atom.category in {"functional", "validation"}:
                 description = f"Implement functional goal: {atom.text}"
             elif atom.category == "universal_constraint":
                 description = f"Prove universal constraint: {atom.text}"
+            elif atom.category == "negative_constraint":
+                description = f"Enforce negative constraint: {atom.text}"
             else:
                 description = f"Satisfy constraint: {atom.text}"
+            child_ids = [
+                obligation.obligation_id
+                for obligation in conditional_obligations
+                if obligation.parent_requirement_id == atom.requirement_id
+            ]
             criteria.append(
                 AcceptanceCriterion(
                     criterion_id=f"AC{index:03d}",
@@ -616,6 +640,8 @@ class RequirementCompiler:
                         "universal_proof": "Require explicit proof evidence; finite examples are insufficient.",
                     }.get(atom.verification_method, "Validate through executable behavior and tests."),
                     requirement_ids=[atom.requirement_id],
+                    verification_method=atom.verification_method,
+                    conditional_obligation_ids=child_ids,
                 )
             )
             index += 1
@@ -806,6 +832,10 @@ class RequirementCompiler:
         lowered = clause.lower()
         if re.match(r"^public\s+import\s+contract\s*:", lowered):
             return "functional"
+        if re.match(r"^(?:edge|boundary|corner)\s+cases?\s+(?:cover|include|exercise)\b", lowered):
+            return "coverage_directive"
+        if re.match(r"^(?:no|never|without)\b", lowered):
+            return "negative_constraint"
         universal_tokens = (
             "every possible",
             "all possible",
@@ -986,6 +1016,8 @@ class RequirementCompiler:
 
     def _verification_method_for_clause(self, clause: str, category: str) -> str:
         lowered = clause.lower()
+        if category == "coverage_directive":
+            return "coverage_directive"
         if re.match(r"^public\s+import\s+contract\s*:", lowered):
             return "interface_contract"
         absolute_universal_tokens = (
@@ -1001,13 +1033,21 @@ class RequirementCompiler:
             return "universal_proof"
         if category == "universal_constraint":
             return "property_test"
+        if category == "negative_constraint":
+            if re.search(r"\b(?:network|socket|subprocess|http\s+client)\b", lowered):
+                return "static_analysis"
+            return "property_test"
         if re.search(r"\bdef\s+[a-z_][a-z0-9_]*\s*\(", lowered):
+            if self._has_behavior_after_interface_declaration(lowered):
+                return "behavioral_test"
             return "interface_contract"
         if re.match(
             r"^(?:build|create|implement|develop|provide|define)\b.*"
             r"\b(?:cli|command|function|method|module|library|service|component)\b",
             lowered,
         ):
+            if self._has_behavior_after_interface_declaration(lowered):
+                return "behavioral_test"
             return "interface_contract"
         if re.search(
             r"\b(?:no|without|must\s+not|may\s+not|is\s+not\s+allowed)\b"
@@ -1022,6 +1062,18 @@ class RequirementCompiler:
         if "standard library" in lowered or "stdlib" in lowered:
             return "static_analysis"
         return "behavioral_test"
+
+    @staticmethod
+    def _has_behavior_after_interface_declaration(clause: str) -> bool:
+        return bool(
+            re.search(
+                r"\b(?:that|which|whose)\b.{0,160}\b(?:reads?|writes?|merges?|"
+                r"returns?|raises?|rejects?|processes?|computes?|transforms?|"
+                r"sorts?|parses?|flags?|extracts?|validates?|outputs?|emits?)\b",
+                clause,
+                re.IGNORECASE,
+            )
+        )
 
     def _strength_for_clause(self, clause: str, category: str) -> str:
         lowered = clause.lower()

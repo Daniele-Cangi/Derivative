@@ -536,7 +536,7 @@ def test_invoice_business_tests_are_semantic(invoice_feasible_plan):
     assert totals is not None
     assert malformed_invalid is not None
     assert cli_flow is not None
-    assert build_goal is not None
+    assert build_goal is None
     assert cli_module is not None
 
     assert "load_contracts_csv(" in reads_csv.content
@@ -567,9 +567,6 @@ def test_invoice_business_tests_are_semantic(invoice_feasible_plan):
     assert "invoice_id,due_date,amount,customer_name" in cli_flow.content
     assert "rows = list(csv.DictReader(handle))" in cli_flow.content
     assert "assert rows[0]['total_amount'] == '25'" in cli_flow.content
-
-    assert "invoice_id,due_date,amount,customer_name" in build_goal.content
-    assert "rows = list(csv.DictReader(handle))" in build_goal.content
 
     assert "Process invoice due dates from CSV input." in cli_module.content
     assert "_ = 'entrypoint_defined" not in cli_module.content

@@ -342,8 +342,10 @@ class AdversarialValidationLayer(ValidationLayerBase):
         hard_atoms = [
             atom
             for atom in build_spec.requirement_atoms
-            if atom.category != "ambiguity"
+            if atom.category not in {"ambiguity", "coverage_directive"}
             and atom.strength in {"hard", "universal"}
+            and atom.verification_method
+            not in {"interface_contract", "static_analysis", "coverage_directive"}
         ]
         file_contents = {
             path: target.read_text(encoding="utf-8")

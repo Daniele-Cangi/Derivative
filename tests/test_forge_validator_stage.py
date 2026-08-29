@@ -582,6 +582,7 @@ def test_missing_semantic_requirement_coverage_is_detected(forge_pipeline):
 
     hard_atom = next(
         atom for atom in build_spec.requirement_atoms if atom.category != "ambiguity" and atom.strength in {"hard", "universal"}
+        and atom.verification_method not in {"interface_contract", "static_analysis"}
     )
     mapped_tests = plan.requirement_coverage[hard_atom.requirement_id]["tests"]
     assert mapped_tests

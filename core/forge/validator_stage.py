@@ -220,6 +220,11 @@ class ValidatorStage:
             "adapter_capability_manifest_mismatch",
             "non_semantic_test",
             "fake_acceptance_coverage",
+            "uncompiled_hard_conditional",
+            "missing_conditional_coverage",
+            "conditional_probe_unavailable",
+            "test_expectation_contradiction",
+            "lossy_observation_fidelity",
         } & signature_set:
             return FailureCategory.VALIDATION
         if {
@@ -230,6 +235,7 @@ class ValidatorStage:
             "test_execution_failure",
             "superficial_stub",
             "interface_contract_mismatch",
+            "conditional_obligation_mismatch",
         } & signature_set:
             return FailureCategory.IMPLEMENTATION
         return FailureCategory.UNKNOWN
