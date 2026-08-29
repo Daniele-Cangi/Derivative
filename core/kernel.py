@@ -8,6 +8,7 @@ from core.designs import EmergentDesign
 from core.execution_loop import ExecutionLoop, ExecutionResult
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
 from core.model_provider import (
+    MissingTextOutputError,
     create_openai_client,
     generate_text,
     is_live_openai_key,
@@ -23,6 +24,12 @@ from core.topology_solver import (
     solve_topology_search,
 )
 from lenses.base import CognitiveLens
+
+
+def _revision_output_token_budgets(target_count: int) -> tuple[int, ...]:
+    initial = min(24000, max(12000, 4000 + (max(1, target_count) * 1600)))
+    retry = min(32000, max(24000, initial * 2))
+    return (initial, retry) if retry > initial else (initial,)
 
 
 @dataclass
@@ -178,6 +185,7 @@ do not leave stale tests for a superseded input format."""
             "cognitive_lenses": lens_context,
             "allowed_target_files": target_files,
         }
+        provider_attempts: list[dict[str, object]] = []
         try:
             required_paths = list(target_files)
             output_schema = {
@@ -197,18 +205,56 @@ do not leave stale tests for a superseded input format."""
                 "required": ["status", "files"],
                 "additionalProperties": False,
             }
-            response_text = generate_text(
-                self.client,
-                model=self.model,
-                max_output_tokens=12000,
-                instructions=system_prompt,
-                input_text=json.dumps(request_payload, sort_keys=True),
-                output_schema=output_schema,
-                output_schema_name="forge_code_revision",
+            budgets = _revision_output_token_budgets(len(required_paths))
+            for attempt_index, budget in enumerate(budgets):
+                try:
+                    response_text = generate_text(
+                        self.client,
+                        model=self.model,
+                        max_output_tokens=budget,
+                        instructions=system_prompt,
+                        input_text=json.dumps(request_payload, sort_keys=True),
+                        output_schema=output_schema,
+                        output_schema_name="forge_code_revision",
+                    )
+                except MissingTextOutputError as exc:
+                    provider_attempts.append(
+                        {
+                            "attempt": attempt_index + 1,
+                            "max_output_tokens": budget,
+                            "status": exc.status,
+                            "reason": exc.reason,
+                            "partial_output": exc.partial_output,
+                        }
+                    )
+                    retryable = (
+                        exc.status == "incomplete"
+                        and exc.reason == "max_output_tokens"
+                        and attempt_index + 1 < len(budgets)
+                    )
+                    if retryable:
+                        continue
+                    raise
+
+                provider_attempts.append(
+                    {
+                        "attempt": attempt_index + 1,
+                        "max_output_tokens": budget,
+                        "status": "completed",
+                        "reason": "",
+                        "partial_output": False,
+                    }
+                )
+                data = extract_json_object(response_text)
+                data.setdefault("status", "candidate")
+                data["_provider_evidence"] = {"attempts": provider_attempts}
+                return data
+
+            raise MissingTextOutputError(
+                "OpenAI response remained incomplete after the bounded retry.",
+                status="incomplete",
+                reason="max_output_tokens",
             )
-            data = extract_json_object(response_text)
-            data.setdefault("status", "candidate")
-            return data
         except Exception as exc:
             if self.allow_local_fallback:
                 detail = " ".join(str(exc).split())[:240]
@@ -217,6 +263,7 @@ do not leave stale tests for a superseded input format."""
                     "status": "unavailable",
                     "files": [],
                     "reason": f"Live revision failed: {type(exc).__name__}{suffix}",
+                    "_provider_evidence": {"attempts": provider_attempts},
                 }
             raise
 

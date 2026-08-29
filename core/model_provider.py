@@ -11,6 +11,19 @@ _NON_LIVE_KEYS = {"", "dummy_key_for_testing", "your-api-key-here"}
 class MissingTextOutputError(ValueError):
     """The provider returned a response without usable text output."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: str = "unknown",
+        reason: str = "",
+        partial_output: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.reason = reason
+        self.partial_output = partial_output
+
 
 def resolve_openai_api_key(api_key: str | None = None) -> str:
     return (api_key or os.getenv("OPENAI_API_KEY") or "").strip()
@@ -65,6 +78,19 @@ def generate_text(
     )
     record_model_response(response)
     output_text = getattr(response, "output_text", None)
+    status = str(getattr(response, "status", "unknown") or "unknown")
+    incomplete_details = getattr(response, "incomplete_details", None)
+    incomplete_reason = str(
+        getattr(incomplete_details, "reason", "") or ""
+    )
+    if status == "incomplete":
+        reason_suffix = f", reason={incomplete_reason}" if incomplete_reason else ""
+        raise MissingTextOutputError(
+            f"OpenAI response was incomplete (status={status}{reason_suffix}).",
+            status=status,
+            reason=incomplete_reason,
+            partial_output=bool(isinstance(output_text, str) and output_text.strip()),
+        )
     if isinstance(output_text, str) and output_text.strip():
         return output_text
 
@@ -76,10 +102,9 @@ def generate_text(
                 fragments.append(text)
     if fragments:
         return "\n".join(fragments)
-    status = str(getattr(response, "status", "unknown") or "unknown")
-    incomplete_details = getattr(response, "incomplete_details", None)
-    incomplete_reason = getattr(incomplete_details, "reason", None)
     reason_suffix = f", reason={incomplete_reason}" if incomplete_reason else ""
     raise MissingTextOutputError(
-        f"OpenAI response did not contain text output (status={status}{reason_suffix})."
+        f"OpenAI response did not contain text output (status={status}{reason_suffix}).",
+        status=status,
+        reason=incomplete_reason,
     )
