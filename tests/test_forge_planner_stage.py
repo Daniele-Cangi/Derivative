@@ -686,6 +686,33 @@ def test_cli_public_import_contract_drives_exact_plan_path_and_interface(tmp_pat
     coverage = output.requirement_coverage[public_atom.requirement_id]
     assert expected_path in coverage["files"]
 
+
+def test_cli_plan_declares_explicit_argv_without_program_name(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Define a CLI tool reverse_chunks that reads a filename from argv[1] and a positive "
+        "chunk size from argv[2]. Public import contract: from reverse_chunks import main."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    interface = next(item for item in output.interfaces if item.name == "main")
+    assert interface.explicit_argv_excludes_program_name is True
+    assert interface.explicit_argv_count == 2
+
+
+def test_cli_plan_preserves_explicit_full_sys_argv_contract(tmp_path):
+    build_spec = RequirementCompiler().compile(
+        "Build a Python CLI exposing main(argv) where argv[0] is the executable name and argv[1] "
+        "is an input filename. Public import contract: from full_argv_cli import main."
+    )
+
+    output = _build_planner(tmp_path).plan(build_spec)
+
+    assert isinstance(output, FeasiblePlan)
+    interface = next(item for item in output.interfaces if item.name == "main")
+    assert interface.explicit_argv_excludes_program_name is False
+
 def test_named_callable_component_becomes_public_module_contract(tmp_path):
     build_spec = RequirementCompiler().compile(
         "Design a data pipeline component 'filter_by_predicate' accepting an iterator and a predicate. "

@@ -1,6 +1,7 @@
 import re
 from typing import Any
 
+from core.forge.cli_contract import cli_invocation_contract_failures
 from core.forge.contracts import FeasiblePlan
 from core.forge.exact_output import exact_output_contract_evidence
 from core.forge.fixture_oracle import (
@@ -114,6 +115,14 @@ def run_semantic_preflight(
             failed_paths,
         )
     )
+    for failure in cli_invocation_contract_failures(candidate_files, plan):
+        path = str(failure.get("path", ""))
+        if path and path not in failed_paths:
+            failed_paths.append(path)
+        if path.startswith("tests/"):
+            test_failures.append(failure)
+        else:
+            source_failures.append(failure)
     if not test_failures and not source_failures:
         return executable_preflight
     return {
@@ -457,6 +466,9 @@ def correction_requirements(
     requirements: list[str] = []
     for failure in test_failures:
         path = str(failure.get("path", ""))
+        if failure.get("kind") == "cli_invocation_contract_failure":
+            requirements.append(_cli_invocation_correction(failure))
+            continue
         if failure.get("kind") == "explicit_pattern_fixture_mismatch":
             requirements.append(
                 f"{path}: classify fixture {failure.get('sample')!r} with the "
@@ -493,6 +505,12 @@ def correction_requirements(
         if failure.get("kind") == "non_semantic_test":
             requirement_ids = [str(item) for item in failure.get("requirement_ids", [])]
             reasons = [str(item) for item in failure.get("reasons", [])]
+            if "ambiguous_exit_status_assertion" in reasons:
+                requirements.append(
+                    f"{path}: assert one exact expected exit status after invoking the target; do not "
+                    f"accept both success and failure statuses for requirements {requirement_ids}."
+                )
+                continue
             if "disconnected_assertion" in reasons:
                 requirements.append(
                     f"{path}: assertions must observe values returned by a declared public interface, "
@@ -540,6 +558,9 @@ def correction_requirements(
                 f"lowercased canonical addresses for requirement {requirement_id}: {atom_text}"
             )
     for failure in source_failures:
+        if failure.get("kind") == "cli_invocation_contract_failure":
+            requirements.append(_cli_invocation_correction(failure))
+            continue
         paths = ", ".join(str(path) for path in failure.get("paths", []))
         if failure.get("kind") == "exact_output_contract_failure":
             requirements.append(
@@ -557,6 +578,21 @@ def correction_requirements(
             f"{requirement_id}: {atom_text}"
         )
     return list(dict.fromkeys(requirements))
+
+
+def _cli_invocation_correction(failure: dict[str, Any]) -> str:
+    path = str(failure.get("path", ""))
+    interface = str(failure.get("interface", "main"))
+    expected = failure.get("expected_argv_count")
+    expected_text = (
+        f" exactly {expected} user argument(s)" if expected is not None else " user arguments"
+    )
+    return (
+        f"{path}: enforce the declared in-process CLI contract: {interface}(argv) receives"
+        f"{expected_text} without an executable/program name; {interface}(None) must consume "
+        "sys.argv[1:] directly or rely on argparse's default behavior. Tests must call the "
+        "entrypoint with user arguments only, without a synthetic 'prog' item."
+    )
 
 
 def requires_exception_rejection(atom: Any) -> bool:

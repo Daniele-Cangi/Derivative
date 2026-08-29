@@ -142,6 +142,17 @@ class SubstrateCandidateCompiler:
                     "Python string literals already contain decoded Unicode; never round-trip them through "
                     "encode('utf-8').decode('unicode_escape') when constructing fixtures or expectations.",
                     "Invalid-input rejection tests must assert ValueError, TypeError, or SystemExit unless the requirement explicitly defines a return-code contract.",
+                    *(
+                        [
+                            "For the declared main(argv) CLI contract, an explicit argv contains only user arguments and excludes the executable name; main(None) uses sys.argv[1:] or argparse's default behavior."
+                        ]
+                        if any(
+                            interface.interface_type == "cli_entrypoint"
+                            and interface.explicit_argv_excludes_program_name
+                            for interface in plan.interfaces
+                        )
+                        else []
+                    ),
                     "Do not author manifests, provenance, capability declarations, or validation claims.",
                     "Use requirement evidence terms as implementation or test identifiers where practical.",
                 ],
@@ -180,8 +191,13 @@ class SubstrateCandidateCompiler:
         regression_rejected_attempts: list[int] = []
         backend_available = False
         active_paths = list(target_paths)
+        initial_attempt_limit = self.max_preflight_corrections + 1
+        semantic_phase_extension_used = False
+        highest_observed_phase_rank = int(baseline_quality.get("phase_rank", -3))
 
-        for attempt in range(self.max_preflight_corrections + 1):
+        for attempt in range(initial_attempt_limit + 1):
+            if attempt >= initial_attempt_limit and not semantic_phase_extension_used:
+                break
             attempt_context = dict(context)
             attempt_context["candidate_compilation_attempt"] = attempt + 1
             attempt_context["current_target_paths"] = list(active_paths)
@@ -341,6 +357,11 @@ class SubstrateCandidateCompiler:
             )
 
             quality = self._preflight_quality(preflight)
+            previous_highest_phase_rank = highest_observed_phase_rank
+            highest_observed_phase_rank = max(
+                highest_observed_phase_rank,
+                int(quality.get("phase_rank", -3)),
+            )
             regresses_from_baseline = self._preflight_regresses(
                 quality,
                 baseline_quality,
@@ -374,6 +395,19 @@ class SubstrateCandidateCompiler:
                 "",
             )
             attempt_record["routing_active_paths"] = list(active_paths)
+            newly_reached_semantic_phase = (
+                str(preflight.get("phase", "")) == "semantic_contract"
+                and previous_highest_phase_rank
+                < self._PREFLIGHT_PHASE_RANK["semantic_contract"]
+            )
+            if (
+                not preflight.get("passed", False)
+                and self.max_preflight_corrections > 0
+                and attempt + 1 == initial_attempt_limit
+                and newly_reached_semantic_phase
+            ):
+                semantic_phase_extension_used = True
+                attempt_record["semantic_phase_extension_granted"] = True
             attempts.append(attempt_record)
             if preflight.get("passed", False):
                 break
@@ -419,6 +453,11 @@ class SubstrateCandidateCompiler:
                 else "rejected"
             ),
             "candidate_attempts": attempts,
+            "initial_candidate_attempt_limit": initial_attempt_limit,
+            "semantic_phase_extension_used": semantic_phase_extension_used,
+            "final_candidate_attempt_limit": (
+                initial_attempt_limit + int(semantic_phase_extension_used)
+            ),
             "backend_reason": next(
                 (
                     str(attempt.get("reason", ""))
@@ -511,6 +550,7 @@ class SubstrateCandidateCompiler:
         preflight: dict[str, Any],
     ) -> bool:
         coupled_failure_kinds = {
+            "cli_invocation_contract_failure",
             "fake_acceptance_coverage",
             "non_semantic_test",
             "requirement_assertion_evidence_failure",

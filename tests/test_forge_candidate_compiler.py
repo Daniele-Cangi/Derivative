@@ -764,6 +764,76 @@ def test_candidate_correction_preserves_passing_files(json_merge_case):
     assert "immutable context" in kernel.context_history[1]["preservation_contract"]
 
 
+def test_candidate_gets_one_extra_correction_on_new_semantic_phase(json_merge_case):
+    _, plan, artifact, validation = json_merge_case
+    kernel = _MonotonicCorrectionKernel()
+    failed_test = artifact.test_paths[0]
+    calls = 0
+
+    def staged_preflight(files, tests):
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            return {
+                "ran": True,
+                "passed": False,
+                "phase": "tests",
+                "failed_paths": [failed_test],
+                "source_failed_paths": [],
+                "test_failed_paths": [failed_test],
+                "failures": [],
+            }
+        if calls == 3:
+            return {
+                "ran": True,
+                "passed": False,
+                "phase": "semantic_contract",
+                "failed_paths": [failed_test, "src/cli.py"],
+                "source_failed_paths": ["src/cli.py"],
+                "test_failed_paths": [failed_test],
+                "failures": [
+                    {
+                        "path": failed_test,
+                        "kind": "non_semantic_test",
+                        "reasons": ["ambiguous_exit_status_assertion"],
+                    }
+                ],
+                "correction_requirements": ["Assert one exact exit status."],
+            }
+        return {
+            "ran": True,
+            "passed": True,
+            "phase": "tests",
+            "failed_paths": [],
+            "source_failed_paths": [],
+            "test_failed_paths": [],
+            "failures": [],
+        }
+
+    compiler = SubstrateCandidateCompiler(
+        substrate=_StaticSubstrate(),
+        kernel=kernel,
+        max_preflight_corrections=1,
+        test_preflight_runner=staged_preflight,
+    )
+
+    candidate = compiler.propose(
+        plan,
+        artifact,
+        validation,
+        _directive(plan, artifact, validation),
+    )
+
+    assert candidate.evidence["preflight_passed"] is True
+    assert len(kernel.target_history) == 3
+    assert candidate.evidence["initial_candidate_attempt_limit"] == 2
+    assert candidate.evidence["semantic_phase_extension_used"] is True
+    assert candidate.evidence["final_candidate_attempt_limit"] == 3
+    assert candidate.evidence["candidate_attempts"][1][
+        "semantic_phase_extension_granted"
+    ] is True
+
+
 def test_executable_test_failure_expands_correction_to_imported_source(json_merge_case):
     _, plan, artifact, validation = json_merge_case
     kernel = _MonotonicCorrectionKernel()

@@ -164,6 +164,8 @@ class PlanInterface:
     signature: str = ""
     description: str = ""
     module_path: str = ""
+    explicit_argv_excludes_program_name: bool = False
+    explicit_argv_count: Optional[int] = None
 
 
 @dataclass

@@ -479,6 +479,11 @@ class SubstrateRepairBackend:
                     "name": interface.name,
                     "type": interface.interface_type,
                     "signature": interface.signature,
+                    "module_path": interface.module_path,
+                    "explicit_argv_excludes_program_name": (
+                        interface.explicit_argv_excludes_program_name
+                    ),
+                    "explicit_argv_count": interface.explicit_argv_count,
                 }
                 for interface in plan.interfaces
             ],
