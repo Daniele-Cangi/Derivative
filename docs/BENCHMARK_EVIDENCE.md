@@ -27,14 +27,14 @@ This ledger separates immutable blind evidence from regression work. It is inten
 
 ## Repository Gates
 
-At the current conditional-preflight checkpoint (`7da3dab`):
+At the current behavioral-contract-seal checkpoint (`06058f5`):
 
-- Linux/Python 3.11 Forge CI: **536 passed**;
-- complete local Windows suite: **534 passed, 2 skipped**;
+- Linux/Python 3.11 Forge CI: **538 passed**;
+- complete local Windows suite: **536 passed, 2 skipped**;
 - full Docker-backed 30-case internal benchmark: all configured thresholds passed;
 - CodeQL: passing.
 
-These are repository regression gates, not independent blind proof. The corresponding Forge CI receipt is [run 33269952373](https://github.com/Daniele-Cangi/Derivative/actions/runs/33269952373).
+These are repository regression gates, not independent blind proof. The corresponding Forge CI receipt is [run 33280726723](https://github.com/Daniele-Cangi/Derivative/actions/runs/33280726723).
 
 At the V7 oracle-preflight checkpoint (historical):
 

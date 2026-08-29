@@ -50,7 +50,7 @@ A passing artifact has `failure_category=None`. Evidence remains populated for b
 
 ### PackagedArtifact
 
-`PackagingStage` accepts only a passing `ValidationArtifact`. Its manifest records build, plan, artifact, and validation IDs; evidence paths; code digests; and `terminal_status="verified"`.
+`PackagingStage` accepts only a passing `ValidationArtifact`. Its manifest records build, plan, artifact, and validation IDs; evidence paths; code digests; the validated behavioral-contract seal; and `terminal_status="verified"`.
 
 ## Requirement Preservation
 
@@ -131,6 +131,7 @@ The model output is an untrusted complete-candidate transaction:
 - public module and symbol contracts must remain intact;
 - executable and semantic preflight must pass;
 - SHA-256 digests and provenance are rebuilt locally;
+- the host-computed, schema-versioned behavioral-contract seal is embedded in candidate evidence and the rebuilt manifest;
 - model-provided verification claims are ignored.
 
 `local-only` never invokes the model fallback.
@@ -158,6 +159,8 @@ A build is verified only when all three layers pass.
 - requirement-specific behavioral evidence;
 - assertion-level semantic evidence.
 
+The validator recomputes the canonical UTF-8/SHA-256 behavioral-contract seal from the plan. Candidate manifests and every material repair lineage record must declare the same seal; absence or mismatch fails closed.
+
 ### Layer 3: Adversarial
 
 - missing files despite manifest claims;
@@ -180,7 +183,7 @@ Validation evidence is compiled into a typed repair directive. The directive rec
 - allowed operations;
 - prior artifact digest and repair lineage.
 
-A repair must materially change source, tests, manifest, or provenance. Unsupported, inapplicable, or byte-equivalent revisions terminate as `validation_failed`.
+A repair must materially change source, tests, manifest, or provenance. Unsupported, inapplicable, or byte-equivalent revisions terminate as `validation_failed`. Each accepted material revision records the host-computed behavioral-contract seal in its backend evidence; validation rejects lineage bound to a different contract with `behavioral_contract_seal_mismatch`.
 
 Model-backed repair can replace only allowlisted validator-targeted files. Every revision passes through all three validation layers again. Test-only failures do not authorize unrelated source redesign.
 
