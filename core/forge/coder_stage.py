@@ -19,6 +19,7 @@ from core.forge.contracts import (
 from core.forge.domains.base import BaseDomainAdapter, DomainAdapterError
 from core.forge.domains.registry import DomainAdapterRegistry
 from core.forge.repair_backend import ArtifactRepairBackend
+from core.forge.repair_support import behavioral_contract_seal
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 
 
@@ -231,6 +232,11 @@ class CoderStage:
         backend_name: str,
         backend_evidence: Dict[str, object],
     ) -> RepairResult:
+        backend_evidence = dict(backend_evidence)
+        backend_evidence.setdefault(
+            "behavioral_contract_seal",
+            behavioral_contract_seal(plan),
+        )
         repaired_artifact.revision = max(1, previous_artifact.revision) + 1
         repaired_artifact.parent_artifact_id = previous_artifact.artifact_id
         repaired_artifact.artifact_id = (
@@ -360,6 +366,9 @@ class CoderStage:
                         "file_sha256": file_digests,
                         "required_capabilities": required_capabilities,
                         "preflight_passed": bool(backend_evidence.get("preflight_passed", False)),
+                        "behavioral_contract_seal": dict(
+                            backend_evidence.get("behavioral_contract_seal", {})
+                        ),
                     },
                 }
             )

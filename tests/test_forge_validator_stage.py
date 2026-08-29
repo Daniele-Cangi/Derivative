@@ -15,6 +15,7 @@ from core.forge.contracts import (
 )
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.repair_support import behavioral_contract_seal
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_end_to_end_file_workflow_test,
@@ -459,9 +460,41 @@ def test_validator_passes_when_all_layers_pass(forge_pipeline):
     assert "executed_tests" in result.evidence
     assert "manifest_provenance_checks" in result.evidence
     assert "obligation_acceptance_checks" in result.evidence
+    assert result.evidence["behavioral_contract_seal"] == behavioral_contract_seal(
+        plan
+    )
     obligation_checks = result.evidence["obligation_acceptance_checks"]
     assert "conditional_obligation_checks" in obligation_checks
     assert "exact_output_contract_checks" in obligation_checks
+    assert obligation_checks["behavioral_contract_seal"] == (
+        result.evidence["behavioral_contract_seal"]
+    )
+    assert obligation_checks["repair_behavioral_contract_bindings"] == []
+
+
+def test_validator_rejects_repair_lineage_bound_to_different_contract(forge_pipeline):
+    validator: ValidatorStage = forge_pipeline["validator"]
+    artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan: FeasiblePlan = forge_pipeline["plan"]
+    build_spec = forge_pipeline["build_spec"]
+    wrong_seal = behavioral_contract_seal(plan)
+    wrong_seal["sha256"] = "0" * 64
+    artifact.repair_history = [
+        {
+            "repair_id": "repair-tampered-contract",
+            "backend_evidence": {"behavioral_contract_seal": wrong_seal},
+        }
+    ]
+
+    result = validator.validate(artifact, plan, build_spec)
+
+    assert result.passed is False
+    assert "behavioral_contract_seal_mismatch" in result.failure_signatures
+    binding = result.evidence["obligation_acceptance_checks"][
+        "repair_behavioral_contract_bindings"
+    ][0]
+    assert binding["repair_id"] == "repair-tampered-contract"
+    assert binding["matches"] is False
 
 
 def test_missing_required_file_is_detected(forge_pipeline):

@@ -11,6 +11,7 @@ from core.forge.execution import ProcessExecutor
 from core.kernel import ReasoningKernel
 from core.substrate import CognitiveSubstrate
 from core.forge.repair_support import (
+    behavioral_contract_seal,
     behavioral_generation_contracts,
     preflight_failed_paths,
     preflight_has_source_failure,
@@ -71,16 +72,19 @@ class SubstrateRepairBackend:
         validation: ValidationArtifact,
         directive: RepairDirective,
     ) -> RepairPatchCandidate:
+        contract_seal = behavioral_contract_seal(plan)
         if not directive.repairable:
             return RepairPatchCandidate(
                 backend_name="substrate",
                 available=False,
+                evidence={"behavioral_contract_seal": contract_seal},
                 stop_reason=directive.stop_reason or "Repair directive is not repairable.",
             )
         if not getattr(self.kernel, "use_live_model", False):
             return RepairPatchCandidate(
                 backend_name="substrate",
                 available=False,
+                evidence={"behavioral_contract_seal": contract_seal},
                 stop_reason="Live kernel revision is unavailable in the selected execution mode.",
             )
 
@@ -93,6 +97,7 @@ class SubstrateRepairBackend:
             return RepairPatchCandidate(
                 backend_name="substrate",
                 available=True,
+                evidence={"behavioral_contract_seal": contract_seal},
                 stop_reason="No validator-grounded source or test paths are eligible for revision.",
             )
 
@@ -395,6 +400,7 @@ class SubstrateRepairBackend:
         kernel_reason = "; ".join(reasons)
 
         evidence = {
+            "behavioral_contract_seal": contract_seal,
             "repair_id": directive.repair_id,
             "operations": list(directive.operations),
             "failure_signatures": list(directive.failure_signatures),
@@ -462,6 +468,7 @@ class SubstrateRepairBackend:
         validation: ValidationArtifact,
         directive: RepairDirective,
     ) -> dict[str, Any]:
+        behavioral_contracts = behavioral_generation_contracts(plan)
         return {
             "requirement": plan.build_spec.normalized_requirement,
             "requirement_atoms": [
@@ -498,7 +505,8 @@ class SubstrateRepairBackend:
             ],
             "quality_contract": vars(plan.quality_contract),
             "required_obligations": list(plan.required_obligations),
-            "behavioral_contracts": behavioral_generation_contracts(plan),
+            "behavioral_contracts": behavioral_contracts,
+            "behavioral_contract_seal": behavioral_contract_seal(plan),
             "failure_signatures": list(validation.failure_signatures),
             "failures": list(validation.failures),
             "validator_evidence_summary": SubstrateRepairBackend._compact_validator_evidence(
@@ -526,6 +534,10 @@ class SubstrateRepairBackend:
             "exact_output_contract_checks",
         )
         summary = {
+            "behavioral_contract_seal": evidence.get(
+                "behavioral_contract_seal",
+                {},
+            ),
             "layer_status": evidence.get("layer_status", {}),
             "validated_entrypoints": evidence.get("validated_entrypoints", {}),
             "manifest_provenance_checks": evidence.get(

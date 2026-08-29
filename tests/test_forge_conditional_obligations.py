@@ -21,6 +21,7 @@ from core.forge.execution import LocalProcessExecutor
 from core.forge.planner_stage import PlannerStage
 from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.repair_support import (
+    behavioral_contract_seal,
     behavioral_generation_contracts,
     test_generation_contracts as build_test_generation_contracts,
 )
@@ -234,6 +235,32 @@ def test_shared_generation_context_preserves_branch_and_exact_output_contracts()
         }
     ]
     assert contracts["coverage_directives"][0]["referenced_obligation_ids"]
+
+
+def test_behavioral_contract_seal_is_deterministic_and_semantically_sensitive():
+    spec = RequirementCompiler().compile(COMPOUND_REQUIREMENT)
+    plan = _plan_for(spec)
+
+    seal = behavioral_contract_seal(plan)
+
+    assert seal == behavioral_contract_seal(plan)
+    assert seal["schema_version"] == 1
+    assert seal["digest_mode"] == "canonical_json_utf8_v1"
+    assert len(seal["sha256"]) == 64
+    assert seal["build_id"] == spec.build_id
+    assert seal["plan_id"] == plan.plan_id
+    assert seal["contract_counts"]["conditional_obligations"] == len(
+        spec.conditional_obligations
+    )
+
+    original = spec.conditional_obligations[0].expected_value
+    spec.conditional_obligations[0].expected_value = "different observation"
+    try:
+        changed = behavioral_contract_seal(plan)
+    finally:
+        spec.conditional_obligations[0].expected_value = original
+
+    assert changed["sha256"] != seal["sha256"]
 
 
 def test_supplementary_test_contradiction_is_detected_without_traceability_mapping():

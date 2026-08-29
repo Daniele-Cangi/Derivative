@@ -40,6 +40,10 @@ class PackagingStage:
         package_id, package_root = self._resolve_package_root(base_package_id)
         package_root.mkdir(parents=True, exist_ok=True)
         code_artifact_digest = self._artifact_content_digest(code_artifact)
+        behavioral_contract_seal = validation.evidence.get(
+            "behavioral_contract_seal",
+            {},
+        )
 
         packaged_files = self._write_code_artifact_files(package_root, code_artifact)
         validation_evidence_path = package_root / "validation_evidence.json"
@@ -81,6 +85,9 @@ class PackagingStage:
             "package_base_id": base_package_id,
             "package_run_id": package_id,
             "code_artifact_digest": code_artifact_digest,
+            "behavioral_contract_seal": self._to_jsonable(
+                behavioral_contract_seal
+            ),
             "validation_summary": {
                 "passed": validation.passed,
                 "failure_count": len(validation.failures),
@@ -114,6 +121,9 @@ class PackagingStage:
                 "package_base_id": base_package_id,
                 "package_run_id": package_id,
                 "code_artifact_digest": code_artifact_digest,
+                "behavioral_contract_seal": self._to_jsonable(
+                    behavioral_contract_seal
+                ),
                 "passed_layers": validation.metrics.get("passed_layers", {}),
             },
         )

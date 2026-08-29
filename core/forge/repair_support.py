@@ -1,4 +1,6 @@
 import ast
+import hashlib
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -7,6 +9,10 @@ from typing import Any
 from core.forge.contracts import CodeArtifact, ConditionalObligation, FeasiblePlan
 from core.forge.exact_output import extract_exact_output_contracts
 from core.forge.execution import LocalProcessExecutor, ProcessExecutor, SandboxProcessRequest
+
+
+BEHAVIORAL_CONTRACT_SCHEMA_VERSION = 1
+BEHAVIORAL_CONTRACT_DIGEST_MODE = "canonical_json_utf8_v1"
 
 
 def preflight_has_source_failure(preflight: dict[str, Any]) -> bool:
@@ -184,6 +190,36 @@ def behavioral_generation_contracts(plan: FeasiblePlan) -> dict[str, Any]:
                 build_spec.normalized_requirement
             )
         ],
+    }
+
+
+def behavioral_contract_seal(plan: FeasiblePlan) -> dict[str, Any]:
+    """Return a canonical host-computed identity for behavioral generation contracts."""
+
+    contracts = behavioral_generation_contracts(plan)
+    payload = {
+        "schema_version": BEHAVIORAL_CONTRACT_SCHEMA_VERSION,
+        "build_id": plan.build_spec.build_id,
+        "plan_id": plan.plan_id,
+        "contracts": contracts,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "schema_version": BEHAVIORAL_CONTRACT_SCHEMA_VERSION,
+        "digest_mode": BEHAVIORAL_CONTRACT_DIGEST_MODE,
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "build_id": plan.build_spec.build_id,
+        "plan_id": plan.plan_id,
+        "contract_counts": {
+            key: len(value)
+            for key, value in contracts.items()
+            if isinstance(value, list)
+        },
     }
 
 

@@ -13,6 +13,7 @@ from core.forge.contracts import (
     ValidationLayerResult,
 )
 from core.forge.execution import LocalProcessExecutor, ProcessExecutor
+from core.forge.repair_support import behavioral_contract_seal
 from core.forge.validation.adversarial import AdversarialValidationLayer
 from core.forge.validation.obligations import ObligationValidationLayer
 from core.forge.validation.quality import QualityContractChecker
@@ -49,13 +50,19 @@ class ValidatorStage:
         build_spec: BuildSpec,
     ) -> ValidationArtifact:
         if self.require_isolation and not self.executor.policy.isolated:
-            return self._isolation_refusal()
+            contract_seal = (
+                behavioral_contract_seal(plan) if plan is not None else {}
+            )
+            return self._isolation_refusal(contract_seal)
+
+        contract_seal = behavioral_contract_seal(plan)
 
         failures: List[str] = []
         signatures: List[str] = []
         evidence: Dict[str, object] = {}
         metrics: Dict[str, object] = {}
         evidence["execution_policy"] = self.executor.policy.evidence()
+        evidence["behavioral_contract_seal"] = contract_seal
 
         with tempfile.TemporaryDirectory(
             prefix="forge_validator_",
@@ -132,7 +139,10 @@ class ValidatorStage:
             next_route=None,
         )
 
-    def _isolation_refusal(self) -> ValidationArtifact:
+    def _isolation_refusal(
+        self,
+        contract_seal: Dict[str, object],
+    ) -> ValidationArtifact:
         signature = "sandbox_policy_violation"
         failure = "Validation requires an isolated execution backend; local execution was refused."
         policy_evidence = self.executor.policy.evidence()
@@ -160,6 +170,7 @@ class ValidatorStage:
             failure_signatures=[signature],
             evidence={
                 "execution_policy": policy_evidence,
+                "behavioral_contract_seal": contract_seal,
                 "validated_entrypoints": {},
                 "executed_tests": {"ran": False},
                 "manifest_provenance_checks": {},
@@ -225,6 +236,7 @@ class ValidatorStage:
             "conditional_probe_unavailable",
             "test_expectation_contradiction",
             "lossy_observation_fidelity",
+            "behavioral_contract_seal_mismatch",
         } & signature_set:
             return FailureCategory.VALIDATION
         if {
@@ -297,6 +309,14 @@ class ValidatorStage:
             ),
             "exact_output_contract_checks": layer2.evidence.get(
                 "exact_output_contract_checks",
+                [],
+            ),
+            "behavioral_contract_seal": layer2.evidence.get(
+                "behavioral_contract_seal",
+                {},
+            ),
+            "repair_behavioral_contract_bindings": layer2.evidence.get(
+                "repair_behavioral_contract_bindings",
                 [],
             ),
             "semantic_requirement_test_coverage": layer3.evidence.get("semantic_requirement_test_coverage", {}),

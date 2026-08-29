@@ -19,6 +19,7 @@ from core.forge.contracts import (
 )
 from core.forge.repair import RepairPolicy
 from core.forge.repair_backend import SubstrateRepairBackend
+from core.forge.repair_support import behavioral_contract_seal
 from core.kernel import ReasoningKernel
 
 
@@ -381,6 +382,11 @@ def test_substrate_backend_receives_requirement_assertion_repair_contract():
 def test_repair_context_compacts_validator_evidence_without_losing_execution_signals():
     oversized_output = "failure detail " * 2000
     evidence = {
+        "behavioral_contract_seal": {
+            "schema_version": 1,
+            "digest_mode": "canonical_json_utf8_v1",
+            "sha256": "a" * 64,
+        },
         "layer_status": {"layer1": False, "layer2": False, "layer3": False},
         "validated_entrypoints": {"src/cli.py": False},
         "manifest_provenance_checks": {"passed": True},
@@ -432,6 +438,9 @@ def test_repair_context_compacts_validator_evidence_without_losing_execution_sig
     serialized = json.dumps(compact, sort_keys=True)
 
     assert len(serialized) < 12_000
+    assert compact["behavioral_contract_seal"] == evidence[
+        "behavioral_contract_seal"
+    ]
     assert compact["layer2"]["test_execution"]["returncode"] == 1
     assert compact["layer3"]["non_semantic_test_reasons"] == {
         "tests/test_cli.py": ["missing_target_invocation"]
@@ -484,6 +493,9 @@ def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_test
     assert kernel.calls[1]["repair_phase"] == "test_suite_generation"
     assert set(candidate.files) == {"src/component.py", "src/helper.py", test_path}
     assert candidate.evidence["test_preflight_attempts"][0]["passed"] is True
+    assert candidate.evidence["behavioral_contract_seal"] == (
+        behavioral_contract_seal(plan)
+    )
 
 
 def test_source_repair_expands_to_every_required_acceptance_test():

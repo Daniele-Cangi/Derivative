@@ -16,6 +16,7 @@ from core.forge.candidate_preflight import (
 )
 from core.forge.repair_backend import SubstrateRepairBackend
 from core.forge.repair_support import (
+    behavioral_contract_seal,
     preflight_failed_paths,
     run_test_preflight,
     test_generation_contracts as build_test_generation_contracts,
@@ -68,6 +69,7 @@ class SubstrateCandidateCompiler:
         validation: ValidationArtifact,
         directive: RepairDirective,
     ) -> RepairPatchCandidate:
+        contract_seal = behavioral_contract_seal(plan)
         if not any(
             operation in directive.operations
             for operation in (
@@ -78,12 +80,14 @@ class SubstrateCandidateCompiler:
             return RepairPatchCandidate(
                 backend_name=self.backend_name,
                 available=False,
+                evidence={"behavioral_contract_seal": contract_seal},
                 stop_reason="Candidate compilation requires an uncovered-capability directive.",
             )
         if not getattr(self.kernel, "use_live_model", False):
             return RepairPatchCandidate(
                 backend_name=self.backend_name,
                 available=False,
+                evidence={"behavioral_contract_seal": contract_seal},
                 stop_reason="Live candidate compilation is unavailable in the selected execution mode.",
             )
 
@@ -105,6 +109,7 @@ class SubstrateCandidateCompiler:
                 backend_name=self.backend_name,
                 available=True,
                 evidence={
+                    "behavioral_contract_seal": contract_seal,
                     "planned_paths": target_paths,
                     "missing_paths": missing_paths,
                     "unauthorized_paths": target_not_authorized,
@@ -426,6 +431,7 @@ class SubstrateCandidateCompiler:
             candidate_files = {}
 
         evidence = {
+            "behavioral_contract_seal": contract_seal,
             "repair_id": directive.repair_id,
             "operations": list(directive.operations),
             "allowed_paths": target_paths,

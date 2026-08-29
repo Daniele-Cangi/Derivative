@@ -8,6 +8,7 @@ from core.forge.conditional_evidence import ConditionalEvidenceValidator
 from core.forge.exact_output import exact_output_contract_evidence
 from core.forge.execution import ProcessExecutor, SandboxProcessRequest
 from core.forge.requirement_evidence import requirement_assertion_evidence
+from core.forge.repair_support import behavioral_contract_seal
 from core.forge.semantic_contracts import (
     behaviorally_evidences,
     has_json_lines_processing,
@@ -51,6 +52,41 @@ class ObligationValidationLayer(ValidationLayerBase):
         failures: List[str] = []
         signatures: List[str] = []
         evidence: Dict[str, object] = {}
+
+        expected_behavioral_contract_seal = behavioral_contract_seal(plan)
+        evidence["behavioral_contract_seal"] = expected_behavioral_contract_seal
+        repair_contract_bindings: List[Dict[str, object]] = []
+        for index, repair_record in enumerate(code_artifact.repair_history, start=1):
+            backend_evidence = (
+                repair_record.get("backend_evidence", {})
+                if isinstance(repair_record, dict)
+                else {}
+            )
+            if not isinstance(backend_evidence, dict):
+                backend_evidence = {}
+            declared_seal = backend_evidence.get("behavioral_contract_seal")
+            repair_contract_bindings.append(
+                {
+                    "repair_index": index,
+                    "repair_id": (
+                        repair_record.get("repair_id", "")
+                        if isinstance(repair_record, dict)
+                        else ""
+                    ),
+                    "declared": declared_seal,
+                    "matches": declared_seal == expected_behavioral_contract_seal,
+                }
+            )
+        mismatched_repair_seals = [
+            item for item in repair_contract_bindings if not item["matches"]
+        ]
+        if mismatched_repair_seals:
+            failures.append(
+                "Repair lineage is not bound to the validated behavioral contract: "
+                f"{mismatched_repair_seals}."
+            )
+            self._append_unique(signatures, "behavioral_contract_seal_mismatch")
+        evidence["repair_behavioral_contract_bindings"] = repair_contract_bindings
 
         material_ambiguities = [
             flag

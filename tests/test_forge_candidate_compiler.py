@@ -9,7 +9,10 @@ from core.forge.coder_stage import CoderStage
 from core.forge.contracts import FeasiblePlan
 from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
-from core.forge.repair_support import test_generation_contracts as build_test_generation_contracts
+from core.forge.repair_support import (
+    behavioral_contract_seal,
+    test_generation_contracts as build_test_generation_contracts,
+)
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.semantic_contracts import (
     has_json_lines_processing,
@@ -300,6 +303,11 @@ def test_candidate_compiler_produces_complete_validated_transaction(json_merge_c
     assert result.backend_name == "candidate_compiler"
     assert result.backend_evidence["complete_transaction"] is True
     assert result.backend_evidence["preflight_passed"] is True
+    expected_seal = behavioral_contract_seal(plan)
+    assert result.backend_evidence["behavioral_contract_seal"] == expected_seal
+    assert result.artifact.repair_history[-1]["backend_evidence"][
+        "behavioral_contract_seal"
+    ] == expected_seal
     metadata = result.artifact.artifact_manifest["metadata"]
     assert metadata["generator"] == "forge_candidate_compiler"
     assert metadata["domain_adapter"] == "candidate"
@@ -308,12 +316,32 @@ def test_candidate_compiler_produces_complete_validated_transaction(json_merge_c
         for generated in result.artifact.files
         if generated.path != "forge_artifact_manifest.json"
     }
+    assert metadata["candidate_compilation"]["behavioral_contract_seal"] == (
+        expected_seal
+    )
 
     validated = ValidatorStage().validate(result.artifact, plan, spec)
 
     assert validated.passed is True
+    assert validated.evidence["behavioral_contract_seal"] == expected_seal
+    assert validated.evidence["obligation_acceptance_checks"][
+        "repair_behavioral_contract_bindings"
+    ][0]["matches"] is True
     capability_evidence = validated.layer2_result.evidence["adapter_capability_checks"]
     assert capability_evidence["compiler_contract_valid"] is True
+    assert capability_evidence["behavioral_contract_seal_matches"] is True
+
+    tampered = copy.deepcopy(result.artifact)
+    tampered.artifact_manifest["metadata"]["candidate_compilation"][
+        "behavioral_contract_seal"
+    ]["sha256"] = "0" * 64
+    rejected = ValidatorStage().validate(tampered, plan, spec)
+
+    assert rejected.passed is False
+    assert "adapter_capability_manifest_mismatch" in rejected.failure_signatures
+    assert rejected.layer2_result.evidence["adapter_capability_checks"][
+        "behavioral_contract_seal_matches"
+    ] is False
 
 
 def test_candidate_manifest_digest_cannot_hide_source_tampering(json_merge_case):

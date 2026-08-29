@@ -4,6 +4,7 @@ from typing import Dict, List, Set, Tuple
 
 from core.forge.contracts import ArtifactTargetType, CodeArtifact, FeasiblePlan
 from core.forge.domains.registry import DomainAdapterRegistry
+from core.forge.repair_support import behavioral_contract_seal
 
 
 class AdapterCapabilityContractChecker:
@@ -149,6 +150,14 @@ class AdapterCapabilityContractChecker:
         capabilities_match = declared == required
         paths_match = transaction_paths == planned_paths
         preflight_passed = compilation.get("preflight_passed") is True
+        expected_behavioral_contract_seal = behavioral_contract_seal(plan)
+        declared_behavioral_contract_seal = compilation.get(
+            "behavioral_contract_seal",
+        )
+        behavioral_contract_seal_matches = (
+            declared_behavioral_contract_seal
+            == expected_behavioral_contract_seal
+        )
         compiler_contract_valid = all(
             (
                 adapter_matches,
@@ -157,6 +166,7 @@ class AdapterCapabilityContractChecker:
                 preflight_passed,
                 not provenance_mismatches,
                 not digest_mismatches,
+                behavioral_contract_seal_matches,
             )
         )
         failures: List[str] = []
@@ -167,7 +177,8 @@ class AdapterCapabilityContractChecker:
                 f"adapter_matches={adapter_matches}, capabilities_match={capabilities_match}, "
                 f"paths_match={paths_match}, preflight_passed={preflight_passed}, "
                 f"provenance_mismatches={provenance_mismatches}, "
-                f"digest_mismatches={digest_mismatches}."
+                f"digest_mismatches={digest_mismatches}, "
+                f"behavioral_contract_seal_matches={behavioral_contract_seal_matches}."
             )
             self._append_unique(signatures, "adapter_capability_manifest_mismatch")
             self._append_unique(signatures, "adapter_capability_mismatch")
@@ -190,6 +201,9 @@ class AdapterCapabilityContractChecker:
             "preflight_passed": preflight_passed,
             "provenance_mismatches": provenance_mismatches,
             "digest_mismatches": digest_mismatches,
+            "expected_behavioral_contract_seal": expected_behavioral_contract_seal,
+            "declared_behavioral_contract_seal": declared_behavioral_contract_seal,
+            "behavioral_contract_seal_matches": behavioral_contract_seal_matches,
             "compiler_contract_valid": compiler_contract_valid,
             "passed": not failures,
         }

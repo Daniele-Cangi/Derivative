@@ -102,6 +102,14 @@ def test_package_manifest_includes_ids_and_validation_summary(forge_packaging_co
     assert manifest["package_base_id"].startswith("pkg-")
     assert manifest["package_run_id"].startswith("pkg-")
     assert isinstance(manifest["code_artifact_digest"], str) and len(manifest["code_artifact_digest"]) == 64
+    assert manifest["behavioral_contract_seal"] == (
+        forge_packaging_context["passing_validation"].evidence[
+            "behavioral_contract_seal"
+        ]
+    )
+    assert packaged.verification_metadata["behavioral_contract_seal"] == (
+        manifest["behavioral_contract_seal"]
+    )
     assert manifest["validation_summary"]["passed"] is True
     assert "evidence_refs" in manifest
     assert "manifest_paths" in manifest
