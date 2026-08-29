@@ -139,6 +139,30 @@ def test_generate_text_reports_incomplete_response_without_payload_content():
         )
 
 
+def test_generate_text_rejects_partial_output_from_incomplete_response():
+    response = SimpleNamespace(
+        output_text='{"status":"candidate","files":{',
+        output=[],
+        status="incomplete",
+        incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+    )
+    client = SimpleNamespace(responses=_Responses(response))
+
+    with pytest.raises(MissingTextOutputError) as raised:
+        generate_text(
+            client,
+            instructions="Return JSON.",
+            input_text="input",
+            max_output_tokens=100,
+            model="gpt-4.1-mini",
+        )
+
+    assert raised.value.status == "incomplete"
+    assert raised.value.reason == "max_output_tokens"
+    assert raised.value.partial_output is True
+    assert '"status"' not in str(raised.value)
+
+
 def test_openai_configuration_is_deterministic(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)

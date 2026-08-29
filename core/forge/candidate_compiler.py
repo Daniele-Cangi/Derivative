@@ -233,6 +233,9 @@ class SubstrateCandidateCompiler:
                 target_files={path: current_targets[path] for path in active_paths},
                 lens_framings=framings,
             )
+            provider_evidence = payload.get("_provider_evidence", {})
+            if not isinstance(provider_evidence, dict):
+                provider_evidence = {}
             status = str(payload.get("status", "candidate"))
             reason = " ".join(str(payload.get("reason", "")).split())[:240]
             if status != "unavailable":
@@ -243,6 +246,7 @@ class SubstrateCandidateCompiler:
                         "attempt": attempt + 1,
                         "status": status,
                         "reason": reason,
+                        "provider_evidence": provider_evidence,
                         "target_paths": list(active_paths),
                         "omitted_paths": list(active_paths),
                         "rejected_paths": sorted(set(rejected_paths)),
@@ -272,6 +276,7 @@ class SubstrateCandidateCompiler:
                 "attempt": attempt + 1,
                 "status": status,
                 "reason": reason,
+                "provider_evidence": provider_evidence,
                 "target_paths": list(active_paths),
                 "preserved_paths": sorted(set(target_paths) - set(active_paths)),
                 "omitted_paths": omitted,

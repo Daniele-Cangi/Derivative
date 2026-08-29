@@ -188,6 +188,11 @@ class SubstrateRepairBackend:
                     "target_paths": target_paths,
                     "status": status,
                     "reason": reason,
+                    "provider_evidence": (
+                        payload.get("_provider_evidence", {})
+                        if isinstance(payload.get("_provider_evidence", {}), dict)
+                        else {}
+                    ),
                     "accepted": str(target_accepted).lower(),
                     "omitted_paths": omitted,
                     "repair_phase": repair_context.get("repair_phase", "file_revision"),

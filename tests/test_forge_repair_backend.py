@@ -1078,6 +1078,52 @@ class _Responses:
         )
 
 
+class _IncompleteThenCompleteResponses:
+    def __init__(self):
+        self.requests = []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        if len(self.requests) == 1:
+            return SimpleNamespace(
+                output_text='{"status":"candidate","files":{',
+                output=[],
+                status="incomplete",
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+            )
+        return SimpleNamespace(
+            output_text=json.dumps(
+                {
+                    "status": "candidate",
+                    "files": {"src/component.py": "def run():\n    return 2\n"},
+                }
+            ),
+            status="completed",
+        )
+
+
+class _WideTransactionResponses:
+    def __init__(self):
+        self.request = None
+
+    def create(self, **kwargs):
+        self.request = kwargs
+        required_paths = kwargs["text"]["format"]["schema"]["properties"]["files"][
+            "required"
+        ]
+        return SimpleNamespace(
+            output_text=json.dumps(
+                {
+                    "status": "candidate",
+                    "files": {
+                        path: "def run():\n    return 2\n" for path in required_paths
+                    },
+                }
+            ),
+            status="completed",
+        )
+
+
 def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claims():
     kernel = ReasoningKernel(api_key="dummy_key_for_testing", execution_mode="local-only")
     responses = _Responses()
@@ -1120,6 +1166,63 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert "source-independent reference operation" in responses.request[
         "instructions"
     ]
+
+
+def test_reasoning_kernel_retries_incomplete_revision_with_bounded_larger_budget():
+    kernel = ReasoningKernel(api_key="dummy_key_for_testing", execution_mode="local-only")
+    responses = _IncompleteThenCompleteResponses()
+    kernel.use_live_model = True
+    kernel.client = SimpleNamespace(responses=responses)
+
+    payload = kernel.propose_code_revision(
+        repair_context={"failure_signatures": ["semantic_content_mismatch"]},
+        target_files={"src/component.py": "def run():\n    return 1\n"},
+        lens_framings=[],
+    )
+
+    assert payload["status"] == "candidate"
+    assert payload["files"]["src/component.py"].endswith("return 2\n")
+    assert [request["max_output_tokens"] for request in responses.requests] == [
+        12000,
+        24000,
+    ]
+    assert payload["_provider_evidence"]["attempts"] == [
+        {
+            "attempt": 1,
+            "max_output_tokens": 12000,
+            "status": "incomplete",
+            "reason": "max_output_tokens",
+            "partial_output": True,
+        },
+        {
+            "attempt": 2,
+            "max_output_tokens": 24000,
+            "status": "completed",
+            "reason": "",
+            "partial_output": False,
+        },
+    ]
+
+
+def test_reasoning_kernel_sizes_wide_revision_transaction_before_request():
+    kernel = ReasoningKernel(api_key="dummy_key_for_testing", execution_mode="local-only")
+    responses = _WideTransactionResponses()
+    kernel.use_live_model = True
+    kernel.client = SimpleNamespace(responses=responses)
+    targets = {
+        f"tests/test_contract_{index:02d}.py": "def test_contract():\n    raise AssertionError\n"
+        for index in range(13)
+    }
+
+    payload = kernel.propose_code_revision(
+        repair_context={"failure_signatures": ["non_semantic_test"]},
+        target_files=targets,
+        lens_framings=[],
+    )
+
+    assert payload["status"] == "candidate"
+    assert set(payload["files"]) == set(targets)
+    assert responses.request["max_output_tokens"] == 24000
 
 
 def test_reasoning_kernel_preserves_sanitized_live_revision_error_detail():
