@@ -139,6 +139,10 @@ or mutating module constants after import, and must not use skip, pass, conditio
 checks. Generate the supplied test targets as one coherent suite and obey each test_generation_contract. Derive expected
 counts directly from the fixture records, and do not assert incidental behavior that is absent from the requirement and
 plan, even if a legacy source API exposes it. Obey forbidden_unrequested_behaviors in every test contract. If
+an exact_output_contract or exact_text observation is present, preserve the expected stream byte-for-byte, including
+the presence or absence of a trailing newline. Source must not rely on print's default newline when the contract omits
+one. Tests must compare the raw captured stream and must not use strip(), lstrip(), rstrip(), split(), splitlines(), or
+any other normalization that can hide extra or missing output. If
 repair_evidence_targets is present, treat it as a mandatory path/function-level repair contract: preserve causal target
 invocation and add concrete assertions that cover every missing_terms entry for the corresponding requirement. Do not
 rewrite unrelated source files or substitute assertions for different requirements. If

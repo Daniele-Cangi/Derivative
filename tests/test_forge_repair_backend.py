@@ -19,7 +19,10 @@ from core.forge.contracts import (
 )
 from core.forge.repair import RepairPolicy
 from core.forge.repair_backend import SubstrateRepairBackend
-from core.forge.repair_support import behavioral_contract_seal
+from core.forge.repair_support import (
+    behavioral_contract_seal,
+    test_generation_contracts as build_test_generation_contracts,
+)
 from core.kernel import ReasoningKernel
 
 
@@ -452,6 +455,32 @@ def test_repair_context_compacts_validator_evidence_without_losing_execution_sig
         "validator_branch_probes"
     ][0]["status"] == "failed"
     assert contract_checks["exact_output_contract_checks"][0]["passed"] is False
+
+
+def test_test_generation_contract_binds_exact_output_to_mapped_test():
+    plan = _generic_plan()
+    requirement = (
+        "If the input is invalid, the tool outputs exactly 'error: invalid input' "
+        "to stderr."
+    )
+    plan.build_spec.normalized_requirement = requirement
+    plan.build_spec.requirement_atoms[0].text = requirement
+    artifact = CoderStage().generate(plan)
+    test_path = artifact.test_paths[0]
+
+    contracts = build_test_generation_contracts([test_path], plan, artifact)
+
+    assert contracts[test_path]["exact_output_contracts"] == [
+        {
+            "stream": "stderr",
+            "expected": "error: invalid input",
+            "source_fragment": "outputs exactly 'error: invalid input' to stderr",
+            "precondition": "the input is invalid",
+            "observation_fidelity": "exact_text",
+            "additional_output_allowed": False,
+            "trailing_newline_included": False,
+        }
+    ]
 
 
 def test_substrate_backend_repairs_sources_atomically_then_shares_them_with_tests():
@@ -1202,6 +1231,10 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert "source-independent reference operation" in responses.request[
         "instructions"
     ]
+    assert "presence or absence of a trailing newline" in responses.request[
+        "instructions"
+    ]
+    assert "must not use strip()" in responses.request["instructions"]
 
 
 def test_reasoning_kernel_retries_incomplete_revision_with_bounded_larger_budget():

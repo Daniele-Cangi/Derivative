@@ -218,6 +218,58 @@ def test_adapter_mismatch_compiles_one_complete_artifact_transaction(repair_case
     assert directive.evidence_refs == ["layer2.adapter_capability_checks"]
 
 
+def test_lossy_exact_observation_targets_only_implicated_tests(repair_case):
+    artifact = copy.deepcopy(repair_case["artifact"])
+    artifact.artifact_manifest["metadata"]["generator"] = "forge_candidate_compiler"
+    test_path = artifact.test_paths[0]
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Exact output assertion normalizes the captured stream."],
+        failure_signatures=["lossy_observation_fidelity"],
+        evidence={
+            "layer2": {
+                "conditional_obligation_checks": {
+                    "observation_fidelity": [
+                        {
+                            "path": test_path,
+                            "function": "test_exact_error",
+                            "exact_obligation_ids": ["R001.B01.O01"],
+                            "lossy_observations": [
+                                {
+                                    "obligation_id": "R001.B01.O01",
+                                    "channel": "stderr",
+                                    "line": 12,
+                                    "transformations": ["strip"],
+                                }
+                            ],
+                        },
+                        {
+                            "path": artifact.test_paths[-1],
+                            "function": "test_lossless_output",
+                            "exact_obligation_ids": ["R002.B01.O01"],
+                            "lossy_observations": [],
+                        },
+                    ]
+                }
+            }
+        },
+    )
+
+    directive = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert directive.operations == ["repair_observation_fidelity"]
+    assert "recompile_candidate_transaction" not in directive.operations
+    assert directive.target_paths == [test_path]
+    assert directive.evidence_refs == [
+        "layer2.conditional_obligation_checks.observation_fidelity"
+    ]
+
+
 def test_candidate_followup_repair_remains_a_complete_transaction(repair_case):
     artifact = copy.deepcopy(repair_case["artifact"])
     artifact.artifact_manifest["metadata"]["generator"] = "forge_candidate_compiler"

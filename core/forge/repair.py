@@ -28,6 +28,7 @@ class RepairPolicy:
         "missing_obligation": "restore_obligation_provenance",
         "semantic_content_mismatch": "implement_missing_requirement_semantics",
         "exact_output_mismatch": "implement_missing_requirement_semantics",
+        "lossy_observation_fidelity": "repair_observation_fidelity",
         "missing_semantic_requirement_coverage": "rerender_semantic_tests",
         "missing_requirement_assertion_evidence": "repair_requirement_assertions",
         "quality_contract_violation": "rerender_quality_contract_targets",
@@ -235,6 +236,18 @@ class RepairPolicy:
                 self._extend_strings(paths, item.get("paths"))
             refs.append("layer2.exact_output_contract_checks")
 
+        if "lossy_observation_fidelity" in signatures:
+            conditional_checks = self._mapping(
+                layer2.get("conditional_obligation_checks")
+            )
+            for item in self._list(conditional_checks.get("observation_fidelity")):
+                if not isinstance(item, dict) or not item.get("lossy_observations"):
+                    continue
+                path = item.get("path")
+                if isinstance(path, str):
+                    paths.append(path)
+            refs.append("layer2.conditional_obligation_checks.observation_fidelity")
+
         if "missing_entrypoint" in signatures:
             paths.extend(artifact.runnable_entrypoints)
             if plan.implementation_blueprint.entrypoint_path:
@@ -302,11 +315,18 @@ class RepairPolicy:
     def _is_assertion_only_repair(operations: List[str]) -> bool:
         test_operations = {
             "repair_requirement_assertions",
+            "repair_observation_fidelity",
             "rerender_semantic_tests",
             "restore_acceptance_tests",
         }
         return (
-            "repair_requirement_assertions" in operations
+            bool(
+                {
+                    "repair_requirement_assertions",
+                    "repair_observation_fidelity",
+                }
+                & set(operations)
+            )
             and set(operations).issubset(test_operations)
         )
 

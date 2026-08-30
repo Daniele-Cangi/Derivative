@@ -10,7 +10,7 @@ from core.forge.evidence_integrity import (
     CANONICAL_JSON_DIGEST_MODE,
     canonical_json_bytes,
 )
-from core.forge.exact_output import extract_exact_output_contracts
+from core.forge.exact_output import ExactOutputContract, extract_exact_output_contracts
 from core.forge.execution import LocalProcessExecutor, ProcessExecutor, SandboxProcessRequest
 
 
@@ -180,15 +180,7 @@ def behavioral_generation_contracts(plan: FeasiblePlan) -> dict[str, Any]:
             for issue in build_spec.conditional_normalization_issues
         ],
         "exact_output_contracts": [
-            {
-                "stream": contract.stream,
-                "expected": contract.expected,
-                "source_fragment": contract.source_fragment,
-                "precondition": contract.precondition,
-                "observation_fidelity": "exact_text",
-                "additional_output_allowed": False,
-                "trailing_newline_included": contract.expected.endswith(("\n", "\r")),
-            }
+            _exact_output_contract(contract)
             for contract in extract_exact_output_contracts(
                 build_spec.normalized_requirement
             )
@@ -240,6 +232,18 @@ def _conditional_obligation_contract(
     }
 
 
+def _exact_output_contract(contract: ExactOutputContract) -> dict[str, Any]:
+    return {
+        "stream": contract.stream,
+        "expected": contract.expected,
+        "source_fragment": contract.source_fragment,
+        "precondition": contract.precondition,
+        "observation_fidelity": "exact_text",
+        "additional_output_allowed": False,
+        "trailing_newline_included": contract.expected.endswith(("\n", "\r")),
+    }
+
+
 def test_generation_contracts(
     test_paths: list[str],
     plan: FeasiblePlan,
@@ -288,6 +292,14 @@ def test_generation_contracts(
                 requirement_id = entry.split(":", 1)[1]
                 if requirement_id not in requirement_ids:
                     requirement_ids.append(requirement_id)
+        exact_output_contracts = [
+            _exact_output_contract(contract)
+            for requirement_id in requirement_ids
+            if requirement_id in atoms_by_id
+            for contract in extract_exact_output_contracts(
+                atoms_by_id[requirement_id].text
+            )
+        ]
         contracts[path] = {
             "test_name": test_name,
             "objective": (
@@ -321,6 +333,7 @@ def test_generation_contracts(
             "observation_fidelities": (
                 list(planned.observation_fidelities) if planned else []
             ),
+            "exact_output_contracts": exact_output_contracts,
             "traceability": list(traceability),
             "declared_plan_interfaces": [
                 {
