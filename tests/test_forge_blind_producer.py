@@ -795,6 +795,5 @@ def test_frozen_bundle_transport_disables_git_text_normalization():
     repository_root = Path(__file__).resolve().parents[1]
     attributes = (repository_root / ".gitattributes").read_text(encoding="utf-8")
 
-    assert "benchmarks/blind_v3/external_*/** -text" in attributes
-    assert "benchmarks/blind_v4/external_*/** -text" in attributes
-    assert "benchmarks/blind_v5/external_*/** -text" in attributes
+    for version in range(3, 10):
+        assert f"benchmarks/blind_v{version}/external_*/** -text" in attributes

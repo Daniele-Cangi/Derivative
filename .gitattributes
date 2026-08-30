@@ -5,3 +5,4 @@ benchmarks/blind_v5/external_*/** -text
 benchmarks/blind_v6/external_*/** -text
 benchmarks/blind_v7/external_*/** -text
 benchmarks/blind_v8/external_*/** -text
+benchmarks/blind_v9/external_*/** -text
