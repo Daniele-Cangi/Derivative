@@ -1,0 +1,357 @@
+[
+  {
+    "case_id": "V9-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V9-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot1",
+      "symbol": "main"
+    },
+    "requirement": "Write a CLI that reads lines from standard input, each containing a possibly empty string. For each input line, if the line consists solely of ASCII alphanumeric characters (letters or digits), output the line unchanged; otherwise, output the empty string for that line. Whitespace characters, Unicode beyond ASCII, punctuation, and other symbols are not considered valid\u2014only ASCII a-z, A-Z, or 0-9 are allowed. Trailing newlines in input must be preserved in output, ensuring line count is identical. If every input line is empty, output must preserve the number of input lines with newlines. If any input line contains non-ASCII bytes or fails to decode as UTF-8, exit with code 2 and output nothing. Exit with code 0 on success, and code 2 only if non-ASCII or undecodable input was encountered. Public import contract: from forge_blind_v9_requirements_slot1 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "filter",
+      "alphanumeric",
+      "utf8-validation",
+      "ascii-only",
+      "linewise"
+    ]
+  },
+  {
+    "case_id": "V9-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V9-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot2",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads one or more lines from standard input. Each line must contain either zero or more hyphen-separated strings; a string is defined as a non-empty sequence of ASCII lowercase letters (a\u2013z) with no spaces, digits, or punctuation except the hyphen ('-'). For each input line, output the same line with all contiguous duplicate hyphen-separated elements reduced to a single instance (e.g., 'a-a-b-b-b-c' becomes 'a-b-c'). Non-contiguous duplicates must not be removed (e.g., 'a-b-a-b' remains 'a-b-a-b'). If an input line is empty, output an empty line in the same position. Trailing newlines must be preserved and line count must match input; output lines in same order. If any line contains characters outside ASCII lowercase letters and hyphens, exit with code 2 and output nothing. On success, exit with code 0. If the input stream contains undecodable or non-UTF-8 bytes, exit with code 2 and output nothing. Public import contract: from forge_blind_v9_requirements_slot2 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "deduplication",
+      "string",
+      "input-validation"
+    ]
+  },
+  {
+    "case_id": "V9-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V9-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot3",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads non-empty lines from standard input, each containing one or more tab-separated fields. Each field must consist solely of ASCII printable characters (hex 0x21\u20130x7E, inclusive). The CLI must output only those lines in which all fields are unique (no duplicates per line), preserving their original field order and line order. Lines with duplicate fields (case-sensitive comparison) are omitted from the output. If a line is empty or consists only of tab characters, it must be ignored and not written to output. Trailing newlines of included lines must be preserved. If any line contains non-ASCII or non-printable bytes or is undecodable as UTF-8, the program must exit with code 2 and write nothing to output. Exit with code 0 on success and code 2 only if invalid or undecodable input is found. No output should be written in error conditions. Public import contract: from forge_blind_v9_requirements_slot3 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "input-validation",
+      "deduplication",
+      "tab-separated",
+      "ascii-printable",
+      "stdin-filter"
+    ]
+  },
+  {
+    "case_id": "V9-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V9-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot4",
+      "symbol": "main"
+    },
+    "requirement": "Write a CLI that reads lines from standard input. Each line must contain zero or more comma-separated values, where each value is either an empty string or consists entirely of ASCII uppercase letters (A-Z). For each input line, output a line in which each value is left-padded with the character 'X' to a minimum width of 5 characters; for empty values, output five 'X' characters. Preserve the order of values and commas within each line, as well as any trailing newline characters. Output must contain exactly as many lines as the input, in order. If any value contains characters outside ASCII uppercase letters (A-Z) or is not properly UTF-8-decodable, exit with code 2 and write nothing to output. Exit with code 0 on success, or with code 2 only upon encountering invalid or undecodable input. Public import contract: from forge_blind_v9_requirements_slot4 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "csv",
+      "padding",
+      "ascii-uppercase",
+      "utf8",
+      "input-validation"
+    ]
+  },
+  {
+    "case_id": "V9-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V9-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot5",
+      "symbol": "main"
+    },
+    "requirement": "Write a CLI that reads lines from standard input, where each line contains one or more semicolon-separated numeric substrings (at least one per line), with no leading or trailing whitespace on any line. Each substring may either be a non-empty sequence of digits representing an integer (with optional leading zeros), or the string 'INF'. Treat 'INF' as representing positive infinity for sorting purposes. For each line, output the semicolon-separated substrings in strictly descending numeric order (with 'INF' considered greater than any integer). Preserving substrings that compare equal (duplicate values) is required. Any line containing a substring with non-digit characters other than 'INF' (case-sensitive), or not being UTF-8-decodable, or containing extra whitespace, causes the CLI to exit with code 2 and output nothing. On success, exit with code 0. Output must exactly match the number of input lines with the substrings for each line reordered as described, with semicolon separators and preserved newlines. Public import contract: from forge_blind_v9_requirements_slot5 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "CLI",
+      "string processing",
+      "numeric sorting",
+      "input validation",
+      "exit codes",
+      "deterministic behavior"
+    ]
+  },
+  {
+    "case_id": "V9-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V9-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot6",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads lines from standard input, where each line must contain one or more pipe-separated ('|') substrings. Each substring on a line must be a non-empty sequence of exactly four hexadecimal digits (0-9, a-f, or A-F; case-insensitive). Lines with any substring that is not exactly four valid hexadecimal digits, with empty substrings, with substrings containing characters outside [0-9a-fA-F], or any empty line (including a line that is just a newline) must be omitted from output. Trailing and leading whitespace on each line, or surrounding any substring or pipe character, is not allowed: if present, treat the line as invalid and omit it from output. For valid lines, output the sum (as an integer in base-10, without any extra characters) of the values of all substrings on the line, each interpreted as a hexadecimal integer, followed by a newline. Preserve the order of valid lines. If any line contains undecodable or non-UTF-8 bytes, exit with code 2 and output nothing. On success, exit with code 0. The total number of output lines must exactly match the number of valid processed input lines, in order. Public import contract: from forge_blind_v9_requirements_slot6 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "hexadecimal",
+      "pipe-separated",
+      "standard-library-only",
+      "input-validation",
+      "deterministic-behavior"
+    ]
+  },
+  {
+    "case_id": "V9-007",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot7",
+      "symbol": "main"
+    },
+    "requirement": "Write a CLI that reads lines from standard input. Each line must contain zero or more tab-separated decimal values. A decimal value is defined as one or more digits, optionally containing at most one period ('.') not at the start or end, and with no leading or trailing whitespace for any field. For every line, output the same line with all non-increasing sequences of consecutive tab-separated decimal values replaced by their reverse, preserving original separators. Only consecutive subsequences where each value is less than or equal to the next are considered non-increasing; ties count. Any line containing values that are not valid decimal values as described, include invalid whitespace, failed to decode as UTF-8, or have more than one period in any value, causes the program to exit with code 2 and output nothing. Output must exactly preserve the number of input lines and trailing newlines. The notion of 'tab-separated decimal values' may be interpreted differently depending on parsing strategy, making correct behavior ambiguous in some edge cases (e.g., empty lines, lines containing only tabs, or values with ambiguous periods). Exit with code 0 on success, or code 2 only for invalid or undecodable input. Public import contract: from forge_blind_v9_requirements_slot7 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "validation_failed",
+      "tab-separated",
+      "decimal value sequences",
+      "order transformation",
+      "ambiguity"
+    ]
+  },
+  {
+    "case_id": "V9-008",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot8",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads lines from standard input. Each input line may contain zero or more space-separated substrings, where each substring must be a valid identifier according to Python's definition (i.e., can be used as a variable name in Python source code). For each input line, output the substrings joined by dashes ('-'), but only include substrings that are valid identifiers and have an even number of characters. Lines with no valid substrings must produce an empty output line (newline only). If any input line contains non-UTF-8-decodable bytes, exit with code 2 and output nothing. Exit with code 0 on success. The Python identifier definition is context-sensitive\u2014treat all substrings as if in Python 3, but behavior in the presence of Unicode normalization or confusable characters is ambiguous and matching may depend on interpreter version or locale. Public import contract: from forge_blind_v9_requirements_slot8 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "validation_failed",
+      "identifiers",
+      "unicode-ambiguity",
+      "benchmark"
+    ]
+  },
+  {
+    "case_id": "V9-009",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot9",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads lines from standard input, where each line may contain zero or more slash-separated ('/') segments. Each segment must consist of one or more visible ASCII characters (hex 0x21\u20130x7E), and segments may not contain the slash ('/') character. Output the lines sorted lexicographically by their reversed string values, preserving output order for ties. If any line contains a segment with characters outside the visible ASCII range, or any undecodable byte sequence, exit with code 2 and output nothing. Output must contain exactly as many lines as input, in order sorted by reversed line. On success, exit with code 0. In the case that two or more lines have identical reversed values, output order is ambiguous due to universal requirements about tie behavior and stability that cannot be objectively certified. Public import contract: from forge_blind_v9_requirements_slot9 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "sorting",
+      "ascii",
+      "edge-case-ambiguity",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V9-010",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot10",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads a sequence of lines from standard input, each containing exactly eight comma-separated base-32 integers (case-insensitive, using only the RFC 4648 alphabet without padding; allowed digits are 0-9 and A-V or a-v). Each line must represent the coefficients of a polynomial of degree seven, where the leftmost value is the coefficient for x^7 and the rightmost for x^0. For each input line, output the comma-separated base-32 representation (using uppercase letters only) of the eight roots of the polynomial in the closed interval [0, 31], listed in strictly increasing order (if any root is repeated, it must appear as many times as its multiplicity). Roots must be present in integer form and converted to base-32 for output. If the polynomial has fewer than eight roots in [0, 31] (counting multiplicity), pad the output with the base-32 encoding of -1 (which is not representable, creating a mathematical contradiction). If the polynomial has more than eight roots in this interval, output the base-32 encoding of the first eight roots only (contradicting the fundamental theorem of algebra). Each output line must preserve the input's trailing newline if present. If any line has fewer or more than eight fields, contains non-base-32 characters, or is not properly UTF-8, exit with code 2 and output nothing. Exit with code 0 on success. The simultaneously required output of precisely eight valid base-32 integer roots for arbitrary degree-7 polynomials with integer coefficients within a finite domain is mathematically infeasible. Public import contract: from forge_blind_v9_requirements_slot10 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "polynomial-roots",
+      "base32",
+      "finite-domain",
+      "mathematical-contradiction"
+    ]
+  },
+  {
+    "case_id": "V9-011",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot11",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads lines from standard input, where each input line must represent a finite, strictly increasing sequence of nonzero rational numbers in lowest terms, each encoded as 'numerator/denominator' (with numerator and denominator as nonzero, coprime, positive decimal integers). For each input line, output the single rational number that is the sum of the reciprocals of the input sequence, reduced to lowest terms and expressed as 'numerator/denominator'. The sum must be unique and represented in lowest terms. If any input line encodes a repeated rational, a zero, a negative numerator/denominator, non-integer values, non-coprime numerator/denominator, or any field fails to decode as UTF-8 or fails to strictly increase, exit with code 2 and output nothing. Exit with code 0 on success. When the input line is empty, output '1/0' (representing infinity), contradicting the impossibility of expressing infinity as a rational number in lowest terms. Output must preserve the number and order of lines, with exact trailing newlines as in input. Public import contract: from forge_blind_v9_requirements_slot11 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "rational",
+      "sum",
+      "reciprocal",
+      "strictly_increasing",
+      "lowest_terms_contradiction"
+    ]
+  },
+  {
+    "case_id": "V9-012",
+    "expected_terminal_status": "infeasible_proven",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_blind_v9_requirements_slot12",
+      "symbol": "main"
+    },
+    "requirement": "Write a Python CLI that reads one or more lines from standard input. Each line must contain a non-empty sequence of at least three distinct, comma-separated integers, each in the range [0, 99]. For every input line, output a single line containing the unique arithmetic mean (sum divided by count) of the cubic roots of each integer, rounded to the nearest integer, formatted as a base-36 string (using digits 0-9 and lowercase a-z). If any input contains repeated integers, integers outside [0, 99], non-integer values, fewer than three values, or is undecodable as UTF-8, exit with code 2 and output nothing. Exit with code 0 on success. If there is no unique mean for a line (i.e., the calculation mathematically produces more than one possible value for the same input due to a contradiction in arithmetic mean), output must still consist of a single base-36 line, which is infeasible. The output must match the number and order of input lines, preserving trailing newlines. Public import contract: from forge_blind_v9_requirements_slot12 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v9",
+      "cli",
+      "arithmetic",
+      "mean",
+      "cube root",
+      "base36",
+      "mathematical contradiction"
+    ]
+  }
+]
