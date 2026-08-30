@@ -153,7 +153,7 @@ Unsupported or unproven behavior should end as `validation_failed`, never as opt
 
 ## Evidence
 
-The current `main` checkpoint passes **546 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **544 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
+The current `main` checkpoint passes **548 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **546 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
 
 Blind evidence is immutable and reported without retrospective score repair:
 
@@ -165,6 +165,8 @@ Blind evidence is immutable and reported without retrospective score repair:
 These results show a strong fail-closed architecture, not completed generality. Known blind cases are regression evidence after first execution; future generality must be measured on a newly frozen distribution.
 
 Blind V8 has already been executed and is therefore a known regression corpus. In particular, V8-005 may be replayed for regression diagnosis only and must not be reported as new blind evidence.
+
+The targeted V8-005 replay on `9d2f3a3` reached internal `verified` after one repair and its frozen external oracle passed 12/12. The receipt remains explicitly labeled `post_fix_replay` with `baseline_verified=false`; this is attributable regression evidence, not a new blind result. See [run 33297062090](https://github.com/Daniele-Cangi/Derivative/actions/runs/33297062090).
 
 Full metrics, hashes, denominators, replay labels, and commands are in [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md).
 

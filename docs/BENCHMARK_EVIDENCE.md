@@ -27,14 +27,14 @@ This ledger separates immutable blind evidence from regression work. It is inten
 
 ## Repository Gates
 
-At the current validation-receipt-integrity checkpoint (`4f52787`):
+At the current exact-output repair-guidance checkpoint (`9d2f3a3`):
 
-- Linux/Python 3.11 Forge CI: **546 passed**;
-- complete local Windows suite: **544 passed, 2 skipped**;
+- Linux/Python 3.11 Forge CI: **548 passed**;
+- complete local Windows suite: **546 passed, 2 skipped**;
 - full Docker-backed 30-case internal benchmark: all configured thresholds passed;
 - CodeQL: passing.
 
-These are repository regression gates, not independent blind proof. The corresponding Forge CI receipt is [run 33282473143](https://github.com/Daniele-Cangi/Derivative/actions/runs/33282473143).
+These are repository regression gates, not independent blind proof. The corresponding receipts are [Forge CI run 33296901466](https://github.com/Daniele-Cangi/Derivative/actions/runs/33296901466) and [CodeQL run 33296901352](https://github.com/Daniele-Cangi/Derivative/actions/runs/33296901352).
 
 At the V7 oracle-preflight checkpoint (historical):
 
@@ -203,6 +203,36 @@ Additional SHA-256 values:
 - baseline metrics: `F11218B6B3B41CC0D3BDE191BEE6579EF97BD14F676F89D537935EC15BBD51E6`;
 - first replay: `91B23F2B6ED0F9B1EA105A268728E346566EEE64C605A2AAF937C6D1B98B7D15`;
 - replay metrics: `60DECC40B202E409C4E6A3EEA9D7A91A5E49D42C40E8DCA7A1E3225259CE8D24`.
+
+## Blind V8
+
+Blind V8 has already been executed and is a known regression corpus. Its manifest remains unchanged at SHA-256 `071C7D11D5A6D6CAB46198B1464CD03F8B8AFCDCCEAAD23E7F93D7E283AE12C1`. V8-005 may be used for regression diagnosis only; its replays are never new blind evidence.
+
+### Targeted V8-005 exact-output replay
+
+The [targeted workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33297062090) replayed V8-005 on commit `9d2f3a3` with GPT-5 nano, the locked Linux/Python 3.11 dependency set, and Docker isolation. The report records `execution_kind=post_fix_replay` and `baseline_verified=false`.
+
+Observed regression result:
+
+- expected and observed terminal status: `verified`;
+- first validation failed; one bounded repair succeeded on the second validation;
+- independent frozen oracle: valid, executed, and passed 12/12;
+- external Verified@1: 0/1 (`0.000`);
+- success after repair: 1/1 (`1.000`);
+- external false-verified rate: 0/1 (`0.000`);
+- model requests: `6`;
+- model tokens: `123,257`;
+- configured estimated cost: `$0.0157035`;
+- total case runtime: `152.40s`.
+
+The successful repair reduced nine internal validation failures to zero without introducing a new signature. All three validation layers passed. The packaged validation receipt SHA-256 is `966A49ECCF18BF276FF3318F83EF0956F999EE17FB6B2A8D6060978F760EEE2C`; its exact bytes and the canonical artifact-manifest dump were rehashed after download and matched the declared receipt. The artifact, validation, and behavioral-contract seals also matched.
+
+This is attributable regression evidence for the general exact-output and observation-fidelity mechanism. It does not update or replace any V8 blind baseline score.
+
+Sources:
+
+- [Manifest](../benchmarks/blind_v8/external_001/manifest.json)
+- [Targeted regression workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33297062090)
 
 ## Historical V2/V3 Evidence
 
