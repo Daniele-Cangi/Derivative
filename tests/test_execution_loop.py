@@ -264,6 +264,12 @@ def test_detect_infeasibility_handles_complete_graph_diameter_conflict():
             ("65536", "256", "pigeonhole"),
         ),
         (
+            "Build a reversible encoder mapping every possible 24-bit input to one 8-bit output, "
+            "recover every original input exactly, and use no metadata, external state, rejection, "
+            "randomness, or additional storage under any circumstances.",
+            ("16777216", "256", "pigeonhole"),
+        ),
+        (
             "Build an append-only audit log that must permanently retain every appended record and "
             "simultaneously provide an erase_all operation after which the log contains exactly zero "
             "records and every erased record remains retrievable from that same log, with no backup, "

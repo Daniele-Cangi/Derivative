@@ -60,7 +60,11 @@ def _bundle() -> BlindBenchmarkBundle:
             ),
             HeldoutBenchmarkCase(
                 case_id="A-005",
-                requirement="Return a value satisfying two contradictory finite constraints.",
+                requirement=(
+                    "Build a lossless encoder that maps every possible two-byte input to "
+                    "exactly one output byte and a decoder that reconstructs every original "
+                    "input without external state, metadata, or a side channel."
+                ),
                 expected_terminal_status="infeasible_proven",
             ),
         ],

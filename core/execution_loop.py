@@ -2586,6 +2586,10 @@ class ExecutionLoop:
             deduped.append(contradiction)
         return deduped
 
+    def detect_infeasibility(self, problem: str) -> List[str]:
+        """Return deterministic contradiction witnesses for a stated problem."""
+        return self._detect_infeasibility(problem)
+
     def _detect_logical_contract_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
         contradictions: List[str] = []
@@ -2845,7 +2849,15 @@ class ExecutionLoop:
 
     def _detect_information_capacity_contradictions(self, problem: str) -> List[str]:
         lowered = " ".join(problem.lower().split())
-        if not all(token in lowered for token in ("lossless", "decoder", "reconstruct")):
+        information_preserving = "lossless" in lowered or "reversible" in lowered
+        recovery_required = bool(
+            ("decoder" in lowered and "reconstruct" in lowered)
+            or re.search(
+                r"\brecover\b.{0,60}\b(?:every|each|all)\b.{0,40}\boriginal\s+inputs?\b",
+                lowered,
+            )
+        )
+        if not information_preserving or not recovery_required:
             return []
         if "every possible" not in lowered or not re.search(
             r"\b(?:without|no)\b.{0,80}\b(?:external state|metadata|side channel)",
@@ -2863,6 +2875,12 @@ class ExecutionLoop:
             r"exactly\s+(?P<count>\d+|one|two|three|four|five|six|seven|eight)"
             r"\s+output\s+(?P<unit>bytes?|bits?)",
         )
+        if output_width is None:
+            output_width = self._extract_information_width(
+                lowered,
+                r"(?:an?|one|single)\s+(?P<count>\d+|one|two|three|four|five|six|seven|eight)"
+                r"[-\s]+(?P<unit>bytes?|bits?)[-\s]+outputs?",
+            )
         if input_width is None or output_width is None or input_width <= output_width:
             return []
 

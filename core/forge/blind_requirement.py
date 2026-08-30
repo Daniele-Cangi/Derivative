@@ -10,24 +10,47 @@ def requirement_preflight_error(
     expected_terminal_status: str,
 ) -> str | None:
     example_error = _same_length_example_error(requirement)
-    if example_error is not None and expected_terminal_status != "infeasible_proven":
+    finite_contradictions = finite_witness_contradictions(requirement)
+    deterministic_contradictions = _deterministic_contradictions(requirement)
+    if expected_terminal_status == "infeasible_proven":
+        if example_error is not None or deterministic_contradictions:
+            return None
+        return (
+            "expected infeasible_proven requirement lacks a deterministic "
+            "contradiction witness"
+        )
+    if example_error is not None:
         return (
             f"expected {expected_terminal_status} requirement has a behavioral "
             f"example contradiction: {example_error}"
         )
-    contradictions = finite_witness_contradictions(requirement)
-    if not contradictions or expected_terminal_status == "infeasible_proven":
-        return None
-    return (
-        f"expected {expected_terminal_status} requirement has a finite witness "
-        f"contradiction: {contradictions[0].message}"
-    )
+    if finite_contradictions:
+        return (
+            f"expected {expected_terminal_status} requirement has a finite witness "
+            f"contradiction: {finite_contradictions[0].message}"
+        )
+    if deterministic_contradictions:
+        return (
+            f"expected {expected_terminal_status} requirement has a deterministic "
+            f"contradiction: {deterministic_contradictions[0]}"
+        )
+    return None
 
 
 def requirement_preflight_failure_class(error: str) -> str:
+    if "lacks a deterministic contradiction witness" in error:
+        return "requirement_infeasibility_unproven"
     if "behavioral example contradiction" in error:
         return "requirement_behavioral_example"
+    if "deterministic contradiction" in error:
+        return "requirement_deterministic_contradiction"
     return "requirement_finite_witness"
+
+
+def _deterministic_contradictions(requirement: str) -> list[str]:
+    from core.execution_loop import ExecutionLoop
+
+    return ExecutionLoop().detect_infeasibility(requirement)
 
 
 def _same_length_example_error(requirement: str) -> str | None:
@@ -131,7 +154,9 @@ because it has the intended property, and never include confirming observations 
 must identify the candidate index, and must remain empty when approved. Reject any verified CLI without an importable
 main(argv: list[str] | None = None) -> int interface that can be tested in-process, and reject any verified service contract that requires
 a live server, socket, subprocess, or HTTP client instead of a callable module interface. For universal character transformations with
-fixed output length, check finite witnesses whose case mapping expands to multiple code points. Return only the requested structured object."""
+fixed output length, check finite witnesses whose case mapping expands to multiple code points. An infeasible label must be supported by
+an explicit finite, numeric, or logical contradiction that deterministic preflight can witness; a statement merely claiming that a task
+is impossible is not evidence. Return only the requested structured object."""
 
 
 def _bounded_finding(value: str) -> str:

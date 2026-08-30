@@ -412,3 +412,27 @@ def test_freeze_refuses_verified_unicode_case_cardinality_conflict(tmp_path):
         _freeze(bundle_root, repository_root)
 
     assert (bundle_root / "manifest.json").exists() is False
+
+
+def test_freeze_refuses_unproven_infeasible_label(tmp_path):
+    bundle_root = tmp_path / "unproven-infeasible-bundle"
+    bundle_root.mkdir()
+    dataset = _write_external_bundle(bundle_root)
+    payload = json.loads(dataset.read_text(encoding="utf-8"))
+    payload[0]["requirement"] = (
+        "For each finite list of integers, output its unique arithmetic mean. "
+        "If the arithmetic mean is not unique, still output one integer. "
+        "Public import contract: from library.core import identity."
+    )
+    payload[0]["expected_terminal_status"] = "infeasible_proven"
+    payload[0].pop("oracle")
+    dataset.write_text(json.dumps(payload), encoding="utf-8")
+    repository_root = _write_baseline(tmp_path / "repository")
+
+    with pytest.raises(
+        ValueError,
+        match="rejection_classes=requirement_infeasibility_unproven",
+    ):
+        _freeze(bundle_root, repository_root)
+
+    assert (bundle_root / "manifest.json").exists() is False

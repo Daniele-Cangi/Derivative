@@ -9,7 +9,10 @@ from core.forge.blind_oracle import (
     oracle_preflight_error,
     oracle_preflight_failure_class,
 )
-from core.forge.blind_requirement import requirement_preflight_error
+from core.forge.blind_requirement import (
+    requirement_preflight_error,
+    requirement_preflight_failure_class,
+)
 from core.forge.oracle_fidelity import oracle_output_fidelity_mismatches
 from core.forge.blind_producer import (
     BlindProducerConfig,
@@ -693,6 +696,50 @@ def test_requirement_preflight_rejects_same_length_behavioral_example_conflict()
     assert "behavioral example contradiction" in error
     assert "5-item input returns a 4-item list" in error
     assert requirement_preflight_error(requirement, "infeasible_proven") is None
+
+
+def test_requirement_preflight_rejects_unproven_infeasible_label():
+    requirement = (
+        "For each finite list of integers, output its unique arithmetic mean. "
+        "If the arithmetic mean is not unique, still output one integer."
+    )
+
+    error = requirement_preflight_error(requirement, "infeasible_proven")
+
+    assert error is not None
+    assert "lacks a deterministic contradiction witness" in error
+    assert (
+        requirement_preflight_failure_class(error)
+        == "requirement_infeasibility_unproven"
+    )
+
+
+def test_requirement_preflight_accepts_machine_proven_infeasible_label():
+    requirement = (
+        "Build a lossless encoder that maps every possible two-byte input to exactly "
+        "one output byte and a decoder that reconstructs every original input without "
+        "external state, metadata, or a side channel."
+    )
+
+    assert requirement_preflight_error(requirement, "infeasible_proven") is None
+
+
+def test_requirement_preflight_rejects_verified_deterministic_contradiction():
+    requirement = (
+        "Build a lossless encoder that maps every possible two-byte input to exactly "
+        "one output byte and a decoder that reconstructs every original input without "
+        "external state, metadata, or a side channel."
+    )
+
+    error = requirement_preflight_error(requirement, "verified")
+
+    assert error is not None
+    assert "deterministic contradiction" in error
+    assert "pigeonhole" in error
+    assert (
+        requirement_preflight_failure_class(error)
+        == "requirement_deterministic_contradiction"
+    )
 
 
 def test_oracle_preflight_uses_argv_value_preceding_each_call():

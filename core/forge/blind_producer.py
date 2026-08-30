@@ -669,7 +669,8 @@ def _requirement_producer_instructions(
         ),
         TERMINAL_INFEASIBLE_PROVEN: (
             "The requirement must contain a precise mathematical or finite constraint "
-            "contradiction independent of platform or implementation difficulty."
+            "contradiction independent of platform or implementation difficulty, with "
+            "an explicit witness that deterministic preflight can verify."
         ),
     }[expected_status]
     return f"""You are an independent software benchmark producer operating without access to Forge source code.
