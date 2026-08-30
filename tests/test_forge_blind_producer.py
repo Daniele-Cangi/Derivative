@@ -10,6 +10,7 @@ from core.forge.blind_oracle import (
     oracle_preflight_failure_class,
 )
 from core.forge.blind_requirement import requirement_preflight_error
+from core.forge.oracle_fidelity import oracle_output_fidelity_mismatches
 from core.forge.blind_producer import (
     BlindProducerConfig,
     _generate_oracle,
@@ -573,6 +574,96 @@ def test_oracle_preflight_rejects_fixture_that_contradicts_explicit_regex():
     assert "explicit pattern contract contradicts" in error
     assert "FOO=bar extra" in error
     assert oracle_preflight_failure_class(error) == "explicit_pattern_mismatch"
+
+
+def test_oracle_preflight_rejects_extra_newline_in_exact_output_expectation():
+    requirement = (
+        "Build a Python CLI that reads lines from standard input and preserves trailing "
+        "newlines exactly so output line count is identical to input. Public import "
+        "contract: from line_filter import main."
+    )
+    source = (
+        "import io\n"
+        "from line_filter import main\n\n"
+        "def test_trailing_newlines(monkeypatch, capsys):\n"
+        "    user_input = 'a\\n\\n\\n'\n"
+        "    expected_lines = user_input.splitlines()\n"
+        "    expected_output = '\\n'.join(expected_lines) + '\\n\\n'\n"
+        "    monkeypatch.setattr('sys.stdin', io.StringIO(user_input))\n"
+        "    rc = main([])\n"
+        "    out, err = capsys.readouterr()\n"
+        "    assert rc == 0\n"
+        "    assert out == expected_output\n\n"
+        "def test_single_line(monkeypatch, capsys):\n"
+        "    monkeypatch.setattr('sys.stdin', io.StringIO('a\\n'))\n"
+        "    rc = main([])\n"
+        "    out, err = capsys.readouterr()\n"
+        "    assert rc == 0\n"
+        "    assert out == 'a\\n'\n\n"
+        "def test_empty(monkeypatch, capsys):\n"
+        "    monkeypatch.setattr('sys.stdin', io.StringIO(''))\n"
+        "    rc = main([])\n"
+        "    out, err = capsys.readouterr()\n"
+        "    assert rc == 0\n"
+        "    assert out == ''\n"
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is not None
+    assert "newline expectation contradicts" in error
+    assert "input has 3 line ending(s), expected output has 4" in error
+    assert oracle_preflight_failure_class(error) == "oracle_output_fidelity_mismatch"
+
+
+def test_oracle_preflight_accepts_exact_newline_preservation_formula():
+    requirement = "Preserve trailing newlines exactly and keep line count identical."
+    source = (
+        "def test_formula():\n"
+        "    user_input = 'a\\n\\n\\n'\n"
+        "    expected_lines = user_input.splitlines()\n"
+        "    expected_output = '\\n'.join(expected_lines) + '\\n'\n"
+        "    out = 'a\\n\\n\\n'\n"
+        "    assert out == expected_output\n"
+    )
+
+    assert oracle_output_fidelity_mismatches(source, requirement) == []
+
+
+def test_oracle_fidelity_skips_helper_output_it_cannot_prove_line_local():
+    requirement = "Preserve trailing newlines exactly and keep line count identical."
+    source = (
+        "def render(line):\n"
+        "    return ''.join(['x\\n'])\n\n"
+        "def test_formula():\n"
+        "    user_input = 'a\\n'\n"
+        "    expected_lines = []\n"
+        "    for line in user_input.splitlines():\n"
+        "        expected_lines.append(render(line))\n"
+        "    expected_output = ''.join(expected_lines)\n"
+        "    out = 'x\\n'\n"
+        "    assert out == expected_output\n"
+    )
+
+    assert oracle_output_fidelity_mismatches(source, requirement) == []
+
+
+def test_oracle_fidelity_does_not_trust_unrelated_helper_parameters():
+    requirement = "Preserve trailing newlines exactly and keep line count identical."
+    source = (
+        "def render(line, suffix):\n"
+        "    return suffix\n\n"
+        "def test_formula():\n"
+        "    user_input = 'a\\n'\n"
+        "    expected_lines = []\n"
+        "    for line in user_input.splitlines():\n"
+        "        expected_lines.append(render(line, 'x\\n'))\n"
+        "    expected_output = ''.join(expected_lines)\n"
+        "    out = 'x\\n'\n"
+        "    assert out == expected_output\n"
+    )
+
+    assert oracle_output_fidelity_mismatches(source, requirement) == []
 
 
 def test_requirement_preflight_rejects_verified_unicode_cardinality_conflict():

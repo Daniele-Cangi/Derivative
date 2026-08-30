@@ -4,6 +4,7 @@ from typing import Any
 
 from core.forge.fixture_oracle import fixture_oracle_mismatches
 from core.forge.oracle_contract import oracle_contract_mismatches
+from core.forge.oracle_fidelity import oracle_output_fidelity_mismatches
 from core.forge.public_contract import (
     PublicImportContract,
     oracle_public_import_error,
@@ -88,10 +89,31 @@ def oracle_preflight_error(
 
 
 def oracle_semantic_sanity_error(source: str, requirement: str) -> str | None:
+    output_fidelity_error = oracle_output_fidelity_sanity_error(
+        source,
+        requirement,
+    )
+    if output_fidelity_error is not None:
+        return output_fidelity_error
     fixture_error = oracle_fixture_sanity_error(source, requirement)
     if fixture_error is not None:
         return fixture_error
     return oracle_contract_sanity_error(source, requirement)
+
+
+def oracle_output_fidelity_sanity_error(
+    source: str,
+    requirement: str,
+) -> str | None:
+    mismatches = oracle_output_fidelity_mismatches(source, requirement)
+    if not mismatches:
+        return None
+    mismatch = mismatches[0]
+    return (
+        "oracle newline expectation contradicts the requirement in "
+        f"{mismatch.function}: input has {mismatch.input_line_endings} line ending(s), "
+        f"expected output has {mismatch.expected_line_endings}"
+    )
 
 
 def oracle_fixture_sanity_error(source: str, requirement: str) -> str | None:
@@ -162,6 +184,7 @@ def oracle_preflight_failure_class(error: str) -> str:
         ("does not directly invoke", "missing_target_invocation"),
         ("no causal behavioral assertion", "causal_assertion"),
         ("discards the return value", "discarded_entrypoint_result"),
+        ("newline expectation contradicts", "oracle_output_fidelity_mismatch"),
         ("fixture expectation contradicts", "fixture_oracle_mismatch"),
         ("explicit pattern contract contradicts", "explicit_pattern_mismatch"),
         ("invocation contract contradicts", "oracle_contract_mismatch"),
@@ -192,7 +215,9 @@ The target call must appear lexically inside each test function: do not place it
 For an in-process CLI entrypoint, capture and assert its returned exit code; pass only user arguments to main(argv), excluding the
 executable name, unless the requirement explicitly defines argv as full sys.argv or includes argv[0]. Never infer success from absence
 of an exception or discard the return value. For deterministic transformations, derive every expected fixture result with a source-independent reference operation;
-do not manually transcribe transformed literals and never call the target under test to compute an expectation. Use exception assertions
+do not manually transcribe transformed literals and never call the target under test to compute an expectation. For exact text, bytes,
+line-count, or newline-preservation contracts, derive the complete expected output and verify that its line-ending count matches the
+literal input whenever preservation is required; never add synthetic terminators. Use exception assertions
 only when the requirement explicitly defines an exception contract. Return only the requested
 structured object."""
 
@@ -208,7 +233,8 @@ When the requirement declares an exact regex or regular expression, classify eve
 reject examples whose expected classification contradicts it.
 Also reject nondeterministic, platform-specific, networked, private-implementation, or vacuous checks. Findings must be concise and empty
 when approved. For deterministic transformations, independently recompute every literal fixture expectation rather than trusting its
-transcription. Return only the requested structured object."""
+transcription. For exact newline or line-count preservation, count input and expected-output line-ending sequences and reject any added
+or dropped terminator. Return only the requested structured object."""
 
 
 def _public_target_context(tree: ast.Module) -> tuple[set[str], set[str]]:
