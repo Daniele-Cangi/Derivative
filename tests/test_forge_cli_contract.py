@@ -90,6 +90,131 @@ def test_cli_contract_accepts_user_only_argv_and_default_sys_argv_slice():
     assert cli_invocation_contract_failures(files, plan) == []
 
 
+def test_cli_contract_rejects_optional_argv_forwarded_directly_to_argparse():
+    plan = SimpleNamespace(
+        interfaces=[
+            PlanInterface(
+                name="main",
+                interface_type="cli_entrypoint",
+                module_path="stdin_filter",
+                explicit_argv_excludes_program_name=True,
+            )
+        ],
+        required_tests=[
+            SimpleNamespace(objective="Read lines from standard input.")
+        ],
+        implementation_blueprint=SimpleNamespace(
+            entrypoint_path="src/stdin_filter.py"
+        ),
+    )
+    files = {
+        "src/stdin_filter.py": (
+            "import argparse\n"
+            "def main(argv=None):\n"
+            "    parser = argparse.ArgumentParser()\n"
+            "    parser.parse_args(argv)\n"
+            "    return 0\n"
+        ),
+        "tests/test_stdin_filter.py": (
+            "import io\n"
+            "import sys\n"
+            "from stdin_filter import main\n"
+            "def test_valid_input():\n"
+            "    sys.stdin = io.StringIO('abc\\n')\n"
+            "    assert main([]) == 0\n"
+        ),
+    }
+
+    failures = cli_invocation_contract_failures(files, plan)
+
+    assert {failure["reason"] for failure in failures} == {
+        "optional_argv_delegates_none_to_parser"
+    }
+
+
+def test_cli_contract_requires_standard_text_stdin_evidence_for_stdin_cli():
+    plan = SimpleNamespace(
+        interfaces=[
+            PlanInterface(
+                name="main",
+                interface_type="cli_entrypoint",
+                module_path="stdin_filter",
+                explicit_argv_excludes_program_name=True,
+            )
+        ],
+        required_tests=[
+            SimpleNamespace(objective="Read lines from standard input.")
+        ],
+        implementation_blueprint=SimpleNamespace(
+            entrypoint_path="src/stdin_filter.py"
+        ),
+    )
+    files = {
+        "src/stdin_filter.py": (
+            "import sys\n"
+            "def main(argv=None):\n"
+            "    sys.stdin.buffer.read()\n"
+            "    return 0\n"
+        ),
+        "tests/test_stdin_filter.py": (
+            "import io\n"
+            "import sys\n"
+            "from stdin_filter import main\n"
+            "class DummyStdin:\n"
+            "    def __init__(self, data):\n"
+            "        self.buffer = io.BytesIO(data)\n"
+            "def test_valid_input():\n"
+            "    sys.stdin = DummyStdin(b'abc\\n')\n"
+            "    assert main([]) == 0\n"
+        ),
+    }
+
+    failures = cli_invocation_contract_failures(files, plan)
+
+    assert {failure["reason"] for failure in failures} == {
+        "missing_standard_stdin_invocation_evidence"
+    }
+
+
+def test_cli_contract_accepts_standard_stringio_stdin_evidence():
+    plan = SimpleNamespace(
+        interfaces=[
+            PlanInterface(
+                name="main",
+                interface_type="cli_entrypoint",
+                module_path="stdin_filter",
+                explicit_argv_excludes_program_name=True,
+            )
+        ],
+        required_tests=[
+            SimpleNamespace(objective="Read lines from stdin.")
+        ],
+        implementation_blueprint=SimpleNamespace(
+            entrypoint_path="src/stdin_filter.py"
+        ),
+    )
+    files = {
+        "src/stdin_filter.py": (
+            "import sys\n"
+            "def main(argv=None):\n"
+            "    sys.stdin.read()\n"
+            "    return 0\n"
+        ),
+        "tests/test_stdin_filter.py": (
+            "import io\n"
+            "import sys\n"
+            "from stdin_filter import main\n"
+            "def run_cli(text):\n"
+            "    sys.stdin = io.StringIO(text)\n"
+            "    return main([])\n"
+            "def test_valid_input():\n"
+            "    assert run_cli('abc\\n') == 0\n"
+        ),
+    }
+
+    assert cli_invocation_contract_failures(files, plan) == []
+
+
 def test_cli_contract_failure_enters_semantic_preflight():
     plan = SimpleNamespace(
         build_spec=SimpleNamespace(

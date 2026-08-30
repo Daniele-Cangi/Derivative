@@ -21,8 +21,26 @@ def cli_invocation_contract_failures(
         source_path = _interface_source_path(interface, plan, file_contents)
         source = file_contents.get(source_path, "") if source_path else ""
         if source:
-            failures.extend(_source_failures(source_path, source, interface))
+            failures.extend(
+                _source_failures(
+                    source_path,
+                    source,
+                    interface,
+                    reject_ambient_argv=(
+                        _requires_standard_stdin(plan)
+                        and interface.explicit_argv_count in (None, 0)
+                    ),
+                )
+            )
         failures.extend(_test_failures(file_contents, interface))
+        failures.extend(
+            _standard_stdin_test_failures(
+                file_contents,
+                plan,
+                interface,
+                source_path,
+            )
+        )
     return _deduplicate_failures(failures)
 
 
@@ -56,6 +74,7 @@ def _source_failures(
     path: str,
     source: str,
     interface: PlanInterface,
+    reject_ambient_argv: bool = False,
 ) -> list[dict[str, Any]]:
     try:
         tree = ast.parse(source)
@@ -74,7 +93,30 @@ def _source_failures(
         return []
     argv_name = function.args.args[0].arg
     failures: list[dict[str, Any]] = []
+    argv_default = _argument_default(function, argv_name)
     for node in ast.walk(function):
+        if (
+            reject_ambient_argv
+            and isinstance(argv_default, ast.Constant)
+            and argv_default.value is None
+            and isinstance(node, ast.Call)
+            and _call_name(node.func)
+            in {
+                "parse_args",
+                "parse_intermixed_args",
+                "parse_known_args",
+                "parse_known_intermixed_args",
+            }
+            and _parser_receives_optional_argv(node, argv_name)
+        ):
+            failures.append(
+                _failure(
+                    path,
+                    interface,
+                    "optional_argv_delegates_none_to_parser",
+                    node.lineno,
+                )
+            )
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             value = node.value
@@ -126,6 +168,36 @@ def _source_failures(
     return failures
 
 
+def _argument_default(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    argument_name: str,
+) -> ast.expr | None:
+    positional = [*function.args.posonlyargs, *function.args.args]
+    index = next(
+        (item for item, argument in enumerate(positional) if argument.arg == argument_name),
+        None,
+    )
+    if index is None:
+        return None
+    default_offset = len(positional) - len(function.args.defaults)
+    if index < default_offset:
+        return None
+    return function.args.defaults[index - default_offset]
+
+
+def _parser_receives_optional_argv(call: ast.Call, argv_name: str) -> bool:
+    if call.args:
+        argument = call.args[0]
+        if isinstance(argument, ast.Name) and argument.id == argv_name:
+            return True
+    return any(
+        keyword.arg == "args"
+        and isinstance(keyword.value, ast.Name)
+        and keyword.value.id == argv_name
+        for keyword in call.keywords
+    )
+
+
 def _test_failures(
     file_contents: Mapping[str, str],
     interface: PlanInterface,
@@ -169,6 +241,174 @@ def _test_failures(
                         )
                     )
     return failures
+
+
+def _standard_stdin_test_failures(
+    file_contents: Mapping[str, str],
+    plan: FeasiblePlan,
+    interface: PlanInterface,
+    source_path: str,
+) -> list[dict[str, Any]]:
+    if not _requires_standard_stdin(plan):
+        return []
+    test_paths = sorted(
+        path
+        for path in file_contents
+        if path.startswith("tests/") and path.endswith(".py")
+    )
+    for path in test_paths:
+        try:
+            tree = ast.parse(file_contents[path])
+        except SyntaxError:
+            continue
+        if _has_standard_stdin_invocation(tree, interface.name):
+            return []
+    return [
+        {
+            **_failure(
+                test_paths[0] if test_paths else source_path,
+                interface,
+                "missing_standard_stdin_invocation_evidence",
+                0,
+            ),
+            "channel": "standard_input",
+        }
+    ]
+
+
+def _requires_standard_stdin(plan: FeasiblePlan) -> bool:
+    return any(
+        "standard input" in str(getattr(test, "objective", "")).lower()
+        or "stdin" in str(getattr(test, "objective", "")).lower()
+        for test in getattr(plan, "required_tests", [])
+    )
+
+
+def _has_standard_stdin_invocation(tree: ast.AST, interface_name: str) -> bool:
+    definitions = {
+        node.name: node
+        for node in getattr(tree, "body", [])
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    tests = [
+        function
+        for name, function in definitions.items()
+        if name.startswith("test_")
+    ]
+    called_helpers = {
+        _call_name(call.func)
+        for function in tests
+        for call in ast.walk(function)
+        if isinstance(call, ast.Call)
+    }
+    candidates = [
+        *tests,
+        *(
+            function
+            for name, function in definitions.items()
+            if name in called_helpers and function not in tests
+        ),
+    ]
+    return any(
+        _function_calls_interface(function, interface_name)
+        and _function_assigns_standard_stdin(function)
+        and not _function_overrides_stdin_buffer(function)
+        for function in candidates
+    )
+
+
+def _function_calls_interface(function: ast.AST, interface_name: str) -> bool:
+    return any(
+        isinstance(node, ast.Call) and _call_name(node.func) == interface_name
+        for node in ast.walk(function)
+    )
+
+
+def _function_assigns_standard_stdin(function: ast.AST) -> bool:
+    stringio_names: set[str] = set()
+    assignments: list[tuple[list[ast.expr], ast.expr | None]] = []
+    for node in ast.walk(function):
+        if isinstance(node, ast.Assign):
+            assignments.append((list(node.targets), node.value))
+        elif isinstance(node, ast.AnnAssign):
+            assignments.append(([node.target], node.value))
+    for targets, value in assignments:
+        if not _is_stringio_call(value):
+            continue
+        stringio_names.update(
+            target.id for target in targets if isinstance(target, ast.Name)
+        )
+    for targets, value in assignments:
+        if not any(_is_sys_stdin(target) for target in targets):
+            continue
+        if _is_stringio_call(value) or (
+            isinstance(value, ast.Name) and value.id in stringio_names
+        ):
+            return True
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        if (
+            name == "setattr"
+            and len(node.args) >= 3
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == "sys"
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "stdin"
+            and _is_standard_stream_value(node.args[2], stringio_names)
+        ):
+            return True
+        if (
+            name == "patch"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "sys.stdin"
+            and _is_standard_stream_value(node.args[1], stringio_names)
+        ):
+            return True
+    return False
+
+
+def _function_overrides_stdin_buffer(function: ast.AST) -> bool:
+    for node in ast.walk(function):
+        targets = (
+            node.targets
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else []
+        )
+        if any(
+            isinstance(target, ast.Attribute)
+            and target.attr == "buffer"
+            and _is_sys_stdin(target.value)
+            for target in targets
+        ):
+            return True
+    return False
+
+
+def _is_stringio_call(node: ast.expr | None) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and _call_name(node.func) == "StringIO"
+    )
+
+
+def _is_standard_stream_value(node: ast.expr, names: set[str]) -> bool:
+    return _is_stringio_call(node) or (
+        isinstance(node, ast.Name) and node.id in names
+    )
+
+
+def _is_sys_stdin(node: ast.expr) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "sys"
+        and node.attr == "stdin"
+    )
 
 
 def _failure(

@@ -687,6 +687,19 @@ def correction_requirements(
 def _cli_invocation_correction(failure: dict[str, Any]) -> str:
     path = str(failure.get("path", ""))
     interface = str(failure.get("interface", "main"))
+    reason = str(failure.get("reason", ""))
+    if reason == "optional_argv_delegates_none_to_parser":
+        return (
+            f"{path}: keep the importable {interface} entrypoint isolated from ambient "
+            "process arguments: normalize argv=None to an empty user-argument list before "
+            "calling argparse, while preserving explicit user-only argv values."
+        )
+    if reason == "missing_standard_stdin_invocation_evidence":
+        return (
+            f"{path}: add an executed acceptance test that assigns a standard io.StringIO "
+            f"instance directly to sys.stdin, invokes {interface}, and asserts the observed "
+            "exit status and output without attaching or emulating a synthetic .buffer."
+        )
     expected = failure.get("expected_argv_count")
     expected_text = (
         f" exactly {expected} user argument(s)" if expected is not None else " user arguments"
