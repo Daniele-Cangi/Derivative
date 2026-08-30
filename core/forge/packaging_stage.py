@@ -12,6 +12,16 @@ from core.forge.contracts import (
     PackagedArtifact,
     ValidationArtifact,
 )
+from core.forge.evidence_integrity import (
+    CANONICAL_JSON_DIGEST_MODE,
+    artifact_validation_seal,
+    canonical_json_bytes,
+    validation_artifact_seal,
+)
+from core.forge.repair_support import behavioral_contract_seal
+
+
+VALIDATION_RECEIPT_SCHEMA_VERSION = 1
 
 
 class PackagingStageError(Exception):
@@ -35,30 +45,92 @@ class PackagingStage:
     ) -> PackagedArtifact:
         if not validation.passed:
             raise PackagingRefusedError("Packaging requires a passed ValidationArtifact.")
+        if build_spec.build_id != plan.build_spec.build_id:
+            raise PackagingRefusedError(
+                "Packaging requires the build and plan identities to match."
+            )
+
+        expected_contract_seal = behavioral_contract_seal(plan)
+        declared_contract_seal = validation.evidence.get(
+            "behavioral_contract_seal"
+        )
+        if declared_contract_seal != expected_contract_seal:
+            raise PackagingRefusedError(
+                "Packaging requires the validated behavioral contract seal."
+            )
+
+        expected_artifact_seal = artifact_validation_seal(code_artifact)
+        declared_artifact_seal = validation.evidence.get(
+            "validated_artifact_seal"
+        )
+        if declared_artifact_seal != expected_artifact_seal:
+            raise PackagingRefusedError(
+                "Packaging requires the matching validated artifact seal."
+            )
+        expected_validation_artifact_seal = validation_artifact_seal(validation)
+        if validation.integrity_seal != expected_validation_artifact_seal:
+            raise PackagingRefusedError(
+                "Packaging requires the matching validation artifact seal."
+            )
+        if code_artifact.plan_id != plan.plan_id:
+            raise PackagingRefusedError(
+                "Packaging requires the artifact and plan identities to match."
+            )
 
         base_package_id = self._package_id(build_spec.build_id, plan.plan_id, code_artifact.artifact_id)
         package_id, package_root = self._resolve_package_root(base_package_id)
-        package_root.mkdir(parents=True, exist_ok=True)
         code_artifact_digest = self._artifact_content_digest(code_artifact)
-        behavioral_contract_seal = validation.evidence.get(
-            "behavioral_contract_seal",
-            {},
+        artifact_manifest_bytes = canonical_json_bytes(
+            self._to_jsonable(code_artifact.artifact_manifest)
         )
+        artifact_manifest_sha256 = hashlib.sha256(
+            artifact_manifest_bytes
+        ).hexdigest()
+        validation_payload = self._build_validation_payload(validation)
+        validation_document = {
+            "receipt_context": {
+                "schema_version": VALIDATION_RECEIPT_SCHEMA_VERSION,
+                "build_id": build_spec.build_id,
+                "plan_id": plan.plan_id,
+                "artifact_id": code_artifact.artifact_id,
+                "package_id": package_id,
+                "package_base_id": base_package_id,
+                "code_artifact_digest": code_artifact_digest,
+                "artifact_manifest_sha256": artifact_manifest_sha256,
+                "behavioral_contract_seal": expected_contract_seal,
+                "validated_artifact_seal": expected_artifact_seal,
+                "validation_artifact_seal": expected_validation_artifact_seal,
+            },
+            "validation_artifact": validation_payload,
+        }
+        validation_evidence_bytes = canonical_json_bytes(validation_document)
+        validation_receipt = {
+            "schema_version": VALIDATION_RECEIPT_SCHEMA_VERSION,
+            "digest_mode": CANONICAL_JSON_DIGEST_MODE,
+            "sha256": hashlib.sha256(validation_evidence_bytes).hexdigest(),
+            "evidence_path": "validation_evidence.json",
+            "build_id": build_spec.build_id,
+            "plan_id": plan.plan_id,
+            "artifact_id": code_artifact.artifact_id,
+            "package_id": package_id,
+            "code_artifact_digest": code_artifact_digest,
+            "artifact_manifest_sha256": artifact_manifest_sha256,
+            "behavioral_contract_sha256": expected_contract_seal["sha256"],
+            "validated_artifact_sha256": expected_artifact_seal["sha256"],
+            "validation_artifact_sha256": expected_validation_artifact_seal[
+                "sha256"
+            ],
+        }
+
+        package_root.mkdir(parents=True, exist_ok=True)
 
         packaged_files = self._write_code_artifact_files(package_root, code_artifact)
         validation_evidence_path = package_root / "validation_evidence.json"
         artifact_manifest_dump_path = package_root / "code_artifact_manifest_dump.json"
         package_manifest_path = package_root / "forge_package_manifest.json"
 
-        validation_payload = self._build_validation_payload(validation)
-        validation_evidence_path.write_text(
-            json.dumps(validation_payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        artifact_manifest_dump_path.write_text(
-            json.dumps(code_artifact.artifact_manifest, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        validation_evidence_path.write_bytes(validation_evidence_bytes)
+        artifact_manifest_dump_path.write_bytes(artifact_manifest_bytes)
         packaged_files.extend(
             sorted(
                 [
@@ -85,9 +157,12 @@ class PackagingStage:
             "package_base_id": base_package_id,
             "package_run_id": package_id,
             "code_artifact_digest": code_artifact_digest,
-            "behavioral_contract_seal": self._to_jsonable(
-                behavioral_contract_seal
+            "behavioral_contract_seal": self._to_jsonable(expected_contract_seal),
+            "validated_artifact_seal": self._to_jsonable(expected_artifact_seal),
+            "validation_artifact_seal": self._to_jsonable(
+                expected_validation_artifact_seal
             ),
+            "validation_receipt": validation_receipt,
             "validation_summary": {
                 "passed": validation.passed,
                 "failure_count": len(validation.failures),
@@ -121,9 +196,12 @@ class PackagingStage:
                 "package_base_id": base_package_id,
                 "package_run_id": package_id,
                 "code_artifact_digest": code_artifact_digest,
-                "behavioral_contract_seal": self._to_jsonable(
-                    behavioral_contract_seal
+                "behavioral_contract_seal": self._to_jsonable(expected_contract_seal),
+                "validated_artifact_seal": self._to_jsonable(expected_artifact_seal),
+                "validation_artifact_seal": self._to_jsonable(
+                    expected_validation_artifact_seal
                 ),
+                "validation_receipt": validation_receipt,
                 "passed_layers": validation.metrics.get("passed_layers", {}),
             },
         )
@@ -148,6 +226,8 @@ class PackagingStage:
             "layer1_result": self._to_jsonable(validation.layer1_result),
             "layer2_result": self._to_jsonable(validation.layer2_result),
             "layer3_result": self._to_jsonable(validation.layer3_result),
+            "next_route": self._to_jsonable(validation.next_route),
+            "integrity_seal": self._to_jsonable(validation.integrity_seal),
         }
         return payload
 

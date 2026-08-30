@@ -13,6 +13,10 @@ from core.forge.contracts import (
     PlanInterface,
     ValidationArtifact,
 )
+from core.forge.evidence_integrity import (
+    artifact_validation_seal,
+    validation_artifact_seal,
+)
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.repair_support import behavioral_contract_seal
@@ -463,6 +467,10 @@ def test_validator_passes_when_all_layers_pass(forge_pipeline):
     assert result.evidence["behavioral_contract_seal"] == behavioral_contract_seal(
         plan
     )
+    assert result.evidence["validated_artifact_seal"] == artifact_validation_seal(
+        artifact
+    )
+    assert result.integrity_seal == validation_artifact_seal(result)
     obligation_checks = result.evidence["obligation_acceptance_checks"]
     assert "conditional_obligation_checks" in obligation_checks
     assert "exact_output_contract_checks" in obligation_checks

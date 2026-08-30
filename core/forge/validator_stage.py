@@ -13,6 +13,10 @@ from core.forge.contracts import (
     ValidationLayerResult,
 )
 from core.forge.execution import LocalProcessExecutor, ProcessExecutor
+from core.forge.evidence_integrity import (
+    artifact_validation_seal,
+    validation_artifact_seal,
+)
 from core.forge.repair_support import behavioral_contract_seal
 from core.forge.validation.adversarial import AdversarialValidationLayer
 from core.forge.validation.obligations import ObligationValidationLayer
@@ -56,6 +60,7 @@ class ValidatorStage:
             return self._isolation_refusal(contract_seal)
 
         contract_seal = behavioral_contract_seal(plan)
+        validated_artifact_seal = artifact_validation_seal(code_artifact)
 
         failures: List[str] = []
         signatures: List[str] = []
@@ -63,6 +68,7 @@ class ValidatorStage:
         metrics: Dict[str, object] = {}
         evidence["execution_policy"] = self.executor.policy.evidence()
         evidence["behavioral_contract_seal"] = contract_seal
+        evidence["validated_artifact_seal"] = validated_artifact_seal
 
         with tempfile.TemporaryDirectory(
             prefix="forge_validator_",
@@ -126,7 +132,7 @@ class ValidatorStage:
             "layer3": layer3.passed,
         }
         evidence["failure_signatures"] = list(signatures)
-        return ValidationArtifact(
+        validation = ValidationArtifact(
             passed=passed,
             failures=failures,
             failure_signatures=signatures,
@@ -138,6 +144,8 @@ class ValidatorStage:
             failure_category=None if passed else self._classify_failure_category(signatures),
             next_route=None,
         )
+        validation.integrity_seal = validation_artifact_seal(validation)
+        return validation
 
     def _isolation_refusal(
         self,
@@ -164,7 +172,7 @@ class ValidatorStage:
                 "layer3_adversarial",
             )
         ]
-        return ValidationArtifact(
+        validation = ValidationArtifact(
             passed=False,
             failures=[failure],
             failure_signatures=[signature],
@@ -189,6 +197,8 @@ class ValidatorStage:
             failure_category=FailureCategory.VALIDATION,
             next_route=None,
         )
+        validation.integrity_seal = validation_artifact_seal(validation)
+        return validation
 
     def _materialize_workspace(
         self,

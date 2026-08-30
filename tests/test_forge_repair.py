@@ -20,6 +20,7 @@ from core.forge.contracts import (
     ValidationArtifact,
     ValidationStrategy,
 )
+from core.forge.evidence_integrity import validation_artifact_seal
 from core.forge.packaging_stage import PackagingStage
 from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
@@ -612,6 +613,10 @@ def test_orchestrator_persists_grounded_repair_trace(repair_case, tmp_path):
     assert package_manifest["artifact_revision"] == 2
     assert package_manifest["parent_artifact_id"]
     assert len(package_manifest["repair_history"]) == 1
+    assert result.validation is not None
+    assert result.validation.integrity_seal == validation_artifact_seal(
+        result.validation
+    )
 
 
 def test_orchestrator_stops_when_repair_changes_nothing(repair_case, tmp_path):

@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 
@@ -6,6 +7,10 @@ import pytest
 
 from core.forge.coder_stage import CoderStage
 from core.forge.contracts import FeasiblePlan, PackagedArtifact
+from core.forge.evidence_integrity import (
+    artifact_validation_seal,
+    validation_artifact_seal,
+)
 from core.forge.packaging_stage import PackagingRefusedError, PackagingStage
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
@@ -110,13 +115,182 @@ def test_package_manifest_includes_ids_and_validation_summary(forge_packaging_co
     assert packaged.verification_metadata["behavioral_contract_seal"] == (
         manifest["behavioral_contract_seal"]
     )
+    assert manifest["validated_artifact_seal"] == artifact_validation_seal(
+        forge_packaging_context["artifact"]
+    )
+    assert packaged.verification_metadata["validated_artifact_seal"] == (
+        manifest["validated_artifact_seal"]
+    )
+    assert manifest["validation_artifact_seal"] == validation_artifact_seal(
+        forge_packaging_context["passing_validation"]
+    )
+    assert packaged.verification_metadata["validation_artifact_seal"] == (
+        manifest["validation_artifact_seal"]
+    )
     assert manifest["validation_summary"]["passed"] is True
     assert "evidence_refs" in manifest
     assert "manifest_paths" in manifest
 
     package_root = Path(packaged.package_root)
-    assert (package_root / manifest["evidence_refs"]["validation_evidence"]).exists()
-    assert (package_root / manifest["evidence_refs"]["artifact_manifest_dump"]).exists()
+    validation_path = package_root / manifest["evidence_refs"]["validation_evidence"]
+    artifact_manifest_path = (
+        package_root / manifest["evidence_refs"]["artifact_manifest_dump"]
+    )
+    assert validation_path.exists()
+    assert artifact_manifest_path.exists()
+
+    receipt = manifest["validation_receipt"]
+    assert receipt["schema_version"] == 1
+    assert receipt["digest_mode"] == "canonical_json_utf8_v1"
+    assert receipt["sha256"] == hashlib.sha256(
+        validation_path.read_bytes()
+    ).hexdigest()
+    assert receipt["artifact_manifest_sha256"] == hashlib.sha256(
+        artifact_manifest_path.read_bytes()
+    ).hexdigest()
+    assert receipt["package_id"] == manifest["package_id"]
+    assert receipt["validated_artifact_sha256"] == manifest[
+        "validated_artifact_seal"
+    ]["sha256"]
+    assert receipt["validation_artifact_sha256"] == manifest[
+        "validation_artifact_seal"
+    ]["sha256"]
+    assert packaged.verification_metadata["validation_receipt"] == receipt
+
+    validation_document = json.loads(validation_path.read_text(encoding="utf-8"))
+    context = validation_document["receipt_context"]
+    assert context["package_id"] == manifest["package_id"]
+    assert context["code_artifact_digest"] == manifest["code_artifact_digest"]
+    assert context["validated_artifact_seal"] == manifest[
+        "validated_artifact_seal"
+    ]
+    assert context["validation_artifact_seal"] == manifest[
+        "validation_artifact_seal"
+    ]
+    assert validation_document["validation_artifact"]["passed"] is True
+
+
+@pytest.mark.parametrize("mutation", ["missing", "mismatched"])
+def test_packaging_refuses_invalid_behavioral_contract_seal(
+    forge_packaging_context,
+    mutation,
+):
+    validation = copy.deepcopy(forge_packaging_context["passing_validation"])
+    if mutation == "missing":
+        validation.evidence.pop("behavioral_contract_seal")
+    else:
+        validation.evidence["behavioral_contract_seal"]["sha256"] = "0" * 64
+    output_root = forge_packaging_context["root"] / f"packages_bad_contract_{mutation}"
+    stage = PackagingStage(output_root=str(output_root))
+
+    with pytest.raises(PackagingRefusedError, match="behavioral contract seal"):
+        stage.package(
+            forge_packaging_context["build_spec"],
+            forge_packaging_context["plan"],
+            forge_packaging_context["artifact"],
+            validation,
+        )
+
+    assert not output_root.exists()
+
+
+def test_packaging_refuses_missing_validated_artifact_seal(forge_packaging_context):
+    validation = copy.deepcopy(forge_packaging_context["passing_validation"])
+    validation.evidence.pop("validated_artifact_seal")
+    output_root = forge_packaging_context["root"] / "packages_missing_artifact_seal"
+    stage = PackagingStage(output_root=str(output_root))
+
+    with pytest.raises(PackagingRefusedError, match="validated artifact seal"):
+        stage.package(
+            forge_packaging_context["build_spec"],
+            forge_packaging_context["plan"],
+            forge_packaging_context["artifact"],
+            validation,
+        )
+
+    assert not output_root.exists()
+
+
+@pytest.mark.parametrize("mutation", ["missing", "mismatched"])
+def test_packaging_refuses_invalid_validation_artifact_seal(
+    forge_packaging_context,
+    mutation,
+):
+    validation = copy.deepcopy(forge_packaging_context["passing_validation"])
+    if mutation == "missing":
+        validation.integrity_seal = {}
+    else:
+        validation.integrity_seal["sha256"] = "0" * 64
+    output_root = forge_packaging_context["root"] / f"packages_bad_validation_{mutation}"
+    stage = PackagingStage(output_root=str(output_root))
+
+    with pytest.raises(PackagingRefusedError, match="validation artifact seal"):
+        stage.package(
+            forge_packaging_context["build_spec"],
+            forge_packaging_context["plan"],
+            forge_packaging_context["artifact"],
+            validation,
+        )
+
+    assert not output_root.exists()
+
+
+def test_packaging_refuses_build_not_bound_to_plan(forge_packaging_context):
+    build_spec = copy.deepcopy(forge_packaging_context["build_spec"])
+    build_spec.build_id = "build-not-validated-by-plan"
+    output_root = forge_packaging_context["root"] / "packages_mismatched_build"
+    stage = PackagingStage(output_root=str(output_root))
+
+    with pytest.raises(PackagingRefusedError, match="build and plan identities"):
+        stage.package(
+            build_spec,
+            forge_packaging_context["plan"],
+            forge_packaging_context["artifact"],
+            forge_packaging_context["passing_validation"],
+        )
+
+    assert not output_root.exists()
+
+
+def test_packaging_refuses_artifact_changed_after_validation(forge_packaging_context):
+    changed_artifact = copy.deepcopy(forge_packaging_context["artifact"])
+    changed_artifact.files[0].content += "\n# changed after validation\n"
+    output_root = forge_packaging_context["root"] / "packages_changed_artifact"
+    stage = PackagingStage(output_root=str(output_root))
+
+    with pytest.raises(PackagingRefusedError, match="validated artifact seal"):
+        stage.package(
+            forge_packaging_context["build_spec"],
+            forge_packaging_context["plan"],
+            changed_artifact,
+            forge_packaging_context["passing_validation"],
+        )
+
+    assert not output_root.exists()
+
+
+def test_packaging_refuses_validation_evidence_changed_after_validation(
+    forge_packaging_context,
+):
+    changed_validation = copy.deepcopy(
+        forge_packaging_context["passing_validation"]
+    )
+    changed_validation.evidence["receipt_probe"] = "changed"
+    output_root = forge_packaging_context["root"] / "packages_changed_validation"
+    stage = PackagingStage(output_root=str(output_root))
+
+    assert changed_validation.integrity_seal != validation_artifact_seal(
+        changed_validation
+    )
+    with pytest.raises(PackagingRefusedError, match="validation artifact seal"):
+        stage.package(
+            forge_packaging_context["build_spec"],
+            forge_packaging_context["plan"],
+            forge_packaging_context["artifact"],
+            changed_validation,
+        )
+
+    assert not output_root.exists()
 
 
 def test_packaging_creates_new_revision_directory_without_overwriting(forge_packaging_context):

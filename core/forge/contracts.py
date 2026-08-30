@@ -346,6 +346,7 @@ class ValidationArtifact:
     layer3_result: Optional[ValidationLayerResult] = None
     failure_category: Optional[FailureCategory] = None
     next_route: Optional[ForgeRoute] = None
+    integrity_seal: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

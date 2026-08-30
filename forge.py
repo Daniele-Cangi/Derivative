@@ -29,6 +29,7 @@ from core.forge.execution import (
     DOCKER_BACKEND,
     create_process_executor,
 )
+from core.forge.evidence_integrity import validation_artifact_seal
 from core.forge.telemetry import track_model_usage
 
 if TYPE_CHECKING:
@@ -291,6 +292,7 @@ def run_forge(
 
             if code_artifact is None:
                 raise RuntimeError("Coder attempt did not produce a CodeArtifact.")
+            validation.integrity_seal = validation_artifact_seal(validation)
             latest_code_artifact = code_artifact
             latest_validation = validation
             retry_route = (
