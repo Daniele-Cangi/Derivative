@@ -27,14 +27,14 @@ This ledger separates immutable blind evidence from regression work. It is inten
 
 ## Repository Gates
 
-At the current exact-output repair-guidance checkpoint (`9d2f3a3`):
+At the current frozen V9 checkpoint (`4d8ee7d`):
 
 - Linux/Python 3.11 Forge CI: **548 passed**;
 - complete local Windows suite: **546 passed, 2 skipped**;
 - full Docker-backed 30-case internal benchmark: all configured thresholds passed;
 - CodeQL: passing.
 
-These are repository regression gates, not independent blind proof. The corresponding receipts are [Forge CI run 33296901466](https://github.com/Daniele-Cangi/Derivative/actions/runs/33296901466) and [CodeQL run 33296901352](https://github.com/Daniele-Cangi/Derivative/actions/runs/33296901352).
+These are repository regression gates, not independent blind proof. The corresponding receipts are [Forge CI run 33298732605](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298732605) and [CodeQL run 33298732338](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298732338).
 
 At the V7 oracle-preflight checkpoint (historical):
 
@@ -234,6 +234,55 @@ Sources:
 - [Manifest](../benchmarks/blind_v8/external_001/manifest.json)
 - [Targeted regression workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33297062090)
 
+## Blind V9
+
+Blind V9 was created by the isolated one-shot producer on commit `a7ec4ad`, using separate stateless generation and review requests and no Forge source, generated artifact, or earlier blind case in its prompts. It produced six `verified`, three `validation_failed`, and three `infeasible_proven` cases, all on the already supported Python CLI surface. The producer made 55 model requests, used 93,000 tokens, and recorded configured cost of `$0.324510` before atomically publishing the frozen bundle.
+
+Frozen bundle integrity:
+
+- manifest SHA-256: `02303B01513189A3668A24C8E95AE22D9414E1E30ED683A23A28581B7005258F`;
+- dataset SHA-256: `F29C91BE7680ED4EE3857370E5B523033C66D82F2E93568AFD26CBE7E072E50C`;
+- protected 68-file Forge baseline SHA-256: `D721261CC7795541B0BB1B43B2AD4AEC0390782D85DE0D195C688488870EF88B`;
+- frozen commit: `4d8ee7d2c391db60089412e955764984c0850794`.
+
+### Immutable baseline
+
+The [first and only baseline workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298884420) ran the locked Linux/Python 3.11 environment and Docker sandbox against the frozen commit. It completed in 21m17s and recorded `execution_kind=sealed_baseline` with `baseline_verified=true`. Workflow success means the measurement and evidence upload completed; thresholds were deliberately non-blocking so a negative result could not suppress its receipt.
+
+Raw results:
+
+- externally passed cases: 4/12;
+- terminal-status matches: 7/12 (`0.583`);
+- externally accepted expected-verified artifacts: 1/6;
+- external Verified@1: 0/6 (`0.000`);
+- external success after repair: 1/6 (`0.167`);
+- oracle pass rate: 1/4 (`0.250`), with zero invalid oracles;
+- external false-verified rate: 4/5 (`0.800`): three oracle-rejected expected-verified artifacts and one expected-infeasible case observed as `verified`;
+- infeasibility detection: 0/3 (`0.000`);
+- expected `validation_failed` cases: 3/3 correctly remained `validation_failed`;
+- V9-003 and V9-005 ended as pre-model exceptions with `TypeError: Object of type bytes is not JSON serializable` and zero model requests;
+- model requests: `92`;
+- model tokens: `1,461,956` (`1,277,818` input and `184,138` output);
+- model-cost coverage: 10/12 (`0.833`); the ten covered cases total `$4.028740`, while total cost and cost per accepted artifact correctly remain `null` because two case costs are unavailable;
+- repairs: `18`, or `18.0` per externally accepted artifact;
+- median latency: `110.23s`;
+- P95 latency: `174.26s`;
+- total case runtime: `1,210.80s`.
+
+Five artifacts passed all three internal validation layers and were packaged, but only one passed its independent oracle. After download, every package's exact file set and code digest matched its manifest; every validation receipt and canonical artifact-manifest dump rehashed to the declared SHA-256; and behavioral-contract, validated-artifact, and validation-artifact seals were mutually consistent. The failure is therefore evidence-fidelity and classification behavior, not a corrupt receipt or invalid oracle.
+
+The complete GitHub artifact is `forge-blind-v9-first-run`, artifact id `9728521686`, SHA-256 `99A7FE5684F2AD51B1391DADA973A7BDF70D5F28B0467184470132D6DF1DC6FE`. The immutable baseline report SHA-256 is `D9089F58A449658CDAFC0816F25398DBA22B0159C237E9730C1676A9AF4011EC`.
+
+V9 became a known regression corpus when this baseline ran. Any later V9 execution must be labeled `post_fix_replay` and cannot be reported as new blind evidence.
+
+Sources:
+
+- [Manifest](../benchmarks/blind_v9/external_001/manifest.json)
+- [Immutable baseline](../benchmarks/blind_v9/external_001/baseline_result.json)
+- [Execution context](../benchmarks/blind_v9/external_001/baseline_execution_context.json)
+- [Dependency snapshot](../benchmarks/blind_v9/external_001/baseline_dependency_snapshot.txt)
+- [First and only baseline workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298884420)
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
@@ -316,6 +365,6 @@ This command makes no model calls, validates bundle hashes and case IDs, writes 
 
 ## Next Evaluation Rule
 
-V5, V6, V7, and V8 are known regression corpora. They must not be optimized into new blind claims. V8-005 may be used only as a known regression case and never as new blind evidence. The next generality measurement must use a new schema-v3 bundle frozen before Forge sees its requirements or oracles.
+V5, V6, V7, V8, and V9 are known regression corpora. They must not be optimized into new blind claims. V8-005 may be used only as a known regression case and never as new blind evidence. The next generality measurement must use a new schema-v3 bundle frozen before Forge sees its requirements or oracles.
 
 The target metrics are reported together: External Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, median/P95 latency, tokens, configured cost per externally accepted artifact, and repairs per successful build.

@@ -168,6 +168,8 @@ Blind V8 has already been executed and is therefore a known regression corpus. I
 
 The targeted V8-005 replay on `9d2f3a3` reached internal `verified` after one repair and its frozen external oracle passed 12/12. The receipt remains explicitly labeled `post_fix_replay` with `baseline_verified=false`; this is attributable regression evidence, not a new blind result. See [run 33297062090](https://github.com/Daniele-Cangi/Derivative/actions/runs/33297062090).
 
+Blind V9 was independently produced and frozen on `4d8ee7d` before its [first and only baseline](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298884420). The sealed run passed 4/12 cases: status accuracy was 7/12, external Verified@1 was 0/6, external acceptance was 1/6 after repair, false verification was 4/5, and infeasibility detection was 0/3. All three expected `validation_failed` cases remained fail-closed. V9 is now a known regression corpus; these raw results are preserved rather than retrospectively repaired.
+
 Full metrics, hashes, denominators, replay labels, and commands are in [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md).
 
 ## Installation Profiles
