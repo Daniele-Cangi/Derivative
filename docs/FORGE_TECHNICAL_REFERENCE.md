@@ -50,7 +50,7 @@ A passing artifact has `failure_category=None`. Evidence remains populated for b
 
 ### PackagedArtifact
 
-`PackagingStage` accepts only a passing `ValidationArtifact`. Its manifest records build, plan, artifact, and validation IDs; evidence paths; code digests; the validated behavioral-contract seal; and `terminal_status="verified"`.
+`PackagingStage` accepts only a passing, integrity-sealed `ValidationArtifact`. Its manifest records build, plan, artifact, and package IDs; evidence paths; code and manifest digests; behavioral-contract, validated-artifact, and validation-artifact seals; the canonical validation receipt digest; and `terminal_status="verified"`.
 
 ## Requirement Preservation
 
@@ -160,6 +160,8 @@ A build is verified only when all three layers pass.
 - assertion-level semantic evidence.
 
 The validator recomputes the canonical UTF-8/SHA-256 behavioral-contract seal from the plan. Candidate manifests and every material repair lineage record must declare the same seal; absence or mismatch fails closed.
+
+The validator also seals the complete `CodeArtifact` it observed and its full `ValidationArtifact`. Trusted orchestration re-finalizes the validation seal after adding repair-effectiveness evidence. Before creating a package directory, `PackagingStage` recomputes every seal and refuses mismatched build, plan, artifact, contract, or validation identities. `validation_evidence.json` is written in the exact canonical encoding covered by the package manifest's SHA-256 receipt; that receipt also binds the artifact-manifest digest and package run ID.
 
 ### Layer 3: Adversarial
 
