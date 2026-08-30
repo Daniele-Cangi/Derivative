@@ -505,6 +505,65 @@ def test_requirement_assertion_failure_compiles_exact_test_repair(repair_case):
     ]
 
 
+def test_binary_assertion_evidence_compiles_a_stable_repair(repair_case):
+    artifact = copy.deepcopy(repair_case["artifact"])
+    test_path = artifact.test_paths[0]
+    assertion = {
+        "path": test_path,
+        "function": "test_binary_contract",
+        "line": 12,
+        "kind": "assert",
+        "expression": "captured == expected",
+        "evidence_terms": ["binary"],
+        "expected": b"\xff\xfe",
+    }
+    assertion_evidence = {
+        "mapped_test_paths": [test_path],
+        "existing_test_paths": [test_path],
+        "required_terms": ["binary"],
+        "covered_terms": [],
+        "missing_terms": ["binary"],
+        "causal_functions": [],
+        "assertions": [assertion],
+        "passed": False,
+        "failure_reason": "missing_requirement_assertion_evidence",
+    }
+    validation = ValidationArtifact(
+        passed=False,
+        failures=["Requirement R001 lacks binary assertion evidence."],
+        failure_signatures=["missing_requirement_assertion_evidence"],
+        evidence={
+            "layer2": {
+                "requirement_semantic_checks": {
+                    "requirement_assertion_mismatches": [
+                        {
+                            "requirement_id": "R001",
+                            "test_paths": [test_path],
+                            "assertion_evidence": assertion_evidence,
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    first = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+    second = RepairPolicy().compile(
+        validation,
+        repair_case["plan"],
+        artifact,
+        attempt=2,
+    )
+
+    assert first.repair_id == second.repair_id
+    assert first.evidence_targets["R001"]["assertions"][0]["expected"] == b"\xff\xfe"
+
+
 def test_real_validator_assertion_evidence_routes_to_exact_repair(repair_case):
     artifact = copy.deepcopy(repair_case["artifact"])
     plan = repair_case["plan"]

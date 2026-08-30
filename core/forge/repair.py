@@ -9,6 +9,7 @@ from core.forge.contracts import (
     RepairDirective,
     ValidationArtifact,
 )
+from core.forge.evidence_integrity import to_jsonable
 from core.forge.repair_evidence import compile_requirement_assertion_targets
 
 
@@ -99,7 +100,7 @@ class RepairPolicy:
                 *target_paths,
                 *requirement_ids,
                 *target_symbols,
-                json.dumps(evidence_targets, sort_keys=True),
+                json.dumps(to_jsonable(evidence_targets), sort_keys=True),
             ]
         )
         repair_id = f"repair-{hashlib.sha256(digest_source.encode('utf-8')).hexdigest()[:12]}"

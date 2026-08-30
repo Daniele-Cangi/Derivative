@@ -6,6 +6,7 @@ from audit.trail import AuditTrail
 from core.artifacts import DesignArtifact
 from core.designs import EmergentDesign
 from core.execution_loop import ExecutionLoop, ExecutionResult
+from core.forge.evidence_integrity import to_jsonable
 from core.json_utils import clamp_float, ensure_string_list, extract_json_object
 from core.model_provider import (
     MissingTextOutputError,
@@ -217,7 +218,7 @@ do not leave stale tests for a superseded input format."""
                         model=self.model,
                         max_output_tokens=budget,
                         instructions=system_prompt,
-                        input_text=json.dumps(request_payload, sort_keys=True),
+                        input_text=json.dumps(to_jsonable(request_payload), sort_keys=True),
                         output_schema=output_schema,
                         output_schema_name="forge_code_revision",
                     )

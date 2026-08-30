@@ -72,6 +72,36 @@ def test_packaging_succeeds_only_for_passed_validation(forge_packaging_context):
     assert packaged.verification_metadata.get("terminal_status") == "verified"
 
 
+def test_packaging_preserves_binary_validation_evidence(forge_packaging_context):
+    validation = copy.deepcopy(forge_packaging_context["passing_validation"])
+    validation.evidence["binary_probe"] = b"\x00\xff"
+    validation.integrity_seal = validation_artifact_seal(validation)
+    stage = PackagingStage(
+        output_root=str(forge_packaging_context["root"] / "packages_binary_evidence")
+    )
+
+    packaged = stage.package(
+        forge_packaging_context["build_spec"],
+        forge_packaging_context["plan"],
+        forge_packaging_context["artifact"],
+        validation,
+    )
+
+    manifest = json.loads(Path(packaged.manifest_path).read_text(encoding="utf-8"))
+    validation_path = (
+        Path(packaged.package_root)
+        / manifest["evidence_refs"]["validation_evidence"]
+    )
+    document = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert document["validation_artifact"]["evidence"]["binary_probe"] == {
+        "__forge_scalar__": "bytes",
+        "hex": "00ff",
+    }
+    assert manifest["validation_receipt"]["sha256"] == hashlib.sha256(
+        validation_path.read_bytes()
+    ).hexdigest()
+
+
 def test_packaging_refuses_failed_validation(forge_packaging_context):
     stage = PackagingStage(output_root=str(forge_packaging_context["root"] / "packages_refuse"))
 

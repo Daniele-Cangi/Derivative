@@ -1,7 +1,7 @@
-import json
 from typing import Any, Dict, Iterable, List
 
 from core.forge.contracts import ValidationArtifact
+from core.forge.evidence_integrity import canonical_json_bytes
 
 
 def compile_requirement_assertion_targets(
@@ -130,7 +130,7 @@ def _dedupe_mappings(values: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     result: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for value in values:
-        marker = json.dumps(value, sort_keys=True)
+        marker = canonical_json_bytes(value).decode("utf-8")
         if marker not in seen:
             seen.add(marker)
             result.append(value)

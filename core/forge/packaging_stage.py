@@ -1,7 +1,5 @@
 import hashlib
 import json
-from dataclasses import asdict, is_dataclass
-from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -16,6 +14,7 @@ from core.forge.evidence_integrity import (
     CANONICAL_JSON_DIGEST_MODE,
     artifact_validation_seal,
     canonical_json_bytes,
+    to_jsonable,
     validation_artifact_seal,
 )
 from core.forge.repair_support import behavioral_contract_seal
@@ -258,12 +257,4 @@ class PackagingStage:
         return hasher.hexdigest()
 
     def _to_jsonable(self, value: Any) -> Any:
-        if is_dataclass(value):
-            return self._to_jsonable(asdict(value))
-        if isinstance(value, Enum):
-            return value.value
-        if isinstance(value, dict):
-            return {str(key): self._to_jsonable(val) for key, val in value.items()}
-        if isinstance(value, list):
-            return [self._to_jsonable(item) for item in value]
-        return value
+        return to_jsonable(value)

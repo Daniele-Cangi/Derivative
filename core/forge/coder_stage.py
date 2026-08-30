@@ -18,6 +18,7 @@ from core.forge.contracts import (
 )
 from core.forge.domains.base import BaseDomainAdapter, DomainAdapterError
 from core.forge.domains.registry import DomainAdapterRegistry
+from core.forge.evidence_integrity import to_jsonable
 from core.forge.repair_backend import ArtifactRepairBackend
 from core.forge.repair_support import behavioral_contract_seal
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
@@ -73,7 +74,7 @@ class CoderStage:
         )
         generated[manifest_path] = GeneratedFile(
             path=manifest_path,
-            content=json.dumps(artifact_manifest, indent=2, sort_keys=True),
+            content=json.dumps(to_jsonable(artifact_manifest), indent=2, sort_keys=True),
             kind="manifest",
             generated_from_plan_sections=[
                 f"plan:{plan.plan_id}",
@@ -283,7 +284,7 @@ class CoderStage:
         )
         if manifest_file is not None:
             manifest_file.content = json.dumps(
-                repaired_artifact.artifact_manifest,
+                to_jsonable(repaired_artifact.artifact_manifest),
                 indent=2,
                 sort_keys=True,
             )
@@ -438,7 +439,11 @@ class CoderStage:
             "artifact_manifest": artifact.artifact_manifest,
             "traceability": artifact.traceability,
         }
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        encoded = json.dumps(
+            to_jsonable(payload),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     @staticmethod

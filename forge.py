@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -29,7 +27,7 @@ from core.forge.execution import (
     DOCKER_BACKEND,
     create_process_executor,
 )
-from core.forge.evidence_integrity import validation_artifact_seal
+from core.forge.evidence_integrity import to_jsonable, validation_artifact_seal
 from core.forge.telemetry import track_model_usage
 
 if TYPE_CHECKING:
@@ -553,15 +551,7 @@ def _write_json(path: Path, payload: Any) -> None:
 
 
 def _to_jsonable(payload: Any) -> Any:
-    if is_dataclass(payload):
-        return _to_jsonable(asdict(payload))
-    if isinstance(payload, Enum):
-        return payload.value
-    if isinstance(payload, dict):
-        return {str(key): _to_jsonable(value) for key, value in payload.items()}
-    if isinstance(payload, list):
-        return [_to_jsonable(value) for value in payload]
-    return payload
+    return to_jsonable(payload)
 
 
 def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:

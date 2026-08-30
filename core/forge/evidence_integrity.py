@@ -13,10 +13,10 @@ VALIDATION_ARTIFACT_SCHEMA_VERSION = 1
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Serialize a JSON-compatible value with the Forge canonical encoding."""
+    """Serialize Forge evidence with the canonical JSON encoding."""
 
     return json.dumps(
-        value,
+        to_jsonable(value),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -31,10 +31,20 @@ def to_jsonable(value: Any) -> Any:
     if is_dataclass(value):
         return to_jsonable(asdict(value))
     if isinstance(value, Enum):
-        return value.value
+        return to_jsonable(value.value)
+    if isinstance(value, bytes):
+        return {
+            "__forge_scalar__": "bytes",
+            "hex": value.hex(),
+        }
+    if isinstance(value, bytearray):
+        return {
+            "__forge_scalar__": "bytearray",
+            "hex": value.hex(),
+        }
     if isinstance(value, dict):
         return {str(key): to_jsonable(item) for key, item in value.items()}
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [to_jsonable(item) for item in value]
     return value
 
