@@ -1,0 +1,129 @@
+name: Forge Blind V9 targeted replay
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  post-fix-replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Require main branch dispatch
+        shell: bash
+        run: test "$GITHUB_REF" = "refs/heads/main"
+
+      - name: Checkout current Forge revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install locked Blind V9 dependencies
+        run: python -m pip install --require-hashes -r requirements/blind-v9-linux-py311.lock
+
+      - name: Record locked dependency snapshot
+        run: |
+          mkdir -p generated_artifacts/forge_v9_targeted_replay
+          python -m pip freeze --all > generated_artifacts/forge_v9_targeted_replay/dependency_snapshot.txt
+
+      - name: Verify frozen inputs and record execution context
+        env:
+          OPENAI_MODEL: gpt-4.1-2025-04-14
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from core.forge.blind_benchmark import load_blind_bundle
+
+          manifest = "benchmarks/blind_v9/external_001/manifest.json"
+          bundle = load_blind_bundle(manifest, verify_baseline=False)
+          baseline = json.loads(
+              Path("benchmarks/blind_v9/external_001/baseline_result.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          assert bundle.bundle_id == "forge-blind-v9-external-001"
+          assert bundle.schema_version == 3
+          assert len(bundle.cases) == 12
+          assert len(bundle.oracle_sha256) == 6
+          assert not bundle.baseline_verified
+          assert bundle.manifest_sha256 == "02303b01513189a3668a24c8e95ae22d9414e1e30ed683a23a28581b7005258f"
+          assert baseline["execution_kind"] == "sealed_baseline"
+          assert baseline["baseline_sha256"] == bundle.baseline_sha256
+          assert baseline["baseline_file_count"] == bundle.baseline_file_count
+          assert baseline["manifest_sha256"] == bundle.manifest_sha256
+          assert baseline["dataset_sha256"] == bundle.dataset_sha256
+          context = {
+              "case_ids": ["V9-001", "V9-002", "V9-003", "V9-005", "V9-006"],
+              "execution_backend": "docker",
+              "execution_kind": "post_fix_replay",
+              "git_sha": os.environ["GITHUB_SHA"],
+              "manifest_sha256": bundle.manifest_sha256,
+              "model": os.environ["OPENAI_MODEL"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+          }
+          Path(
+              "generated_artifacts/forge_v9_targeted_replay/execution_context.json"
+          ).write_text(
+              json.dumps(context, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Verify targeted regressions
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_forge_cli_contract.py \
+            tests/test_forge_evidence_integrity.py
+          python -m pytest -q -p no:cacheprovider \
+            tests/test_forge_packaging_stage.py::test_packaging_preserves_binary_validation_evidence \
+            tests/test_forge_repair.py::test_binary_assertion_evidence_compiles_a_stable_repair \
+            tests/test_forge_blind_producer.py::test_oracle_preflight_rejects_extra_newline_in_exact_output_expectation \
+            tests/test_forge_blind_producer.py::test_oracle_preflight_accepts_exact_newline_preservation_formula
+
+      - name: Build Forge sandbox image
+        run: docker build --file Dockerfile.forge-sandbox --tag derivative-forge-sandbox:py311 .
+
+      - name: Execute targeted V9 post-fix replay
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1-2025-04-14
+          OPENAI_INPUT_COST_PER_1M_TOKENS: "2.00"
+          OPENAI_OUTPUT_COST_PER_1M_TOKENS: "8.00"
+        run: >
+          python forge_blind_benchmark.py
+          --manifest benchmarks/blind_v9/external_001/manifest.json
+          --mode hybrid
+          --execution-backend docker
+          --sandbox-image derivative-forge-sandbox:py311
+          --post-fix-replay
+          --case-id V9-001
+          --case-id V9-002
+          --case-id V9-003
+          --case-id V9-005
+          --case-id V9-006
+          --max-planner-attempts 1
+          --max-coder-attempts 3
+          --output-root generated_artifacts/forge_v9_targeted_replay/runs
+          --packaging-root generated_artifacts/forge_v9_targeted_replay/packages
+          --benchmark-output-root generated_artifacts/forge_v9_targeted_replay/reports
+          --no-enforce-thresholds
+
+      - name: Upload complete replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: forge-v9-targeted-post-fix-${{ github.run_id }}
+          path: generated_artifacts/forge_v9_targeted_replay/
+          if-no-files-found: error
+          retention-days: 90
