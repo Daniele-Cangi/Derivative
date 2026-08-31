@@ -1,3 +1,4 @@
+import ast
 import re
 from typing import Any
 
@@ -551,6 +552,8 @@ def correction_requirements(
             requirements.append(
                 f"{path}: observe exact output bytes for requirement {requirement_id} with "
                 "Path.read_bytes(), binary mode, or Path.open(encoding='utf-8', newline=''); "
+                "an in-memory text capture may instead use getvalue().encode('utf-8') immediately, "
+                "without strip, split, replace, or another normalization; "
                 "Path.read_text() performs universal-newline translation and cannot prove preservation "
                 "of CRLF, LF, or CR sequences."
             )
@@ -772,7 +775,101 @@ def has_byte_exact_test_observation(content: str) -> bool:
         return True
     if re.search(r"(?:\.|\b)open\([^\n)]*['\"]rb['\"]", content):
         return True
-    return bool(
+    if bool(
         re.search(r"(?:\.|\b)open\([^\n)]*newline\s*=\s*['\"]['\"]", content)
         and re.search(r"\.read\(", content)
+    ):
+        return True
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+    captures = [node for node in ast.walk(tree) if _is_lossless_utf8_capture(node)]
+    if not captures:
+        return False
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    return any(_capture_is_observed(capture, parents) for capture in captures)
+
+
+def _is_lossless_utf8_capture(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return False
+    if node.func.attr != "encode":
+        return False
+    capture = node.func.value
+    if (
+        not isinstance(capture, ast.Call)
+        or not isinstance(capture.func, ast.Attribute)
+        or capture.func.attr != "getvalue"
+        or capture.args
+        or capture.keywords
+    ):
+        return False
+
+    encoding: ast.expr | None = node.args[0] if node.args else None
+    errors: ast.expr | None = node.args[1] if len(node.args) > 1 else None
+    if len(node.args) > 2:
+        return False
+    for keyword in node.keywords:
+        if keyword.arg == "encoding":
+            if encoding is not None:
+                return False
+            encoding = keyword.value
+        elif keyword.arg == "errors":
+            if errors is not None:
+                return False
+            errors = keyword.value
+        else:
+            return False
+    if not (
+        isinstance(encoding, ast.Constant)
+        and isinstance(encoding.value, str)
+        and encoding.value.lower().replace("_", "-") in {"utf-8", "utf8"}
+    ):
+        return False
+    return errors is None or (
+        isinstance(errors, ast.Constant) and errors.value == "strict"
     )
+
+
+def _capture_is_observed(
+    capture: ast.Call,
+    parents: dict[ast.AST, ast.AST],
+) -> bool:
+    current: ast.AST = capture
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, (ast.Assert, ast.Return)):
+            return True
+        if not isinstance(current, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+            continue
+        targets = current.targets if isinstance(current, ast.Assign) else [current.target]
+        assigned_names = {
+            node.id
+            for target in targets
+            for node in ast.walk(target)
+            if isinstance(node, ast.Name)
+        }
+        scope = parents.get(current)
+        while scope is not None and not isinstance(
+            scope,
+            (ast.FunctionDef, ast.AsyncFunctionDef),
+        ):
+            scope = parents.get(scope)
+        if scope is None:
+            return False
+        return any(
+            isinstance(observation, (ast.Assert, ast.Return))
+            and any(
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id in assigned_names
+                for node in ast.walk(observation)
+            )
+            for observation in ast.walk(scope)
+        )
+    return False

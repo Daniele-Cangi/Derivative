@@ -722,8 +722,9 @@ class SubstrateCandidateCompiler:
             path_label = ", ".join(failed_paths) or "failing newline-preservation tests"
             requirements.append(
                 f"{path_label}: replace Path.read_text() output observation with Path.read_bytes(), "
-                "binary mode, or Path.open(encoding='utf-8', newline=''); read_text() normalizes CRLF, "
-                "LF, and CR and therefore cannot verify exact line-ending preservation."
+                "binary mode, Path.open(encoding='utf-8', newline=''), or an immediate unnormalized "
+                "getvalue().encode('utf-8') in-memory capture; read_text() normalizes CRLF, LF, and CR "
+                "and therefore cannot verify exact line-ending preservation."
             )
         if "unicode_escape" in execution_output and re.search(
             r"encode\(\s*['\"]utf-8['\"]\s*\)", execution_output

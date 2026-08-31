@@ -4,7 +4,10 @@ from types import SimpleNamespace
 import pytest
 
 from core.forge.candidate_compiler import SubstrateCandidateCompiler
-from core.forge.candidate_preflight import run_semantic_preflight
+from core.forge.candidate_preflight import (
+    has_byte_exact_test_observation,
+    run_semantic_preflight,
+)
 from core.forge.coder_stage import CoderStage
 from core.forge.contracts import FeasiblePlan
 from core.forge.planner_stage import PlannerStage
@@ -1933,3 +1936,50 @@ def test_preserves_line_endings(tmp_path):
         "Path.read_bytes()" in requirement
         for requirement in result["correction_requirements"]
     )
+    assert any(
+        "getvalue().encode('utf-8')" in requirement
+        for requirement in result["correction_requirements"]
+    )
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
+        "observed = stdout.getvalue().encode('utf-8')",
+        'observed = stdout.getvalue().encode(encoding="UTF_8", errors="strict")',
+    ],
+)
+def test_byte_exact_observation_accepts_lossless_utf8_capture(capture):
+    content = f'''import io
+
+
+def test_output_bytes():
+    stdout = io.StringIO()
+    {capture}
+    assert observed == b"line\\r\\n"
+'''
+
+    assert has_byte_exact_test_observation(content)
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
+        "observed = stdout.getvalue().strip().encode('utf-8')",
+        "observed = stdout.getvalue().replace('\\r\\n', '\\n').encode('utf-8')",
+        "observed = stdout.getvalue().encode('utf-8', errors='ignore')",
+        "observed = stdout.getvalue().encode()",
+        "ignored = stdout.getvalue().encode('utf-8')",
+    ],
+)
+def test_byte_exact_observation_rejects_lossy_or_implicit_capture(capture):
+    content = f'''import io
+
+
+def test_output_bytes():
+    stdout = io.StringIO()
+    {capture}
+    assert locals().get("observed") == b"line\\r\\n"
+'''
+
+    assert not has_byte_exact_test_observation(content)

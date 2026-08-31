@@ -160,7 +160,8 @@ Typer decorators on that exact function. If decorators is empty and main accepts
 never pass it to CliRunner. For deterministic transformations, compute expected output from the exact fixture with a
 test-local source-independent reference operation; do not manually transcribe transformed literals or call generated
 target code to obtain the expectation. When a requirement demands exact byte or CRLF/LF/CR preservation, tests must inspect output
-with read_bytes(), binary mode, or open(..., newline=''); Path.read_text() performs universal-newline translation and
+with read_bytes(), binary mode, open(..., newline=''), or an in-memory text capture immediately encoded with
+getvalue().encode('utf-8') and no intervening normalization; Path.read_text() performs universal-newline translation and
 cannot provide valid evidence for that requirement. Python string literals already contain decoded Unicode characters;
 never construct fixtures or expectations by chaining encode('utf-8').decode('unicode_escape'), because that corrupts
 non-ASCII text. When a plan interface declares an ordinary function such as
