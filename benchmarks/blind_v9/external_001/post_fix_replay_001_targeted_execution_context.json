@@ -1,0 +1,16 @@
+{
+  "case_ids": [
+    "V9-001",
+    "V9-002",
+    "V9-003",
+    "V9-005",
+    "V9-006"
+  ],
+  "execution_backend": "docker",
+  "execution_kind": "post_fix_replay",
+  "git_sha": "8744f004ed21e9fda83ca6f277fd839a5d6d0949",
+  "manifest_sha256": "02303b01513189a3668a24c8e95ae22d9414e1e30ed683a23a28581b7005258f",
+  "model": "gpt-4.1-2025-04-14",
+  "run_attempt": "1",
+  "run_id": "33442276463"
+}

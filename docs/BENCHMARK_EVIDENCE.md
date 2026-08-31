@@ -275,6 +275,14 @@ The complete GitHub artifact is `forge-blind-v9-first-run`, artifact id `9728521
 
 V9 became a known regression corpus when this baseline ran. Any later V9 execution must be labeled `post_fix_replay` and cannot be reported as new blind evidence.
 
+### Targeted post-fix replay
+
+The [targeted replay workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33442276463) ran V9-001, V9-002, V9-003, V9-005, and V9-006 on commit `8744f00`, using the baseline model `gpt-4.1-2025-04-14`, the byte-identical locked dependency snapshot, Python 3.11, and Docker isolation. The receipt records `execution_kind=post_fix_replay` and `baseline_verified=false`; this is regression evidence against a known corpus, not a new blind score.
+
+The run completed in 12m16s. V9-006 reached internal `verified` after two repairs and passed its frozen external oracle 4/4. V9-001 and V9-002, which the baseline had internally verified before their external oracles rejected them, instead remained fail-closed with explicit capability or semantic mismatches. V9-003 and V9-005 no longer raised `TypeError: Object of type bytes is not JSON serializable`; both completed with structured validation failures. Across the five selected cases, one artifact was externally accepted, four remained fail-closed, and no internally verified artifact failed an external oracle. The replay used 46 model requests and 719,803 tokens, with recorded cost of `$1.991756`.
+
+The complete artifact is `forge-v9-targeted-post-fix-33442276463`, artifact id `9777049372`, SHA-256 `ADEB45016CBA19FCD3FE4910E1AE0B2B33AEE606BB852074DB9F48FB37EF779E`. The uploaded report SHA-256 is `C05F6B7C205278CD221F625D8C8A8942C6C94F70963A09CE66D5D6EC883E382D`; the repository copy differs only by its normalized terminal newline and has SHA-256 `3EC7EA5A1823EFCD7B67700AA0714FC131DAECC3C1DE588F061A90A4CAA5541F`. The execution context is preserved byte-for-byte with SHA-256 `7CDABF7FDFC5A1EE25DCECC2A5E68CD66F19339AC102DD8EF2006F72ABB55058`. The dependency snapshot is byte-identical to the archived V9 baseline snapshot, SHA-256 `A8A4DEF3784A76DC57F7D29BA6502F7ECE4346F8B8C8E7D97FF0DB4EB5929FED`.
+
 Sources:
 
 - [Manifest](../benchmarks/blind_v9/external_001/manifest.json)
@@ -282,6 +290,9 @@ Sources:
 - [Execution context](../benchmarks/blind_v9/external_001/baseline_execution_context.json)
 - [Dependency snapshot](../benchmarks/blind_v9/external_001/baseline_dependency_snapshot.txt)
 - [First and only baseline workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298884420)
+- [Targeted post-fix replay](../benchmarks/blind_v9/external_001/post_fix_replay_001_targeted.json)
+- [Targeted replay execution context](../benchmarks/blind_v9/external_001/post_fix_replay_001_targeted_execution_context.json)
+- [Targeted post-fix replay workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33442276463)
 
 ## Historical V2/V3 Evidence
 
