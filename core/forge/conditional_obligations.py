@@ -20,9 +20,16 @@ class ConditionalNormalizationResult:
 class ConditionalObligationNormalizer:
     """Compile high-confidence conditional semantics without replacing parent atoms."""
 
+    _FINITE_PREDICATE = (
+        r"(?:is|are|was|were|has|have|contains?|consists?|matches?|fails?|exceeds?|"
+        r"rejects?|accepts?|includes?|starts?|ends?)"
+    )
     _CONSEQUENT_START = re.compile(
-        r"^(?:the\s+(?:tool|function|system|result|output)|it|its\s+value)\b.{0,80}"
-        r"\b(?:returns?|outputs?|writes?|exits?|is|becomes?|remains?)\b|"
+        r"^(?:(?:the\s+)?(?:cli|tool|function|system|program|application|process|"
+        r"result|output|record|line)|it|its\s+value)\b.{0,80}"
+        r"\b(?:returns?|outputs?|writes?|written|exits?|is|becomes?|remains?|raises?|"
+        r"reject(?:s|ed)?|skip(?:s|ped)?|omit(?:s|ted)?|ignore(?:s|d)?|"
+        r"preserv(?:es|ed))\b|"
         r"^(?:return|output|write|raise|exit|reject|skip)\b",
         re.IGNORECASE,
     )
@@ -117,13 +124,33 @@ class ConditionalObligationNormalizer:
     def _split_antecedent(self, antecedent: str) -> list[str]:
         raw_parts = re.split(r"\s*,?\s+or\s+(?:if\s+)?", antecedent, flags=re.IGNORECASE)
         triggers: list[str] = []
-        for raw in raw_parts:
+        shared_subject = ""
+        shared_predicate = ""
+        for index, raw in enumerate(raw_parts):
             cleaned = re.sub(r"^if\s+", "", raw.strip(" ,"), flags=re.IGNORECASE)
+            if index == 0:
+                shared_subject, shared_predicate = self._shared_subject_predicate(cleaned)
+            elif shared_subject:
+                if re.match(rf"^{self._FINITE_PREDICATE}\b", cleaned, re.IGNORECASE):
+                    cleaned = f"{shared_subject} {cleaned}"
+                elif not re.search(rf"\b{self._FINITE_PREDICATE}\b", cleaned, re.IGNORECASE):
+                    cleaned = f"{shared_subject} {shared_predicate} {cleaned}"
             partitions = self._taxonomy_partitions(cleaned)
             for partition in partitions:
                 if partition and partition.lower() not in {item.lower() for item in triggers}:
                     triggers.append(partition)
         return triggers
+
+    @classmethod
+    def _shared_subject_predicate(cls, trigger: str) -> tuple[str, str]:
+        match = re.match(
+            rf"^(?P<subject>.+?)\s+(?P<predicate>{cls._FINITE_PREDICATE})\s+.+$",
+            trigger,
+            re.IGNORECASE,
+        )
+        if match is None:
+            return "", ""
+        return match.group("subject").strip(), match.group("predicate").strip()
 
     @staticmethod
     def _taxonomy_partitions(trigger: str) -> list[str]:
@@ -160,6 +187,17 @@ class ConditionalObligationNormalizer:
         if re.search(r"\boutput\s+is\s+empty\b", consequent, re.IGNORECASE):
             observations.append(self._observation("stdout", "equals", "", "exact_text"))
 
+        if re.search(
+            r"\b(?:not|never)\s+(?:be\s+)?(?:written|emitted|output)\s+"
+            r"(?:to|on)\s+(?:the\s+)?output\b|"
+            r"\b(?:omitted|excluded)\s+from\s+(?:the\s+)?output\b",
+            consequent,
+            re.IGNORECASE,
+        ):
+            observations.append(
+                self._observation("stdout", "excludes", "triggering_input", "semantic")
+            )
+
         exit_match = re.search(
             r"\b(?:exits?\s+)?with\s+(?:exit\s+)?code\s+(-?\d+)\b|"
             r"\bexit\s+code\s+(?:is|equals?)\s+(-?\d+)\b",
@@ -193,7 +231,11 @@ class ConditionalObligationNormalizer:
             "channel": channel,
             "relation": relation,
             "value": value,
-            "polarity": "negative" if relation in {"not_contains", "not_equals"} else "positive",
+            "polarity": (
+                "negative"
+                if relation in {"excludes", "not_contains", "not_equals"}
+                else "positive"
+            ),
             "fidelity": fidelity,
         }
 

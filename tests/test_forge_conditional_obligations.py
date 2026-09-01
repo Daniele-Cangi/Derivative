@@ -7,11 +7,9 @@ from core.forge.conditional_evidence import (
 )
 from core.forge.candidate_preflight import run_semantic_preflight
 from core.forge.contracts import (
-    ArtifactTargetType,
     CodeArtifact,
     FeasiblePlan,
     ForgeRoute,
-    GeneratedFile,
     PlanFile,
     PlanInterface,
     RepairDirective,
@@ -102,6 +100,61 @@ def test_shared_consequent_conditions_compile_to_independent_branch_obligations(
     assert {item.observable_channel for item in obligations} == {"stdout", "exit_code"}
     assert all(item.source_fragment == parent.source_fragment for item in obligations)
     assert all(item.verification_method == "deterministic_probe" for item in obligations)
+
+
+def test_shared_subject_disjunctions_compile_passive_output_and_exit_obligations():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI. If a record is empty or consists only of separator characters, "
+        "it must be omitted and not written to output. If any payload contains non-ASCII or "
+        "non-printable bytes or is undecodable as UTF-8, the program must exit with code 2."
+    )
+
+    assert spec.conditional_normalization_issues == []
+
+    omission_parent = next(
+        atom for atom in spec.requirement_atoms if atom.text.startswith("If a record")
+    )
+    omission_obligations = [
+        item
+        for item in spec.conditional_obligations
+        if item.parent_requirement_id == omission_parent.requirement_id
+    ]
+    assert {item.trigger for item in omission_obligations} == {
+        "a record is empty",
+        "a record consists only of separator characters",
+    }
+    assert {item.observable_channel for item in omission_obligations} == {"stdout"}
+    assert {item.comparison_relation for item in omission_obligations} == {"excludes"}
+    assert {item.expected_value for item in omission_obligations} == {"triggering_input"}
+
+    invalid_parent = next(
+        atom for atom in spec.requirement_atoms if atom.text.startswith("If any payload")
+    )
+    invalid_obligations = [
+        item
+        for item in spec.conditional_obligations
+        if item.parent_requirement_id == invalid_parent.requirement_id
+    ]
+    assert {item.trigger for item in invalid_obligations} == {
+        "any payload contains non-ASCII",
+        "any payload contains non-printable bytes",
+        "any payload is undecodable as UTF-8",
+    }
+    assert {item.observable_channel for item in invalid_obligations} == {"exit_code"}
+    assert {item.expected_value for item in invalid_obligations} == {2}
+
+
+def test_disjunction_with_independent_subjects_does_not_inherit_the_first_subject():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI. If the source is empty or the policy rejects it, "
+        "the program must exit with code 3."
+    )
+
+    assert spec.conditional_normalization_issues == []
+    assert {item.trigger for item in spec.conditional_obligations} == {
+        "the source is empty",
+        "the policy rejects it",
+    }
 
 
 def test_explicit_negative_is_hard_and_never_compiled_as_ambiguity():
