@@ -459,7 +459,31 @@ def test_complete_failed_preflight_candidate_is_preserved_for_outer_repair(json_
 
     revalidated = ValidatorStage().validate(repaired.artifact, plan, plan.build_spec)
     assert revalidated.passed is False
-    assert "adapter_capability_mismatch" in revalidated.failure_signatures
+    assert "candidate_preflight_failure" in revalidated.failure_signatures
+    assert "adapter_capability_mismatch" not in revalidated.failure_signatures
+    checks = revalidated.layer2_result.evidence["adapter_capability_checks"]
+    assert checks["manifest_contract_valid"] is True
+    assert checks["compiler_contract_valid"] is False
+    assert checks["provided_capabilities"] == checks["required_capabilities"]
+    assert checks["missing_capabilities"] == []
+
+    directive = RepairPolicy().compile(
+        revalidated,
+        plan,
+        repaired.artifact,
+        attempt=3,
+    )
+    assert directive.repairable is True
+    assert directive.operations == ["recompile_candidate_transaction"]
+    assert set(directive.target_paths) == {
+        generated.path
+        for generated in repaired.artifact.files
+        if generated.path not in repaired.artifact.manifest_paths
+    }
+    assert directive.evidence_refs == [
+        "layer2.adapter_capability_checks.preflight_passed",
+        "artifact_manifest.metadata.candidate_compilation",
+    ]
 
 
 def test_candidate_compiler_rejects_syntax_regression_from_semantic_baseline(

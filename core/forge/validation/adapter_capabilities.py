@@ -158,32 +158,38 @@ class AdapterCapabilityContractChecker:
             declared_behavioral_contract_seal
             == expected_behavioral_contract_seal
         )
-        compiler_contract_valid = all(
+        manifest_contract_valid = all(
             (
                 adapter_matches,
                 capabilities_match,
                 paths_match,
-                preflight_passed,
                 not provenance_mismatches,
                 not digest_mismatches,
                 behavioral_contract_seal_matches,
             )
         )
+        compiler_contract_valid = manifest_contract_valid and preflight_passed
         failures: List[str] = []
         signatures: List[str] = []
-        if not compiler_contract_valid:
+        if not manifest_contract_valid:
             failures.append(
                 "Candidate compiler manifest/provenance contract is invalid: "
                 f"adapter_matches={adapter_matches}, capabilities_match={capabilities_match}, "
-                f"paths_match={paths_match}, preflight_passed={preflight_passed}, "
+                f"paths_match={paths_match}, "
                 f"provenance_mismatches={provenance_mismatches}, "
                 f"digest_mismatches={digest_mismatches}, "
                 f"behavioral_contract_seal_matches={behavioral_contract_seal_matches}."
             )
             self._append_unique(signatures, "adapter_capability_manifest_mismatch")
             self._append_unique(signatures, "adapter_capability_mismatch")
+        if not preflight_passed:
+            failures.append(
+                "Candidate compiler executable/semantic preflight did not pass; "
+                "the transaction remains ineligible for verification."
+            )
+            self._append_unique(signatures, "candidate_preflight_failure")
 
-        provided = set(required) if compiler_contract_valid else set()
+        provided = set(required) if manifest_contract_valid else set()
         missing = sorted(required - provided)
         evidence: Dict[str, object] = {
             "selected_adapter": "candidate",
@@ -204,6 +210,7 @@ class AdapterCapabilityContractChecker:
             "expected_behavioral_contract_seal": expected_behavioral_contract_seal,
             "declared_behavioral_contract_seal": declared_behavioral_contract_seal,
             "behavioral_contract_seal_matches": behavioral_contract_seal_matches,
+            "manifest_contract_valid": manifest_contract_valid,
             "compiler_contract_valid": compiler_contract_valid,
             "passed": not failures,
         }

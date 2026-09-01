@@ -1,4 +1,4 @@
-import importlib
+import importlib  # noqa: F401 - retained as a monkeypatch seam for dependency checks
 import sys
 import tempfile
 from pathlib import Path
@@ -239,6 +239,7 @@ class ValidatorStage:
             "missing_capability",
             "adapter_capability_mismatch",
             "adapter_capability_manifest_mismatch",
+            "candidate_preflight_failure",
             "non_semantic_test",
             "fake_acceptance_coverage",
             "uncompiled_hard_conditional",

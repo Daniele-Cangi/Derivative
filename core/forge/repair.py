@@ -36,6 +36,7 @@ class RepairPolicy:
         "capability_contract_violation": "restore_capability_contract",
         "missing_capability": "restore_capability_modules",
         "adapter_capability_mismatch": "compile_uncovered_capabilities",
+        "candidate_preflight_failure": "recompile_candidate_transaction",
     }
 
     def compile(
@@ -280,6 +281,9 @@ class RepairPolicy:
                 if generated.path.replace("\\", "/") not in manifest_paths
             )
             refs.append("layer2.adapter_capability_checks")
+
+        if "candidate_preflight_failure" in signatures:
+            refs.append("layer2.adapter_capability_checks.preflight_passed")
 
         return self._dedupe(paths), self._dedupe(refs)
 
