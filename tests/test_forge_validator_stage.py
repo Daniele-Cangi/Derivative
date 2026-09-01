@@ -1,16 +1,19 @@
 import copy
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 import core.forge.validator_stage as validator_stage_module
 from core.forge.coder_stage import CoderStage
+from core.forge.candidate_preflight import run_semantic_preflight
 from core.forge.contracts import (
+    BuildSpec,
     CodeArtifact,
     FeasiblePlan,
     GeneratedFile,
     PlanInterface,
+    PlanTest,
+    RequirementAtom,
     ValidationArtifact,
 )
 from core.forge.evidence_integrity import (
@@ -775,6 +778,121 @@ def test_requirement_term_must_share_function_with_causal_assertion(forge_pipeli
     assert assertion_evidence["passed"] is False
     assert assertion_evidence["missing_terms"] == ["input_csv"]
     assert assertion_evidence["failure_reason"] == "missing_requirement_assertion_evidence"
+
+
+def _cli_wrapper_semantic_case(test_body: str):
+    requirement = "Invalid records cause the CLI to exit with code 2."
+    atom = RequirementAtom(
+        requirement_id="R009",
+        text=requirement,
+        category="validation",
+        strength="hard",
+        source_fragment=requirement,
+        evidence_terms=["cli_entrypoint"],
+    )
+    build_spec = BuildSpec(
+        build_id="build-cli-wrapper",
+        raw_requirement=requirement,
+        normalized_requirement=requirement,
+        requirement_atoms=[atom],
+    )
+    plan = FeasiblePlan(
+        plan_id="plan-cli-wrapper",
+        build_spec=build_spec,
+        architecture_summary="A CLI with behavioral validation tests.",
+        interfaces=[PlanInterface(name="main", interface_type="cli_entrypoint")],
+        required_tests=[
+            PlanTest(
+                test_name="test_cli",
+                objective=requirement,
+                requirement_ids=["R009"],
+            )
+        ],
+        requirement_coverage={
+            "R009": {"files": ["src/tool.py"], "tests": ["test_cli"]}
+        },
+    )
+    artifact = CodeArtifact(
+        artifact_id="artifact-cli-wrapper",
+        plan_id=plan.plan_id,
+        files=[
+            GeneratedFile(
+                "src/tool.py",
+                "def main(argv=None):\n    return 2\n",
+                "python_module",
+            ),
+            GeneratedFile(
+                "tests/test_cli.py",
+                "from tool import main\n"
+                "\n"
+                "def run_cli(value):\n"
+                "    return main([value])\n"
+                "\n"
+                f"def test_exit_code():\n{test_body}",
+                "test",
+            ),
+        ],
+        test_paths=["tests/test_cli.py"],
+    )
+    return build_spec, plan, artifact
+
+
+def _run_cli_wrapper_preflight(plan, artifact):
+    return run_semantic_preflight(
+        {generated.path: generated.content for generated in artifact.files},
+        plan,
+        {
+            "tests/test_cli.py": {
+                "requirements": [
+                    {"id": "R009", "evidence_terms": ["cli_entrypoint"]}
+                ]
+            }
+        },
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+
+def test_causal_wrapper_invocation_satisfies_cli_test_term():
+    build_spec, plan, artifact = _cli_wrapper_semantic_case(
+        "    assert run_cli('invalid') == 2\n"
+    )
+
+    failures, signatures, evidence = object.__new__(
+        ObligationValidationLayer
+    )._validate_requirement_semantics(build_spec, plan, artifact)
+
+    check = evidence["requirements"]["R009"]
+    assert failures == []
+    assert signatures == []
+    assert check["assertion_evidence"]["passed"] is True
+    assert check["assertion_evidence"]["covered_terms"] == ["cli_entrypoint"]
+    assert check["missing_test_terms"] == []
+    assert _run_cli_wrapper_preflight(plan, artifact)["passed"] is True
+
+
+def test_disconnected_wrapper_invocation_does_not_satisfy_cli_test_term():
+    build_spec, plan, artifact = _cli_wrapper_semantic_case(
+        "    run_cli('invalid')\n"
+        "    unrelated = 2\n"
+        "    assert unrelated == 2\n"
+    )
+
+    failures, signatures, evidence = object.__new__(
+        ObligationValidationLayer
+    )._validate_requirement_semantics(build_spec, plan, artifact)
+
+    check = evidence["requirements"]["R009"]
+    assert failures
+    assert "missing_semantic_requirement_coverage" in signatures
+    assert "missing_requirement_assertion_evidence" in signatures
+    assert check["assertion_evidence"]["passed"] is False
+    assert check["missing_test_terms"] == ["cli_entrypoint"]
+    preflight = _run_cli_wrapper_preflight(plan, artifact)
+    assert preflight["passed"] is False
+    assert any(
+        failure["kind"] == "requirement_assertion_evidence_failure"
+        for failure in preflight["failures"]
+    )
 
 
 def test_every_declared_test_path_is_attacked_for_semantic_content(forge_pipeline):

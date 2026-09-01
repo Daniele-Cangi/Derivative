@@ -175,6 +175,42 @@ def _test_contract_failures(
         for interface in plan.interfaces
         if interface.name.isidentifier()
     }
+    requirement_terms: dict[str, list[str]] = {}
+    requirement_test_paths: dict[str, list[str]] = {}
+    for path, contract in contracts.items():
+        if path not in mapped_test_paths:
+            continue
+        for requirement in contract.get("requirements", []):
+            requirement_id = str(requirement.get("id", ""))
+            if not requirement_id:
+                continue
+            requirement_terms.setdefault(requirement_id, []).extend(
+                str(term) for term in requirement.get("evidence_terms", [])
+            )
+            requirement_test_paths.setdefault(requirement_id, []).append(path)
+
+    assertion_report = requirement_assertion_evidence(
+        requirement_terms,
+        requirement_test_paths,
+        candidate_files,
+        target_names=public_interface_names,
+        target_modules=source_module_names(candidate_files),
+        term_matcher=lambda term, function_source: (
+            semantic_term_present(term, function_source, is_test=True)
+            or behaviorally_evidences(
+                term,
+                function_source,
+                public_interface_names,
+            )
+        ),
+    )
+    causally_covered_terms: dict[tuple[str, str], set[str]] = {}
+    for requirement_id, evidence in assertion_report.items():
+        for assertion in evidence["assertions"]:
+            key = (str(assertion["path"]), requirement_id)
+            causally_covered_terms.setdefault(key, set()).update(
+                str(term) for term in assertion["evidence_terms"]
+            )
     plan_requires_byte_exact_observation = requires_byte_exact_observation(
         plan.build_spec.normalized_requirement
     )
@@ -241,7 +277,11 @@ def _test_contract_failures(
             missing_terms = [
                 term
                 for term in requirement.get("evidence_terms", [])
-                if not ObligationValidationLayer._semantic_term_present(
+                if str(term) not in causally_covered_terms.get(
+                    (path, requirement_id),
+                    set(),
+                )
+                and not ObligationValidationLayer._semantic_term_present(
                     str(term),
                     content.lower(),
                     is_test=True,
@@ -288,35 +328,6 @@ def _test_contract_failures(
                         ),
                     }
                 )
-    requirement_terms: dict[str, list[str]] = {}
-    requirement_test_paths: dict[str, list[str]] = {}
-    for path, contract in contracts.items():
-        if path not in mapped_test_paths:
-            continue
-        for requirement in contract.get("requirements", []):
-            requirement_id = str(requirement.get("id", ""))
-            if not requirement_id:
-                continue
-            requirement_terms.setdefault(requirement_id, []).extend(
-                str(term) for term in requirement.get("evidence_terms", [])
-            )
-            requirement_test_paths.setdefault(requirement_id, []).append(path)
-
-    assertion_report = requirement_assertion_evidence(
-        requirement_terms,
-        requirement_test_paths,
-        candidate_files,
-        target_names=public_interface_names,
-        target_modules=source_module_names(candidate_files),
-        term_matcher=lambda term, function_source: (
-            semantic_term_present(term, function_source, is_test=True)
-            or behaviorally_evidences(
-                term,
-                function_source,
-                public_interface_names,
-            )
-        ),
-    )
     for requirement_id, evidence in assertion_report.items():
         if evidence["passed"]:
             continue

@@ -517,10 +517,34 @@ class ObligationValidationLayer(ValidationLayerBase):
                 if source_evidence_required
                 else []
             )
+            assertion_evidence = (
+                {
+                    "passed": True,
+                    "failure_reason": "structural_verification",
+                    "missing_terms": [],
+                    "covered_terms": [],
+                    "assertions": [],
+                }
+                if structural_only
+                else assertion_report.get(
+                    atom.requirement_id,
+                    {
+                        "passed": False,
+                        "failure_reason": "missing_mapped_test",
+                        "missing_terms": list(atom.evidence_terms),
+                        "covered_terms": [],
+                        "assertions": [],
+                    },
+                )
+            )
+            causally_covered_test_terms = set(
+                assertion_evidence.get("covered_terms", [])
+            )
             missing_test_terms = [] if structural_only else [
                 term
                 for term in atom.evidence_terms
-                if not self._semantic_term_present(term, test_corpus, is_test=True)
+                if term not in causally_covered_test_terms
+                and not self._semantic_term_present(term, test_corpus, is_test=True)
                 and not behaviorally_evidences(
                     term,
                     behavioral_test_corpus,
@@ -535,24 +559,6 @@ class ObligationValidationLayer(ValidationLayerBase):
                     public_interface_names,
                 )
             ]
-            assertion_evidence = (
-                {
-                    "passed": True,
-                    "failure_reason": "structural_verification",
-                    "missing_terms": [],
-                    "assertions": [],
-                }
-                if structural_only
-                else assertion_report.get(
-                    atom.requirement_id,
-                    {
-                        "passed": False,
-                        "failure_reason": "missing_mapped_test",
-                        "missing_terms": list(atom.evidence_terms),
-                        "assertions": [],
-                    },
-                )
-            )
             item = {
                 "text": atom.text,
                 "evidence_terms": list(atom.evidence_terms),
