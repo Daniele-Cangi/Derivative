@@ -1544,6 +1544,57 @@ def test_unrelated_generated_behavior():
     )
 
 
+def test_semantic_preflight_accepts_behavioral_line_count_preservation():
+    requirement = "Line count must match input."
+    atom = SimpleNamespace(
+        requirement_id="R001",
+        text=requirement,
+        category="functional",
+        evidence_terms=["line_count_preservation"],
+    )
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=requirement,
+            requirement_atoms=[atom],
+            conditional_obligations=[],
+        ),
+        required_tests=[
+            SimpleNamespace(test_name="test_line_count", required=True)
+        ],
+        interfaces=[SimpleNamespace(name="transform", interface_type="function")],
+        requirement_coverage={
+            "R001": {"files": ["src/line_filter.py"], "tests": ["test_line_count"]}
+        },
+    )
+    files = {
+        "src/line_filter.py": "def transform(lines):\n    return list(lines)\n",
+        "tests/test_line_count.py": (
+            "import line_filter\n"
+            "\n"
+            "def test_line_count_is_preserved():\n"
+            "    input_lines = ['a', 'b']\n"
+            "    output_lines = line_filter.transform(input_lines)\n"
+            "    assert len(input_lines) == len(output_lines)\n"
+        ),
+    }
+    contracts = {
+        "tests/test_line_count.py": {
+            "requirements": [
+                {"id": "R001", "evidence_terms": ["line_count_preservation"]}
+            ]
+        }
+    }
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is True, result
+
+
 def test_imported_source_expansion_resolves_nested_module_basename():
     files = {
         "src/library/core.py": "def merge_intervals(values):\n    return values\n",

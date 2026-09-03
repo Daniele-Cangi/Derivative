@@ -972,6 +972,19 @@ class RequirementCompiler:
         if "summary csv" in lowered:
             add("summary_csv")
 
+        mentions_line_cardinality = bool(
+            re.search(r"\bline\s+counts?\b|\bnumber\s+of\s+lines?\b", lowered)
+        )
+        preserves_line_cardinality = bool(
+            re.search(
+                r"\b(?:preserv(?:e|es|ed|ing|ation)|match(?:es|ed|ing)?|same|"
+                r"identical|unchanged|equals?)\b",
+                lowered,
+            )
+        )
+        if mentions_line_cardinality and preserves_line_cardinality:
+            add("line_count_preservation")
+
         for identifier in re.findall(r"\b[a-z][a-z0-9]*_[a-z0-9_]+\b", lowered):
             add(identifier)
 
@@ -1010,6 +1023,8 @@ class RequirementCompiler:
             ),
         )
         for term, pattern in semantic_patterns:
+            if term == "counts" and "line_count_preservation" in terms:
+                continue
             if re.search(pattern, lowered):
                 add(term)
         return terms

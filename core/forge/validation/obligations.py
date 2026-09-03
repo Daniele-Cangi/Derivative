@@ -497,26 +497,32 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "interface_contract",
                 "static_analysis",
             }
-            source_evidence_required = self._requires_source_semantic_evidence(atom)
-            missing_source_terms = (
-                [
-                    term
-                    for term in atom.evidence_terms
-                    if not self._semantic_term_present(term, source_corpus)
-                    and not structurally_evidences(term, source_content, plan.interfaces)
-                    and not (
-                        term in {"jsonl", "input_jsonl"}
-                        and has_json_lines_processing(source_content)
-                    )
-                    and not behaviorally_evidences(
-                        term,
-                        behavioral_test_corpus,
-                        public_interface_names,
-                    )
-                ]
-                if source_evidence_required
-                else []
-            )
+            source_evidence_terms = [
+                term
+                for term in atom.evidence_terms
+                if self._requires_source_term_evidence(atom, term)
+            ]
+            behavioral_only_terms = [
+                term
+                for term in atom.evidence_terms
+                if term not in source_evidence_terms
+            ]
+            source_evidence_required = bool(source_evidence_terms)
+            missing_source_terms = [
+                term
+                for term in source_evidence_terms
+                if not self._semantic_term_present(term, source_corpus)
+                and not structurally_evidences(term, source_content, plan.interfaces)
+                and not (
+                    term in {"jsonl", "input_jsonl"}
+                    and has_json_lines_processing(source_content)
+                )
+                and not behaviorally_evidences(
+                    term,
+                    behavioral_test_corpus,
+                    public_interface_names,
+                )
+            ]
             assertion_evidence = (
                 {
                     "passed": True,
@@ -565,6 +571,8 @@ class ObligationValidationLayer(ValidationLayerBase):
                 "source_paths": source_paths,
                 "test_paths": test_paths,
                 "source_evidence_required": source_evidence_required,
+                "source_evidence_terms": source_evidence_terms,
+                "behavioral_only_terms": behavioral_only_terms,
                 "structural_only": structural_only,
                 "missing_source_terms": missing_source_terms,
                 "missing_test_terms": missing_test_terms,
@@ -633,6 +641,12 @@ class ObligationValidationLayer(ValidationLayerBase):
             r"\btests?\s+(?:that\s+)?(?:cover|covers|verify|verifies|exercise|exercises)\b",
         )
         return not any(re.search(pattern, normalized) for pattern in test_obligation_patterns)
+
+    @classmethod
+    def _requires_source_term_evidence(cls, atom, term: str) -> bool:
+        if term == "line_count_preservation":
+            return False
+        return cls._requires_source_semantic_evidence(atom)
 
     @staticmethod
     def _semantic_term_present(term: str, corpus: str, is_test: bool = False) -> bool:

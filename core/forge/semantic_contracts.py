@@ -30,9 +30,13 @@ def _expression_name(node: ast.expr) -> str:
 
 
 def semantic_term_present(term: str, corpus: str, is_test: bool = False) -> bool:
-    if term in {"no_cli_entrypoint", "no_service_interface"}:
-        # Negative capabilities require structural or behavioral proof. A label or
-        # comment containing the term is never evidence of absence.
+    if term in {
+        "line_count_preservation",
+        "no_cli_entrypoint",
+        "no_service_interface",
+    }:
+        # Negative capabilities and relational preservation contracts require
+        # structural or behavioral proof. Labels and comments cannot certify them.
         return False
     normalized = corpus.replace("-", "_").replace(" ", "_")
     aliases = {

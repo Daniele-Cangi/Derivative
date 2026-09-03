@@ -1,3 +1,4 @@
+import ast
 from typing import Callable, Iterable, Mapping
 
 from core.forge.test_evidence import analyze_test_functions
@@ -96,6 +97,8 @@ def _target_contract_term_covered(
     if not function.get("target_invoked", False):
         return False
     normalized = term.lower().replace("-", "_").replace(" ", "_")
+    if normalized == "line_count_preservation":
+        return _has_causal_line_count_equality(function)
     normalized_modules = {
         module.lower().replace("-", "_").replace(" ", "_")
         for module in target_modules
@@ -105,8 +108,46 @@ def _target_contract_term_covered(
     return normalized in {"cli_entrypoint", "cli_flow"} and "main" in target_names
 
 
+def _has_causal_line_count_equality(function: Mapping[str, object]) -> bool:
+    for assertion in function.get("assertions", []):
+        if not isinstance(assertion, Mapping):
+            continue
+        try:
+            expression = ast.parse(str(assertion.get("expression", "")), mode="eval").body
+        except SyntaxError:
+            continue
+        if not isinstance(expression, ast.Compare):
+            continue
+        if len(expression.ops) != 1 or not isinstance(expression.ops[0], ast.Eq):
+            continue
+        if len(expression.comparators) != 1:
+            continue
+        left = _len_argument(expression.left)
+        right = _len_argument(expression.comparators[0])
+        if left is None or right is None:
+            continue
+        if ast.dump(left, include_attributes=False) != ast.dump(
+            right,
+            include_attributes=False,
+        ):
+            return True
+    return False
+
+
+def _len_argument(expression: ast.expr) -> ast.expr | None:
+    if not isinstance(expression, ast.Call):
+        return None
+    if not isinstance(expression.func, ast.Name) or expression.func.id != "len":
+        return None
+    if len(expression.args) != 1 or expression.keywords:
+        return None
+    return expression.args[0]
+
+
 def _default_term_matcher(term: str, content: str) -> bool:
     normalized_term = term.lower().replace("-", "_").replace(" ", "_")
+    if normalized_term == "line_count_preservation":
+        return False
     normalized_content = content.lower().replace("-", "_").replace(" ", "_")
     candidates = {normalized_term}
     if normalized_term.endswith("s"):

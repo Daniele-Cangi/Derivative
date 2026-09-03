@@ -101,6 +101,21 @@ def test_telemetry_requirement_is_split_into_evidence_bearing_atoms():
     assert atoms["R005"].evidence_terms == ["summary_csv"]
 
 
+def test_line_count_preservation_is_distinct_from_aggregate_counts():
+    preservation = RequirementCompiler().compile(
+        "Trailing newlines must be preserved and line count must match input."
+    )
+    aggregation = RequirementCompiler().compile(
+        "Write a summary CSV with totals and counts."
+    )
+
+    assert preservation.requirement_atoms[0].evidence_terms == [
+        "line_count_preservation"
+    ]
+    assert "counts" not in preservation.requirement_atoms[0].evidence_terms
+    assert "counts" in aggregation.requirement_atoms[0].evidence_terms
+
+
 def test_material_business_policy_ambiguities_are_preserved():
     spec = RequirementCompiler().compile(AMBIGUOUS_RISK_REQUIREMENT)
 

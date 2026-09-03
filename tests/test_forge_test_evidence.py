@@ -408,3 +408,70 @@ def test_requirement_evidence_keeps_assertions_separate_per_requirement():
     assert {item["function"] for item in report["R002"]["assertions"]} == {
         "test_counts"
     }
+
+
+def test_requirement_evidence_recognizes_causal_line_count_equality():
+    path = "tests/test_line_count.py"
+    content = (
+        "import line_filter\n"
+        "\n"
+        "def test_line_count_is_preserved():\n"
+        "    input_lines = ['a', 'b']\n"
+        "    output_lines = line_filter.transform(input_lines)\n"
+        "    assert len(input_lines) == len(output_lines)\n"
+    )
+
+    report = requirement_assertion_evidence(
+        {"R001": ["line_count_preservation"]},
+        {"R001": [path]},
+        {path: content},
+        target_names={"transform"},
+        target_modules={"line_filter"},
+    )
+
+    assert report["R001"]["passed"] is True
+    assert report["R001"]["covered_terms"] == ["line_count_preservation"]
+
+
+def test_requirement_evidence_rejects_single_unrelated_line_count():
+    path = "tests/test_line_count.py"
+    content = (
+        "import line_filter\n"
+        "\n"
+        "def test_one_output_count():\n"
+        "    output_lines = line_filter.transform(['a', 'b'])\n"
+        "    assert len(output_lines) == 2\n"
+    )
+
+    report = requirement_assertion_evidence(
+        {"R001": ["line_count_preservation"]},
+        {"R001": [path]},
+        {path: content},
+        target_names={"transform"},
+        target_modules={"line_filter"},
+    )
+
+    assert report["R001"]["passed"] is False
+    assert report["R001"]["missing_terms"] == ["line_count_preservation"]
+
+
+def test_requirement_evidence_rejects_line_count_label_without_equality():
+    path = "tests/test_line_count.py"
+    content = (
+        "import line_filter\n"
+        "\n"
+        "def test_line_count_preservation():\n"
+        "    output_lines = line_filter.transform(['a', 'b'])\n"
+        "    assert output_lines == ['a', 'b']\n"
+    )
+
+    report = requirement_assertion_evidence(
+        {"R001": ["line_count_preservation"]},
+        {"R001": [path]},
+        {path: content},
+        target_names={"transform"},
+        target_modules={"line_filter"},
+    )
+
+    assert report["R001"]["passed"] is False
+    assert report["R001"]["missing_terms"] == ["line_count_preservation"]

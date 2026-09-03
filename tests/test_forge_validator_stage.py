@@ -895,6 +895,59 @@ def test_disconnected_wrapper_invocation_does_not_satisfy_cli_test_term():
     )
 
 
+def test_line_count_preservation_uses_causal_behavior_not_source_labels():
+    requirement = "The output line count must match input."
+    build_spec = RequirementCompiler().compile(requirement)
+    atom = build_spec.requirement_atoms[0]
+    plan = FeasiblePlan(
+        plan_id="plan-line-count",
+        build_spec=build_spec,
+        architecture_summary="A line-preserving transformation.",
+        interfaces=[PlanInterface(name="transform", interface_type="function")],
+        requirement_coverage={
+            atom.requirement_id: {
+                "files": ["src/line_filter.py"],
+                "tests": ["test_line_filter"],
+            }
+        },
+    )
+    artifact = CodeArtifact(
+        artifact_id="artifact-line-count",
+        plan_id=plan.plan_id,
+        files=[
+            GeneratedFile(
+                "src/line_filter.py",
+                "def transform(lines):\n    return list(lines)\n",
+                "python_module",
+            ),
+            GeneratedFile(
+                "tests/test_line_filter.py",
+                "import line_filter\n"
+                "\n"
+                "def test_preserves_cardinality():\n"
+                "    before = ['a', 'b']\n"
+                "    after = line_filter.transform(before)\n"
+                "    assert len(before) == len(after)\n",
+                "test",
+            ),
+        ],
+        test_paths=["tests/test_line_filter.py"],
+    )
+
+    failures, signatures, evidence = object.__new__(
+        ObligationValidationLayer
+    )._validate_requirement_semantics(build_spec, plan, artifact)
+
+    check = evidence["requirements"][atom.requirement_id]
+    assert failures == []
+    assert signatures == []
+    assert check["source_evidence_required"] is False
+    assert check["source_evidence_terms"] == []
+    assert check["behavioral_only_terms"] == ["line_count_preservation"]
+    assert check["missing_test_terms"] == []
+    assert check["assertion_evidence"]["passed"] is True
+
+
 def test_every_declared_test_path_is_attacked_for_semantic_content(forge_pipeline):
     validator: ValidatorStage = forge_pipeline["validator"]
     artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])

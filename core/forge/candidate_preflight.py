@@ -453,7 +453,12 @@ def _source_contract_failures(
     for atom in plan.build_spec.requirement_atoms:
         if atom.category == "ambiguity" or not atom.evidence_terms:
             continue
-        if not ObligationValidationLayer._requires_source_semantic_evidence(atom):
+        source_evidence_terms = [
+            term
+            for term in atom.evidence_terms
+            if ObligationValidationLayer._requires_source_term_evidence(atom, term)
+        ]
+        if not source_evidence_terms:
             continue
         coverage = plan.requirement_coverage.get(atom.requirement_id, {})
         source_paths = [
@@ -478,7 +483,7 @@ def _source_contract_failures(
         )
         missing_terms = [
             term
-            for term in atom.evidence_terms
+            for term in source_evidence_terms
             if not ObligationValidationLayer._semantic_term_present(term, source_corpus)
             and not structurally_evidences(term, source_content, plan.interfaces)
             and not (
