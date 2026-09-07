@@ -122,16 +122,41 @@ def _has_causal_line_count_equality(function: Mapping[str, object]) -> bool:
             continue
         if len(expression.comparators) != 1:
             continue
-        left = _len_argument(expression.left)
-        right = _len_argument(expression.comparators[0])
+        left = _line_count_observation(expression.left)
+        right = _line_count_observation(expression.comparators[0])
         if left is None or right is None:
             continue
-        if ast.dump(left, include_attributes=False) != ast.dump(
-            right,
+        left_metric, left_subject = left
+        right_metric, right_subject = right
+        if left_metric != right_metric:
+            continue
+        if ast.dump(left_subject, include_attributes=False) != ast.dump(
+            right_subject,
             include_attributes=False,
         ):
             return True
     return False
+
+
+def _line_count_observation(expression: ast.expr) -> tuple[str, ast.expr] | None:
+    len_argument = _len_argument(expression)
+    if len_argument is not None:
+        return "len", len_argument
+    if not isinstance(expression, ast.Call):
+        return None
+    if not isinstance(expression.func, ast.Attribute):
+        return None
+    if expression.func.attr != "count" or len(expression.args) != 1:
+        return None
+    if expression.keywords:
+        return None
+    separator = expression.args[0]
+    if not isinstance(separator, ast.Constant):
+        return None
+    if separator.value not in {"\n", "\r", "\r\n", b"\n", b"\r", b"\r\n"}:
+        return None
+    metric = f"separator_count:{separator.value!r}"
+    return metric, expression.func.value
 
 
 def _len_argument(expression: ast.expr) -> ast.expr | None:

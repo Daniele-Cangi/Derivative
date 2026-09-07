@@ -1595,6 +1595,117 @@ def test_semantic_preflight_accepts_behavioral_line_count_preservation():
     assert result["passed"] is True, result
 
 
+def test_semantic_preflight_accepts_causal_newline_count_preservation():
+    requirement = "Line count must match input."
+    atom = SimpleNamespace(
+        requirement_id="R001",
+        text=requirement,
+        category="functional",
+        evidence_terms=["line_count_preservation"],
+    )
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=requirement,
+            requirement_atoms=[atom],
+            conditional_obligations=[],
+        ),
+        required_tests=[SimpleNamespace(test_name="test_line_count", required=True)],
+        interfaces=[SimpleNamespace(name="transform", interface_type="function")],
+        requirement_coverage={
+            "R001": {"files": ["src/line_filter.py"], "tests": ["test_line_count"]}
+        },
+    )
+    files = {
+        "src/line_filter.py": "def transform(value):\n    return value\n",
+        "tests/test_line_count.py": (
+            "import line_filter\n"
+            "\n"
+            "def test_line_count_is_preserved():\n"
+            "    input_text = b'a\\nb\\n'\n"
+            "    output_text = line_filter.transform(input_text)\n"
+            "    assert input_text.count(b'\\n') == output_text.count(b'\\n')\n"
+        ),
+    }
+    contracts = {
+        "tests/test_line_count.py": {
+            "requirements": [
+                {"id": "R001", "evidence_terms": ["line_count_preservation"]}
+            ]
+        }
+    }
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is True, result
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        "assert output_text.count(b'\\n') == 2",
+        "assert output_text.count(b'\\n') == output_text.count(b'\\n')",
+        "assert input_text.count(b'\\n') == output_text.count(b'\\r')",
+    ],
+)
+def test_semantic_preflight_rejects_non_causal_newline_counts(assertion):
+    requirement = "Line count must match input."
+    atom = SimpleNamespace(
+        requirement_id="R001",
+        text=requirement,
+        category="functional",
+        evidence_terms=["line_count_preservation"],
+    )
+    plan = SimpleNamespace(
+        build_spec=SimpleNamespace(
+            normalized_requirement=requirement,
+            requirement_atoms=[atom],
+            conditional_obligations=[],
+        ),
+        required_tests=[SimpleNamespace(test_name="test_line_count", required=True)],
+        interfaces=[SimpleNamespace(name="transform", interface_type="function")],
+        requirement_coverage={
+            "R001": {"files": ["src/line_filter.py"], "tests": ["test_line_count"]}
+        },
+    )
+    files = {
+        "src/line_filter.py": "def transform(value):\n    return value\n",
+        "tests/test_line_count.py": (
+            "import line_filter\n"
+            "\n"
+            "def test_line_count_is_preserved():\n"
+            "    input_text = b'a\\nb\\n'\n"
+            "    output_text = line_filter.transform(input_text)\n"
+            f"    {assertion}\n"
+        ),
+    }
+    contracts = {
+        "tests/test_line_count.py": {
+            "requirements": [
+                {"id": "R001", "evidence_terms": ["line_count_preservation"]}
+            ]
+        }
+    }
+
+    result = run_semantic_preflight(
+        files,
+        plan,
+        contracts,
+        {"ran": True, "passed": True, "phase": "tests", "failures": []},
+    )
+
+    assert result["passed"] is False
+    assert any(
+        failure.get("kind") == "requirement_assertion_evidence_failure"
+        and failure.get("missing_evidence_terms") == ["line_count_preservation"]
+        for failure in result["failures"]
+    )
+
+
 def test_imported_source_expansion_resolves_nested_module_basename():
     files = {
         "src/library/core.py": "def merge_intervals(values):\n    return values\n",
