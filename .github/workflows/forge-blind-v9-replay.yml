@@ -2,6 +2,11 @@ name: Forge Blind V9 targeted replay
 
 on:
   workflow_dispatch:
+    inputs:
+      case_ids:
+        description: Space-separated frozen V9 case IDs to replay
+        required: true
+        default: V9-001 V9-002 V9-003 V9-005 V9-006
 
 permissions:
   contents: read
@@ -35,11 +40,13 @@ jobs:
 
       - name: Verify frozen inputs and record execution context
         env:
+          CASE_IDS: ${{ inputs.case_ids }}
           OPENAI_MODEL: gpt-4.1-2025-04-14
         run: |
           python - <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
           from core.forge.blind_benchmark import load_blind_bundle
@@ -62,8 +69,14 @@ jobs:
           assert baseline["baseline_file_count"] == bundle.baseline_file_count
           assert baseline["manifest_sha256"] == bundle.manifest_sha256
           assert baseline["dataset_sha256"] == bundle.dataset_sha256
+          case_ids = os.environ["CASE_IDS"].split()
+          available_case_ids = {case.case_id for case in bundle.cases}
+          assert case_ids
+          assert len(case_ids) == len(set(case_ids))
+          assert all(re.fullmatch(r"V9-[0-9]{3}", case_id) for case_id in case_ids)
+          assert set(case_ids) <= available_case_ids
           context = {
-              "case_ids": ["V9-001", "V9-002", "V9-003", "V9-005", "V9-006"],
+              "case_ids": case_ids,
               "execution_backend": "docker",
               "execution_kind": "post_fix_replay",
               "git_sha": os.environ["GITHUB_SHA"],
@@ -96,28 +109,34 @@ jobs:
 
       - name: Execute targeted V9 post-fix replay
         env:
+          CASE_IDS: ${{ inputs.case_ids }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-4.1-2025-04-14
           OPENAI_INPUT_COST_PER_1M_TOKENS: "2.00"
           OPENAI_OUTPUT_COST_PER_1M_TOKENS: "8.00"
-        run: >
-          python forge_blind_benchmark.py
-          --manifest benchmarks/blind_v9/external_001/manifest.json
-          --mode hybrid
-          --execution-backend docker
-          --sandbox-image derivative-forge-sandbox:py311
-          --post-fix-replay
-          --case-id V9-001
-          --case-id V9-002
-          --case-id V9-003
-          --case-id V9-005
-          --case-id V9-006
-          --max-planner-attempts 1
-          --max-coder-attempts 3
-          --output-root generated_artifacts/forge_v9_targeted_replay/runs
-          --packaging-root generated_artifacts/forge_v9_targeted_replay/packages
-          --benchmark-output-root generated_artifacts/forge_v9_targeted_replay/reports
-          --no-enforce-thresholds
+        run: |
+          case_flags=()
+          read -r -a requested_cases <<< "$CASE_IDS"
+          for case_id in "${requested_cases[@]}"; do
+            if [[ ! "$case_id" =~ ^V9-[0-9]{3}$ ]]; then
+              echo "Invalid V9 case ID: $case_id" >&2
+              exit 2
+            fi
+            case_flags+=(--case-id "$case_id")
+          done
+          python forge_blind_benchmark.py \
+            --manifest benchmarks/blind_v9/external_001/manifest.json \
+            --mode hybrid \
+            --execution-backend docker \
+            --sandbox-image derivative-forge-sandbox:py311 \
+            --post-fix-replay \
+            "${case_flags[@]}" \
+            --max-planner-attempts 1 \
+            --max-coder-attempts 3 \
+            --output-root generated_artifacts/forge_v9_targeted_replay/runs \
+            --packaging-root generated_artifacts/forge_v9_targeted_replay/packages \
+            --benchmark-output-root generated_artifacts/forge_v9_targeted_replay/reports \
+            --no-enforce-thresholds
 
       - name: Upload complete replay evidence
         if: always()
