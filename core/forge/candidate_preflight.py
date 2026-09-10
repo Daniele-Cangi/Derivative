@@ -800,29 +800,34 @@ def has_byte_exact_test_observation(content: str) -> bool:
         tree = ast.parse(content)
     except SyntaxError:
         return False
-    captures = [node for node in ast.walk(tree) if _is_lossless_utf8_capture(node)]
-    if not captures:
-        return False
     parents = {
         child: parent
         for parent in ast.walk(tree)
         for child in ast.iter_child_nodes(parent)
     }
+    captures = [
+        node
+        for node in ast.walk(tree)
+        if _is_lossless_utf8_capture(node, parents)
+    ]
+    if not captures:
+        return False
     return any(_capture_is_observed(capture, parents) for capture in captures)
 
 
-def _is_lossless_utf8_capture(node: ast.AST) -> bool:
+def _is_lossless_utf8_capture(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> bool:
     if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
         return False
     if node.func.attr != "encode":
         return False
     capture = node.func.value
-    if (
-        not isinstance(capture, ast.Call)
-        or not isinstance(capture.func, ast.Attribute)
-        or capture.func.attr != "getvalue"
-        or capture.args
-        or capture.keywords
+    if not _is_getvalue_capture(capture) and not _is_single_assignment_capture_alias(
+        capture,
+        node,
+        parents,
     ):
         return False
 
@@ -850,6 +855,71 @@ def _is_lossless_utf8_capture(node: ast.AST) -> bool:
     return errors is None or (
         isinstance(errors, ast.Constant) and errors.value == "strict"
     )
+
+
+def _is_getvalue_capture(node: ast.AST) -> bool:
+    return bool(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "getvalue"
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _is_single_assignment_capture_alias(
+    capture: ast.AST,
+    encode_call: ast.Call,
+    parents: dict[ast.AST, ast.AST],
+) -> bool:
+    if not isinstance(capture, ast.Name):
+        return False
+    scope = _enclosing_capture_scope(encode_call, parents)
+    if scope is None:
+        return False
+    stores = [
+        node
+        for node in ast.walk(scope)
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Store)
+        and node.id == capture.id
+        and _enclosing_capture_scope(node, parents) is scope
+    ]
+    if len(stores) != 1:
+        return False
+    store = stores[0]
+    assignment = parents.get(store)
+    value: ast.AST | None = None
+    if (
+        isinstance(assignment, ast.Assign)
+        and len(assignment.targets) == 1
+        and assignment.targets[0] is store
+    ):
+        value = assignment.value
+    elif isinstance(assignment, ast.AnnAssign) and assignment.target is store:
+        value = assignment.value
+    elif isinstance(assignment, ast.NamedExpr) and assignment.target is store:
+        value = assignment.value
+    if value is None or not _is_getvalue_capture(value):
+        return False
+    return int(getattr(assignment, "lineno", -1)) < int(
+        getattr(encode_call, "lineno", -1)
+    )
+
+
+def _enclosing_capture_scope(
+    node: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> ast.AST | None:
+    current = node
+    while current in parents:
+        current = parents[current]
+        if isinstance(
+            current,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.Module),
+        ):
+            return current
+    return None
 
 
 def _capture_is_observed(

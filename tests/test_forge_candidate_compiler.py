@@ -2151,6 +2151,32 @@ def test_output_bytes():
 @pytest.mark.parametrize(
     "capture",
     [
+        (
+            "captured = stdout.getvalue()\n"
+            "    return captured.encode('utf-8')"
+        ),
+        (
+            "captured: str = stdout.getvalue()\n"
+            "    observed = captured.encode(encoding='UTF_8', errors='strict')\n"
+            "    assert observed == b'line\\r\\n'"
+        ),
+    ],
+)
+def test_byte_exact_observation_accepts_single_assignment_capture_alias(capture):
+    content = f'''import io
+
+
+def capture_output():
+    stdout = io.StringIO()
+    {capture}
+'''
+
+    assert has_byte_exact_test_observation(content)
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
         "observed = stdout.getvalue().strip().encode('utf-8')",
         "observed = stdout.getvalue().replace('\\r\\n', '\\n').encode('utf-8')",
         "observed = stdout.getvalue().encode('utf-8', errors='ignore')",
@@ -2166,6 +2192,37 @@ def test_output_bytes():
     stdout = io.StringIO()
     {capture}
     assert locals().get("observed") == b"line\\r\\n"
+'''
+
+    assert not has_byte_exact_test_observation(content)
+
+
+@pytest.mark.parametrize(
+    "capture",
+    [
+        (
+            "captured = stdout.getvalue().strip()\n"
+            "    assert captured.encode('utf-8') == b'line\\r\\n'"
+        ),
+        (
+            "captured = stdout.getvalue()\n"
+            "    captured = captured.strip()\n"
+            "    assert captured.encode('utf-8') == b'line\\r\\n'"
+        ),
+        (
+            "captured = stdout.getvalue()\n"
+            "    assert captured.encode('utf-8') == b'line\\r\\n'\n"
+            "    captured = 'replacement'"
+        ),
+    ],
+)
+def test_byte_exact_observation_rejects_unsafe_capture_alias(capture):
+    content = f'''import io
+
+
+def test_output_bytes():
+    stdout = io.StringIO()
+    {capture}
 '''
 
     assert not has_byte_exact_test_observation(content)
