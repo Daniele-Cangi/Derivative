@@ -283,6 +283,18 @@ The run completed in 12m16s. V9-006 reached internal `verified` after two repair
 
 The complete artifact is `forge-v9-targeted-post-fix-33442276463`, artifact id `9777049372`, SHA-256 `ADEB45016CBA19FCD3FE4910E1AE0B2B33AEE606BB852074DB9F48FB37EF779E`. The uploaded report SHA-256 is `C05F6B7C205278CD221F625D8C8A8942C6C94F70963A09CE66D5D6EC883E382D`; the repository copy differs only by its normalized terminal newline and has SHA-256 `3EC7EA5A1823EFCD7B67700AA0714FC131DAECC3C1DE588F061A90A4CAA5541F`. The execution context is preserved byte-for-byte with SHA-256 `7CDABF7FDFC5A1EE25DCECC2A5E68CD66F19339AC102DD8EF2006F72ABB55058`. The dependency snapshot is byte-identical to the archived V9 baseline snapshot, SHA-256 `A8A4DEF3784A76DC57F7D29BA6502F7ECE4346F8B8C8E7D97FF0DB4EB5929FED`.
 
+### Targeted V9-003 closure replays
+
+The [first V9-003-only closure replay](https://github.com/Daniele-Cangi/Derivative/actions/runs/36060617880) ran on commit `c4bb31f` with the baseline model, locked dependencies, Python 3.11, and Docker isolation. It completed without a quota failure but remained `validation_failed`: generated tests attempted to assign `sys.stdin.buffer`, a read-only `TextIOWrapper` attribute, and the safe best-candidate rollback rejected later syntax regressions. The receipt records six model requests, 98,944 tokens (83,150 input and 15,794 output), one repair, two validation attempts, and `$0.292652` configured cost. No artifact reached internal verification, no oracle ran, and the recorded external false-verified rate is `0.000`.
+
+The complete artifact is `forge-v9-targeted-post-fix-36060617880`, artifact id `10833584000`, SHA-256 `55FD0C4BB9989DB8E2685F17E2040D3BF7D55E8F4B24AF10A1B34C7FA9687CCA`. The uploaded report SHA-256 is `2C7C27DCF347F70D0EDF7E795A72224793BBFEDF78FBEAAE3588A6E1702832B7`; the repository copy differs only by its normalized terminal newline and has SHA-256 `A0F1C78F73C05B45BC31327F15A9C1BBFD7C16B976750647102556B5966923B7`. The uploaded execution-context SHA-256 is `6E2636E96BD509915CDE5B72B360042CA9A51A87F45D515E7B182D0D406E7BE6`; the normalized repository copy has SHA-256 `79D44D1D8EEE3343A5F2C8E992189B02F9E1D14C91D8420C8B3A797B573B1D6E`.
+
+After rejected-candidate diagnostics were preserved without weakening rollback, the [second and final V9-003 closure replay](https://github.com/Daniele-Cangi/Derivative/actions/runs/36062980584) ran on commit `9f6e9b7`. It remained fail-closed but reduced the final result to one `candidate_preflight_failure`. The compiler advanced from executable-test failures to semantic-contract checking; its remaining requirement was exact, non-normalizing observation of line terminators. The receipt records 11 model requests, 203,605 tokens (181,929 input and 21,676 output), two repairs, three validation attempts, and `$0.537266` configured cost. No artifact reached internal verification, no oracle ran, and the recorded external false-verified rate is `0.000`.
+
+The complete artifact is `forge-v9-targeted-post-fix-36062980584`, artifact id `10835447655`, SHA-256 `8D69787714A78E2C3D8AA8ED84BE607349C57CBA39B45C71A3FA877AD32AA5BA`. The uploaded report SHA-256 is `2CB6A974B8BA3D72DDFE586A2DB3F92DBCD6CE43049C1BD7E4290D2AE36BC29B`; the repository copy differs only by its normalized terminal newline and has SHA-256 `E5B734011F5BA7B27A3567B2E5ADB7FE1AA13856D54F3D1E48931B5442DFD00C`. The uploaded execution-context SHA-256 is `F8BB738A6A27ABD82DD02B5AD1917BFC52CF5294A27A7BE4C75997F92F34F0AA`; the normalized repository copy has SHA-256 `7541F702DEA9AAA6C4598D60BC2BDA9901B793763EF9016CF0A2FAB309D77C1A`. Both closure runs used the byte-identical archived dependency snapshot, SHA-256 `A8A4DEF3784A76DC57F7D29BA6502F7ECE4346F8B8C8E7D97FF0DB4EB5929FED`.
+
+Together, the bounded V9-003 closure runs used 17 model requests, 302,549 tokens, and `$0.829918`. The remaining known-case failure is retained as fail-closed regression evidence; it is not a basis for repeated unchanged API execution or retrospective score repair.
+
 Sources:
 
 - [Manifest](../benchmarks/blind_v9/external_001/manifest.json)
@@ -293,6 +305,12 @@ Sources:
 - [Targeted post-fix replay](../benchmarks/blind_v9/external_001/post_fix_replay_001_targeted.json)
 - [Targeted replay execution context](../benchmarks/blind_v9/external_001/post_fix_replay_001_targeted_execution_context.json)
 - [Targeted post-fix replay workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/33442276463)
+- [First V9-003 closure replay](../benchmarks/blind_v9/external_001/post_fix_replay_002_v9_003.json)
+- [First V9-003 closure execution context](../benchmarks/blind_v9/external_001/post_fix_replay_002_v9_003_execution_context.json)
+- [First V9-003 closure workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/36060617880)
+- [Final V9-003 closure replay](../benchmarks/blind_v9/external_001/post_fix_replay_003_v9_003.json)
+- [Final V9-003 closure execution context](../benchmarks/blind_v9/external_001/post_fix_replay_003_v9_003_execution_context.json)
+- [Final V9-003 closure workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/36062980584)
 
 ## Historical V2/V3 Evidence
 
