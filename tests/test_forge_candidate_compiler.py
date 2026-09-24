@@ -620,6 +620,9 @@ def test_candidate_compiler_restores_safe_state_before_later_correction(
                 rejected_failed_path,
                 "candidate semantic evidence regressed",
             )
+            result["correction_requirements"] = [
+                "Correct the rejected candidate without accepting its regressed state."
+            ]
             result["failures"].append(
                 {
                     "path": rejected_failed_path,
@@ -660,6 +663,16 @@ def test_candidate_compiler_restores_safe_state_before_later_correction(
     assert kernel.target_history[1] == [baseline_failed_path]
     assert kernel.context_history[1]["preflight_test_execution"]["failed_paths"] == [
         baseline_failed_path
+    ]
+    assert kernel.context_history[1]["regression_correction_requirements"] == [
+        "Correct the rejected candidate without accepting its regressed state."
+    ]
+    assert (
+        "Correct the rejected candidate without accepting its regressed state."
+        in kernel.context_history[1]["candidate_correction_requirements"]
+    )
+    assert candidate.evidence["regression_correction_requirements"] == [
+        "Correct the rejected candidate without accepting its regressed state."
     ]
     assert candidate.files["src/cli.py"] == baseline_files["src/cli.py"]
     assert candidate.files["src/cli.py"] != "# regressed source state\n"
@@ -1085,6 +1098,27 @@ def test_candidate_correction_reports_structural_and_unicode_fixture_failures():
         "already hold decoded Unicode" in requirement
         for requirement in requirements
     )
+
+
+def test_candidate_correction_rejects_assignment_to_read_only_stdin_buffer():
+    requirements = SubstrateCandidateCompiler._correction_requirements(
+        {
+            "phase": "tests",
+            "stdout": (
+                "monkeypatch.setattr(sys.stdin, 'buffer', stdin)\n"
+                "E AttributeError: readonly attribute\n"
+            ),
+            "stderr": "",
+        }
+    )
+
+    stream_requirement = next(
+        requirement
+        for requirement in requirements
+        if "TextIOWrapper.buffer is read-only" in requirement
+    )
+    assert "replace sys.stdin itself" in stream_requirement
+    assert "process boundary with byte stdin" in stream_requirement
 
 
 def test_structural_preflight_does_not_freeze_unexecuted_paths(json_merge_case):

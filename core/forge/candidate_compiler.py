@@ -194,6 +194,7 @@ class SubstrateCandidateCompiler:
         selected_quality: dict[str, Any] | None = None
         complete_candidate_count = 0
         regression_rejected_attempts: list[int] = []
+        regression_correction_requirements: list[str] = []
         backend_available = False
         active_paths = list(target_paths)
         initial_attempt_limit = self.max_preflight_corrections + 1
@@ -241,9 +242,18 @@ class SubstrateCandidateCompiler:
                     )
             if previous_preflight is not None:
                 attempt_context["preflight_test_execution"] = previous_preflight
-                attempt_context["candidate_correction_requirements"] = (
-                    self._correction_requirements(previous_preflight)
+                attempt_context["candidate_correction_requirements"] = list(
+                    dict.fromkeys(
+                        [
+                            *self._correction_requirements(previous_preflight),
+                            *regression_correction_requirements,
+                        ]
+                    )
                 )
+                if regression_correction_requirements:
+                    attempt_context["regression_correction_requirements"] = list(
+                        regression_correction_requirements
+                    )
                 if previous_preflight.get("phase") == "tests":
                     attempt_context["candidate_correction_requirements"].append(
                         "Trace each failing test fixture against the requirement, then correct the implementation "
@@ -376,6 +386,14 @@ class SubstrateCandidateCompiler:
             candidate_selected = False
             if regresses_from_baseline:
                 regression_rejected_attempts.append(attempt + 1)
+                regression_correction_requirements = list(
+                    dict.fromkeys(
+                        [
+                            *regression_correction_requirements,
+                            *self._correction_requirements(preflight),
+                        ]
+                    )
+                )
             elif selected_quality is None or self._preflight_score(
                 quality
             ) >= self._preflight_score(selected_quality):
@@ -451,6 +469,7 @@ class SubstrateCandidateCompiler:
                 and regression_rejected_attempts
             ),
             "regression_rejected_attempts": regression_rejected_attempts,
+            "regression_correction_requirements": regression_correction_requirements,
             "handoff_status": (
                 "preflight_passed"
                 if preflight_passed
@@ -733,5 +752,22 @@ class SubstrateCandidateCompiler:
                 "Generated Python test fixtures already hold decoded Unicode characters: remove chained "
                 "encode('utf-8').decode('unicode_escape') conversions from inputs and expectations, then "
                 "compare the direct Unicode value or its single UTF-8 encoding."
+            )
+        assigns_read_only_stdin_buffer = (
+            "readonly attribute" in execution_output
+            and bool(
+                re.search(
+                    r"(?:monkeypatch\.)?setattr\(\s*sys\.stdin\s*,\s*['\"]buffer['\"]",
+                    execution_output,
+                )
+                or re.search(r"sys\.stdin\.buffer\s*=", execution_output)
+            )
+        )
+        if assigns_read_only_stdin_buffer:
+            requirements.append(
+                "Generated Python tests must not assign to sys.stdin.buffer or monkeypatch that "
+                "attribute because TextIOWrapper.buffer is read-only. For byte-oriented CLI tests, "
+                "replace sys.stdin itself with a test stream object exposing the intended byte buffer, "
+                "or exercise the process boundary with byte stdin."
             )
         return list(dict.fromkeys(requirements))
