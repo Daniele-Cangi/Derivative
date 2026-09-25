@@ -14,6 +14,7 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.repair import RepairPolicy
 from core.forge.repair_support import (
     behavioral_contract_seal,
+    run_test_preflight,
     test_generation_contracts as build_test_generation_contracts,
 )
 from core.forge.requirement_compiler import RequirementCompiler
@@ -2160,6 +2161,102 @@ def test_preserves_line_endings(tmp_path):
         "getvalue().encode('utf-8')" in requirement
         for requirement in result["correction_requirements"]
     )
+
+
+@pytest.mark.parametrize(
+    "helper_return, expected_bytes, expected_passed",
+    [
+        (
+            "return 0, stdout.getvalue()",
+            'b"a\\r\\nb\\nc\\r"',
+            True,
+        ),
+        (
+            'return 0, stdout.getvalue().replace("\\r\\n", "\\n")',
+            'b"a\\nb\\nc\\r"',
+            False,
+        ),
+    ],
+    ids=["lossless", "normalized"],
+)
+def test_semantic_preflight_enforces_helper_capture_fidelity_end_to_end(
+    tmp_path,
+    helper_return,
+    expected_bytes,
+    expected_passed,
+):
+    requirement = (
+        "Build a Python library exposing preserve_line_endings(value: str) -> str. "
+        "It must return transformed text while preserving original line endings exactly, "
+        "including CRLF, LF, and CR. Include behavioral tests."
+    )
+    spec = RequirementCompiler().compile(requirement)
+    plan = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    ).plan(spec)
+    assert isinstance(plan, FeasiblePlan)
+    line_ending_atom = next(
+        atom
+        for atom in plan.build_spec.requirement_atoms
+        if "line endings" in atom.text.lower()
+    )
+    line_ending_test = next(
+        test
+        for test in plan.required_tests
+        if line_ending_atom.requirement_id in test.requirement_ids
+    )
+    test_path = f"tests/{line_ending_test.test_name}.py"
+    files = {
+        "src/library/__init__.py": (
+            "from .core import preserve_line_endings\n"
+        ),
+        "src/library/core.py": (
+            "def preserve_line_endings(value: str) -> str:\n"
+            "    return value\n"
+        ),
+        test_path: f'''import io
+
+from library import preserve_line_endings
+
+
+def capture_output(value):
+    stdout = io.StringIO()
+    stdout.write(preserve_line_endings(value))
+    {helper_return}
+
+
+def test_preserves_line_endings_exactly():
+    returncode, observed = capture_output("a\\r\\nb\\nc\\r")
+    assert returncode == 0
+    assert observed.encode("utf-8") == {expected_bytes}
+''',
+    }
+    contracts = build_test_generation_contracts(
+        [test_path],
+        plan,
+        SimpleNamespace(traceability={}),
+    )
+    executable = run_test_preflight(
+        files,
+        [test_path],
+        timeout_seconds=20,
+    )
+    assert executable["passed"] is True, executable
+
+    result = run_semantic_preflight(files, plan, contracts, executable)
+
+    assert result["passed"] is expected_passed, result
+    exact_failures = [
+        failure
+        for failure in result.get("failures", [])
+        if failure.get("kind") == "missing_byte_exact_observation"
+    ]
+    assert bool(exact_failures) is not expected_passed
+    if exact_failures:
+        assert exact_failures[0]["requirement_id"] == line_ending_atom.requirement_id
 
 
 @pytest.mark.parametrize(
