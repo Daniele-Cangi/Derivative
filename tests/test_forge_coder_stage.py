@@ -305,6 +305,48 @@ def test_typed_library_target_outranks_service_module_filename(tmp_path):
     assert DomainAdapterRegistry().select(plan).name == "library"
 
 
+def test_generic_library_scaffold_resolves_planned_package_module(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Build a Python library exposing preserve_line_endings(value: str) -> str. "
+        "It must preserve original line endings exactly, including CRLF, LF, and CR. "
+        "Include behavioral tests."
+    )
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "forge_audit.json"),
+        memory_file=str(tmp_path / "forge_memory.json"),
+        gene_pool_file=str(tmp_path / "forge_gene_pool.json"),
+    )
+    plan = planner.plan(spec)
+
+    assert isinstance(plan, FeasiblePlan)
+    assert plan.implementation_blueprint.entrypoint_path == ""
+    interface = next(
+        item for item in plan.interfaces if item.name == "preserve_line_endings"
+    )
+    assert interface.module_path == ""
+
+    artifact = CoderStage().generate(plan)
+
+    files_by_path = {
+        generated.path: generated.content
+        for generated in artifact.files
+    }
+    generated_tests = [
+        files_by_path[f"tests/{plan_test.test_name}.py"]
+        for plan_test in plan.required_tests
+    ]
+    assert all(
+        "import library as target_module" in content
+        for content in generated_tests
+    )
+    assert all(
+        "getattr(target_module, 'preserve_line_endings', None)" in content
+        for content in generated_tests
+    )
+    assert artifact.artifact_manifest["metadata"]["adapter_capabilities"] == []
+
+
 def test_pipeline_blueprint_outranks_external_cli_artifact_type(tmp_path):
     spec = RequirementCompiler().compile(TELEMETRY_CLI_REQUIREMENT)
     planner = PlannerStage(

@@ -101,23 +101,37 @@ class BaseDomainAdapter:
             plan.implementation_blueprint.entrypoint_path
         )
         source_modules = [
-            self._module_name_from_path(item.path)
+            (
+                item.path.replace("\\", "/"),
+                self._module_name_from_path(item.path),
+            )
             for item in plan.file_tree_plan
             if item.path.replace("\\", "/").startswith("src/")
             and item.path.lower().endswith(".py")
         ]
-        if not module_name and len(source_modules) == 1:
-            module_name = source_modules[0]
+        package_modules = [
+            module
+            for path, module in source_modules
+            if path.endswith("/__init__.py") and module
+        ]
+        if not module_name and len(package_modules) == 1:
+            module_name = package_modules[0]
+        elif not module_name and len(source_modules) == 1:
+            module_name = source_modules[0][1]
         if not module_name:
             raise DomainAdapterError(
                 "Unable to generate semantic test template without a declared module."
             )
-        module_path = f"src/{module_name.replace('.', '/')}.py"
+        module_relative_path = module_name.replace(".", "/")
+        module_paths = {
+            f"src/{module_relative_path}.py",
+            f"src/{module_relative_path}/__init__.py",
+        }
         planned_paths = {
             item.path.replace("\\", "/")
             for item in plan.file_tree_plan
         }
-        if module_path not in planned_paths:
+        if not module_paths & planned_paths:
             raise DomainAdapterError(
                 "Unable to generate semantic test template without a planned source module."
             )
@@ -190,7 +204,15 @@ class BaseDomainAdapter:
 
     @staticmethod
     def _module_name_from_path(path: str) -> str:
-        return path.replace("\\", "/").removeprefix("src/").removesuffix(".py").replace("/", ".")
+        module_name = (
+            path.replace("\\", "/")
+            .removeprefix("src/")
+            .removesuffix(".py")
+            .replace("/", ".")
+        )
+        if module_name == "__init__":
+            return ""
+        return module_name.removesuffix(".__init__")
 
     def _is_invoice_plan(self, plan: FeasiblePlan) -> bool:
         atom_text = " ".join(atom.text.lower() for atom in plan.build_spec.requirement_atoms)

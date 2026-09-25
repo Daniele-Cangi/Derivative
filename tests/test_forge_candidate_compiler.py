@@ -2198,6 +2198,7 @@ def test_semantic_preflight_enforces_helper_capture_fidelity_end_to_end(
         gene_pool_file=str(tmp_path / "genes.json"),
     ).plan(spec)
     assert isinstance(plan, FeasiblePlan)
+    artifact = CoderStage().generate(plan)
     line_ending_atom = next(
         atom
         for atom in plan.build_spec.requirement_atoms
@@ -2237,7 +2238,7 @@ def test_preserves_line_endings_exactly():
     contracts = build_test_generation_contracts(
         [test_path],
         plan,
-        SimpleNamespace(traceability={}),
+        artifact,
     )
     executable = run_test_preflight(
         files,
