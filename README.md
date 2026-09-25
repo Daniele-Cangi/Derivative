@@ -153,7 +153,7 @@ Unsupported or unproven behavior should end as `validation_failed`, never as opt
 
 ## Evidence
 
-The current `main` checkpoint passes **598 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **596 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
+The current `main` checkpoint passes **606 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **604 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
 
 Blind evidence is immutable and reported without retrospective score repair:
 

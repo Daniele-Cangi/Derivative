@@ -2359,3 +2359,130 @@ def capture_output():
 '''
 
     assert not has_byte_exact_test_observation(content)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '''import io
+
+
+def test_output_bytes():
+    returncode, *observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    assert observed.encode("utf-8") == b"line\\r\\n"
+    returncode, observed = capture_output()
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    from replacement import capture_output
+    returncode, observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    returncode, observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+
+
+capture_output = object()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    returncode, observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    returncode, observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+async def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    del capture_output
+    returncode, observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    return 0, stdout.getvalue()
+''',
+        '''import io
+
+
+def test_output_bytes():
+    returncode, observed = capture_output()
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    if False:
+        yield None
+    return 0, stdout.getvalue()
+''',
+    ],
+    ids=[
+        "starred-destructuring",
+        "assignment-after-observation",
+        "caller-import-shadow",
+        "module-rebinding",
+        "duplicate-helper",
+        "async-helper",
+        "caller-deletion",
+        "generator-helper",
+    ],
+)
+def test_byte_exact_observation_rejects_ambiguous_helper_binding(content):
+    assert not has_byte_exact_test_observation(content)

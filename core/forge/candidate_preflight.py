@@ -972,27 +972,6 @@ def _lossless_helper_capture_assignment(
         return None
 
     helper_name = assignment.value.func.id
-    if any(
-        isinstance(node, ast.Name)
-        and isinstance(node.ctx, ast.Store)
-        and node.id == helper_name
-        and _enclosing_capture_scope(node, parents) is scope
-        for node in ast.walk(scope)
-    ):
-        return None
-    if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-        arguments = [
-            *scope.args.posonlyargs,
-            *scope.args.args,
-            *scope.args.kwonlyargs,
-        ]
-        if scope.args.vararg is not None:
-            arguments.append(scope.args.vararg)
-        if scope.args.kwarg is not None:
-            arguments.append(scope.args.kwarg)
-        if any(argument.arg == helper_name for argument in arguments):
-            return None
-
     module: ast.AST = scope
     while module in parents:
         module = parents[module]
@@ -1001,12 +980,33 @@ def _lossless_helper_capture_assignment(
     helpers = [
         node
         for node in module.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if isinstance(node, ast.FunctionDef)
         and node.name == helper_name
     ]
     if len(helpers) != 1:
         return None
     helper = helpers[0]
+    if helper.decorator_list:
+        return None
+    if _scope_binds_name(
+        module,
+        helper_name,
+        parents,
+        excluded=helper,
+    ):
+        return None
+    if scope is not module and _scope_binds_name(scope, helper_name, parents):
+        return None
+    if scope is module and int(getattr(helper, "lineno", -1)) > int(
+        getattr(assignment, "lineno", -1)
+    ):
+        return None
+    if any(
+        isinstance(node, (ast.Yield, ast.YieldFrom))
+        and _enclosing_capture_scope(node, parents) is helper
+        for node in ast.walk(helper)
+    ):
+        return None
     returns = [
         node
         for node in ast.walk(helper)
@@ -1025,6 +1025,47 @@ def _lossless_helper_capture_assignment(
     if not _is_getvalue_capture(returned_value):
         return None
     return int(getattr(assignment, "lineno", -1))
+
+
+def _scope_binds_name(
+    scope: ast.AST,
+    name: str,
+    parents: dict[ast.AST, ast.AST],
+    *,
+    excluded: ast.AST | None = None,
+) -> bool:
+    for node in ast.walk(scope):
+        if node is excluded or _enclosing_capture_scope(node, parents) is not scope:
+            continue
+        if (
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and node.id == name
+        ):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == name:
+                return True
+        if isinstance(node, ast.arg) and node.arg == name:
+            return True
+        if isinstance(node, ast.alias):
+            parent = parents.get(node)
+            bound_name = node.asname
+            if bound_name is None and isinstance(parent, ast.Import):
+                bound_name = node.name.split(".", maxsplit=1)[0]
+            elif bound_name is None:
+                bound_name = node.name
+            if bound_name in {name, "*"}:
+                return True
+        if isinstance(node, ast.ExceptHandler) and node.name == name:
+            return True
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and name in node.names:
+            return True
+        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == name:
+            return True
+        if isinstance(node, ast.MatchMapping) and node.rest == name:
+            return True
+    return False
 
 
 def _enclosing_capture_scope(
