@@ -2209,6 +2209,60 @@ def capture_output():
 
 
 @pytest.mark.parametrize(
+    "assignment, helper_return",
+    [
+        (
+            "observed = capture_output()",
+            "return stdout.getvalue()",
+        ),
+        (
+            "returncode, observed = capture_output()",
+            "return 0, stdout.getvalue()",
+        ),
+    ],
+)
+def test_byte_exact_observation_accepts_lossless_helper_capture(
+    assignment,
+    helper_return,
+):
+    content = f'''import io
+
+
+def test_output_bytes():
+    {assignment}
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    {helper_return}
+'''
+
+    assert has_byte_exact_test_observation(content)
+
+
+def test_byte_exact_observation_accepts_repeated_lossless_helper_captures():
+    content = '''import io
+
+
+def test_output_bytes():
+    rc, observed = capture_output(b"first")
+    assert rc == 0
+    assert observed.encode("utf-8") == b"first"
+    rc, observed = capture_output(b"second")
+    assert rc == 0
+    assert observed.encode("utf-8") == b"second"
+
+
+def capture_output(content):
+    stdout = io.StringIO(content.decode("utf-8"))
+    return 0, stdout.getvalue()
+'''
+
+    assert has_byte_exact_test_observation(content)
+
+
+@pytest.mark.parametrize(
     "capture",
     [
         "observed = stdout.getvalue().strip().encode('utf-8')",
@@ -2257,6 +2311,51 @@ def test_byte_exact_observation_rejects_unsafe_capture_alias(capture):
 def test_output_bytes():
     stdout = io.StringIO()
     {capture}
+'''
+
+    assert not has_byte_exact_test_observation(content)
+
+
+@pytest.mark.parametrize(
+    "assignment, helper_body",
+    [
+        (
+            "returncode, observed = capture_output()",
+            "return 0, stdout.getvalue().strip()",
+        ),
+        (
+            "returncode, observed = capture_output()",
+            (
+                "if condition:\n"
+                "        return 0, stdout.getvalue()\n"
+                "    return 0, stdout.getvalue().strip()"
+            ),
+        ),
+        (
+            (
+                "returncode, observed = capture_output()\n"
+                "    observed = observed.strip()"
+            ),
+            "return 0, stdout.getvalue()",
+        ),
+    ],
+)
+def test_byte_exact_observation_rejects_unsafe_helper_capture(
+    assignment,
+    helper_body,
+):
+    content = f'''import io
+
+
+def test_output_bytes():
+    {assignment}
+    assert observed.encode("utf-8") == b"line\\r\\n"
+
+
+def capture_output():
+    stdout = io.StringIO()
+    condition = True
+    {helper_body}
 '''
 
     assert not has_byte_exact_test_observation(content)

@@ -828,6 +828,10 @@ def _is_lossless_utf8_capture(
         capture,
         node,
         parents,
+    ) and not _is_lossless_helper_capture_alias(
+        capture,
+        node,
+        parents,
     ):
         return False
 
@@ -905,6 +909,122 @@ def _is_single_assignment_capture_alias(
     return int(getattr(assignment, "lineno", -1)) < int(
         getattr(encode_call, "lineno", -1)
     )
+
+
+def _is_lossless_helper_capture_alias(
+    capture: ast.AST,
+    encode_call: ast.Call,
+    parents: dict[ast.AST, ast.AST],
+) -> bool:
+    if not isinstance(capture, ast.Name):
+        return False
+    scope = _enclosing_capture_scope(encode_call, parents)
+    if scope is None:
+        return False
+    stores = [
+        node
+        for node in ast.walk(scope)
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Store)
+        and node.id == capture.id
+        and _enclosing_capture_scope(node, parents) is scope
+    ]
+    if not stores:
+        return False
+    assignment_lines: list[int] = []
+    for store in stores:
+        assignment_line = _lossless_helper_capture_assignment(
+            store,
+            scope,
+            parents,
+        )
+        if assignment_line is None:
+            return False
+        assignment_lines.append(assignment_line)
+    return any(
+        assignment_line < int(getattr(encode_call, "lineno", -1))
+        for assignment_line in assignment_lines
+    )
+
+
+def _lossless_helper_capture_assignment(
+    store: ast.Name,
+    scope: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+) -> int | None:
+    target: ast.AST = store
+    result_path: list[int] = []
+    parent = parents.get(target)
+    while isinstance(parent, (ast.Tuple, ast.List)):
+        if any(isinstance(element, ast.Starred) for element in parent.elts):
+            return None
+        result_path.insert(0, parent.elts.index(target))
+        target = parent
+        parent = parents.get(target)
+    assignment = parent
+    if not (
+        isinstance(assignment, ast.Assign)
+        and len(assignment.targets) == 1
+        and assignment.targets[0] is target
+        and isinstance(assignment.value, ast.Call)
+        and isinstance(assignment.value.func, ast.Name)
+    ):
+        return None
+
+    helper_name = assignment.value.func.id
+    if any(
+        isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Store)
+        and node.id == helper_name
+        and _enclosing_capture_scope(node, parents) is scope
+        for node in ast.walk(scope)
+    ):
+        return None
+    if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        arguments = [
+            *scope.args.posonlyargs,
+            *scope.args.args,
+            *scope.args.kwonlyargs,
+        ]
+        if scope.args.vararg is not None:
+            arguments.append(scope.args.vararg)
+        if scope.args.kwarg is not None:
+            arguments.append(scope.args.kwarg)
+        if any(argument.arg == helper_name for argument in arguments):
+            return None
+
+    module: ast.AST = scope
+    while module in parents:
+        module = parents[module]
+    if not isinstance(module, ast.Module):
+        return None
+    helpers = [
+        node
+        for node in module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == helper_name
+    ]
+    if len(helpers) != 1:
+        return None
+    helper = helpers[0]
+    returns = [
+        node
+        for node in ast.walk(helper)
+        if isinstance(node, ast.Return)
+        and _enclosing_capture_scope(node, parents) is helper
+    ]
+    if len(returns) != 1 or returns[0].value is None:
+        return None
+    returned_value = returns[0].value
+    for index in result_path:
+        if not isinstance(returned_value, (ast.Tuple, ast.List)):
+            return None
+        if index >= len(returned_value.elts):
+            return None
+        returned_value = returned_value.elts[index]
+    if not _is_getvalue_capture(returned_value):
+        return None
+    return int(getattr(assignment, "lineno", -1))
 
 
 def _enclosing_capture_scope(
