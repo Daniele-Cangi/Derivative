@@ -96,6 +96,19 @@ def oracle_contract_mismatches(
         *explicit_pattern_fixture_mismatches(source, requirement, tree=tree),
         *context_manager_binding_mismatches(tree),
     ]
+    # A CLI requirement that names sys.argv[1] defines one user argument, not
+    # an explicit main(argv) list containing the executable. Oracle tests often
+    # use the conventional placeholder "prog" even when the CLI itself is not
+    # named in prose; catch that shape using the imported public module too.
+    if (
+        _declared_cli_name(requirement) is None
+        and not _requirement_allows_argv0(requirement)
+    ):
+        argv_count = _declared_sys_argv_count(requirement)
+        if argv_count is not None:
+            mismatches.extend(
+                _unnamed_cli_argv_mismatches(tree, argv_count)
+            )
     cli_name = _declared_cli_name(requirement)
     if (
         cli_name is None
@@ -143,6 +156,134 @@ def oracle_contract_mismatches(
                 )
             )
     return mismatches
+
+
+def _declared_sys_argv_count(requirement: str) -> int | None:
+    indices = [
+        int(value)
+        for value in re.findall(r"\bsys\.argv\s*\[\s*(\d+)\s*\]", requirement, re.I)
+        if int(value) > 0
+    ]
+    return max(indices) if indices else None
+
+
+def _unnamed_cli_argv_mismatches(
+    tree: ast.Module,
+    expected_count: int,
+) -> list[OracleContractMismatch]:
+    imported_main_modules: dict[str, str] = {}
+    direct_main_names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.level == 0:
+            for alias in node.names:
+                if alias.name == "main":
+                    direct_main_names.add(alias.asname or alias.name)
+                    imported_main_modules[alias.asname or alias.name] = node.module or ""
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                module = alias.name
+                imported_main_modules[alias.asname or module.split(".", 1)[0]] = module
+
+    mismatches: list[OracleContractMismatch] = []
+    for function in (
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    ):
+        sequences = _sequence_values(function)
+        module_aliases = set(imported_main_modules) - direct_main_names
+        for call in (node for node in ast.walk(function) if isinstance(node, ast.Call)):
+            if not call.args or not _is_main_call(call.func, direct_main_names, module_aliases):
+                continue
+            sequence = _literal_sequence_values(call.args[0], sequences, call.lineno)
+            if sequence is None or len(sequence) != expected_count + 1:
+                continue
+            first = sequence[0]
+            if not isinstance(first, str):
+                continue
+            lowered = first.lower().replace("\\", "/").rsplit("/", 1)[-1]
+            module_names = {
+                module.rsplit(".", 1)[-1].casefold()
+                for module in imported_main_modules.values()
+                if module
+            }
+            if lowered not in {"prog", "program", "cli", "cli.py", *module_names, *(f"{name}.py" for name in module_names)}:
+                continue
+            module = imported_main_modules.get(
+                call.func.id if isinstance(call.func, ast.Name)
+                else call.func.value.id if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
+                else "",
+                "",
+            )
+            cli_name = module.rsplit(".", 1)[-1] if module else "CLI"
+            mismatches.append(
+                OracleContractMismatch(
+                    contract_id="in_process_main_argv",
+                    function=function.name,
+                    call_line=call.lineno,
+                    declared_cli_name=cli_name,
+                    argument_name=call.args[0].id if isinstance(call.args[0], ast.Name) else "<literal>",
+                    first_argument=first,
+                    message=(
+                        "oracle includes a program-name placeholder in main(argv), "
+                        "but sys.argv indexing defines only user arguments"
+                    ),
+                )
+            )
+    return mismatches
+
+
+def _sequence_values(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, list[tuple[int, list[object]]]]:
+    values: dict[str, list[tuple[int, list[object]]]] = {}
+    assignments = sorted(
+        (
+            node
+            for node in ast.walk(function)
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+        ),
+        key=lambda node: node.lineno,
+    )
+    for assignment in assignments:
+        if isinstance(assignment, ast.Assign):
+            if len(assignment.targets) != 1 or not isinstance(
+                assignment.targets[0], ast.Name
+            ):
+                continue
+            name, expression = assignment.targets[0].id, assignment.value
+        else:
+            if not isinstance(assignment.target, ast.Name) or assignment.value is None:
+                continue
+            name, expression = assignment.target.id, assignment.value
+        sequence = _literal_sequence_values(expression, {}, assignment.lineno)
+        if sequence is not None:
+            values.setdefault(name, []).append((assignment.lineno, sequence))
+    return values
+
+
+def _literal_sequence_values(
+    expression: ast.expr,
+    values: dict[str, list[tuple[int, list[object]]]],
+    call_line: int,
+) -> list[object] | None:
+    if isinstance(expression, ast.Name):
+        return next(
+            (
+                sequence
+                for line, sequence in reversed(values.get(expression.id, []))
+                if line < call_line
+            ),
+            None,
+        )
+    if not isinstance(expression, (ast.List, ast.Tuple)):
+        return None
+    result: list[object] = []
+    for item in expression.elts:
+        if not isinstance(item, ast.Constant):
+            return None
+        result.append(item.value)
+    return result
 
 
 def context_manager_binding_mismatches(

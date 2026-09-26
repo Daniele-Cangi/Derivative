@@ -1108,6 +1108,32 @@ def test_oracle_preflight_rejects_injected_cli_name_in_main_argv():
     assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
 
 
+def test_oracle_preflight_rejects_program_placeholder_for_unnamed_cli():
+    requirement = (
+        "Create a CLI that accepts one positional integer argument N as sys.argv[1]. "
+        "Public import contract: from divisors_cli import main."
+    )
+    source = (
+        "from divisors_cli import main\n\n"
+        "def test_positive():\n"
+        "    assert main(['prog', '12']) == 0\n\n"
+        "def test_zero():\n"
+        "    assert main(['prog', '0']) == 0\n\n"
+        "def test_negative():\n"
+        "    assert main(['prog', '-8']) == 0\n"
+    )
+
+    error = oracle_preflight_error(
+        source,
+        requirement,
+        PublicImportContract(module="divisors_cli", symbol="main", kind="cli_entrypoint"),
+    )
+
+    assert error is not None
+    assert "invocation contract contradicts the requirement" in error
+    assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
+
+
 def test_oracle_preflight_rejects_fixture_that_contradicts_explicit_regex():
     requirement = (
         "Implement a CLI named 'pyenvlines'. A line must match the regex: "
