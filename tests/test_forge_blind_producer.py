@@ -355,6 +355,124 @@ def test_rejected_requirement_diagnostics_preserve_each_candidate_without_public
     assert destination.exists() is False
 
 
+def test_producer_completes_missing_public_import_from_independent_contract():
+    source_case = _case_payload()["cases"][2]
+    requirement = source_case["requirement"].split("Public import contract:")[0].strip()
+    calls: list[dict] = []
+    rejected: list[dict] = []
+
+    def generator(**kwargs):
+        calls.append(kwargs)
+        if kwargs["output_schema_name"].endswith("_requirements_review"):
+            return json.dumps({"approved": True, "findings": []})
+        return json.dumps(
+            {
+                "case": {
+                    "requirement": requirement,
+                    "public_contract": source_case["public_contract"],
+                    "tags": source_case["tags"],
+                }
+            }
+        )
+
+    candidate = _generate_requirement_case(
+        generator=generator,
+        model="external-test-model",
+        config=BlindProducerConfig(bundle_id="blind-v10-contract-completion"),
+        index=10,
+        expected_status="infeasible_proven",
+        accepted_cases=[],
+        rejection_recorder=rejected.append,
+    )
+
+    declaration = "Public import contract: from impossible_encoder import encode."
+    assert candidate["requirement"] == requirement + "\n" + declaration
+    assert candidate["_requirement_validation"]["public_import_declaration_added"] is True
+    assert declaration in calls[1]["input_text"]
+    assert rejected == []
+
+
+def test_completed_public_import_is_sealed_and_audited_in_bundle(tmp_path):
+    base_generator = _RecordingGenerator()
+
+    def generator(**kwargs):
+        raw = base_generator(**kwargs)
+        if not kwargs["output_schema_name"].endswith("_requirements"):
+            return raw
+        payload = json.loads(raw)
+        if "Required terminal status: infeasible_proven" in kwargs["input_text"]:
+            payload["case"]["requirement"] = payload["case"]["requirement"].split(
+                "Public import contract:"
+            )[0].strip()
+        return json.dumps(payload)
+
+    bundle = produce_and_freeze_blind_bundle(
+        output_root=tmp_path / "completed-public-import",
+        repository_root=Path(__file__).resolve().parents[1],
+        config=BlindProducerConfig(
+            bundle_id="blind-v10-completed-public-import",
+            benchmark_version="v10",
+            verified_cases=1,
+            validation_failed_cases=1,
+            infeasible_cases=1,
+        ),
+        text_generator=generator,
+        model="external-test-model",
+    )
+
+    cases = json.loads(
+        (tmp_path / "completed-public-import" / "cases.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert bundle.baseline_verified is True
+    assert cases[2]["requirement"].endswith(
+        "Public import contract: from impossible_encoder import encode."
+    )
+    assert cases[2]["requirement_validation"]["public_import_declaration_added"] is True
+    assert "mechanically rendered" in bundle.provenance.requirements_origin
+
+
+def test_producer_does_not_rewrite_conflicting_public_import_declaration():
+    source_case = _case_payload()["cases"][2]
+    requirement = source_case["requirement"].replace(
+        "from impossible_encoder import encode",
+        "from other_encoder import encode",
+    )
+    rejected: list[dict] = []
+    calls: list[dict] = []
+
+    def generator(**kwargs):
+        calls.append(kwargs)
+        return json.dumps(
+            {
+                "case": {
+                    "requirement": requirement,
+                    "public_contract": source_case["public_contract"],
+                    "tags": source_case["tags"],
+                }
+            }
+        )
+
+    with pytest.raises(ValueError, match="rejection_classes=static_case"):
+        _generate_requirement_case(
+            generator=generator,
+            model="external-test-model",
+            config=BlindProducerConfig(
+                bundle_id="blind-v10-conflicting-contract",
+                max_generation_attempts=1,
+            ),
+            index=10,
+            expected_status="infeasible_proven",
+            accepted_cases=[],
+            rejection_recorder=rejected.append,
+        )
+
+    assert len(calls) == 1
+    assert rejected[0]["candidate"]["requirement"] == requirement
+    assert "does not match" in rejected[0]["reason"]
+
+
 def test_rejection_diagnostic_write_failure_prevents_bundle_publication(tmp_path):
     destination = tmp_path / "diagnostic-write-failed"
 

@@ -324,6 +324,8 @@ After offline diagnosis, the producer was changed to check the infeasible slots 
 
 A third invocation on `31aceea` used that ordering and the existing five-attempt limit. It failed at requirement slot 10 with the same two rejection classes after 5 requests, 4,080 tokens, and `$0.016470` configured cost. The CLI printed failure id `b0023161d213` again because this value hashes the error signature; it is not a unique invocation identifier. Total usage across the three failed V10 production invocations was 31 requests, 62,725 tokens, and `$0.181160` configured cost. None published a bundle or ran a Forge baseline, so none is a blind benchmark measurement.
 
+A fourth invocation on `0f3f317` enabled private rejection capture. It failed at slot 10 after 5 requests, 3,955 tokens, and `$0.015416` configured cost, with `static_case` as its only rejection class. All five rejected proposals supplied a structured public contract but omitted its required textual declaration. A mechanical completion from that independently supplied contract makes all five pass the static check offline, but none passes the unchanged deterministic infeasibility preflight. The rejected texts remain only in Git-ignored local diagnostics and are not blind evidence. Total usage across four failed V10 invocations is 36 requests, 66,680 tokens, and `$0.196576` configured cost. No V10 bundle or Forge baseline exists.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
@@ -391,6 +393,8 @@ python forge_blind_produce.py PATH_TO_PRIVATE_BUNDLE \
 This is operational isolation, not cryptographic proof of model independence. The destination must not exist and the Forge baseline must be clean and committed.
 
 For a local diagnosis of rejected requirement proposals, add `--capture-rejections`. This opt-in writes each parsed rejected candidate, when available, and its validation reason to a unique JSONL file under Git-ignored `generated_artifacts/forge_blind_producer_diagnostics/`; the CLI prints only its path. Keep this file private. Rejected proposals are not benchmark cases or new blind evidence. Capture does not change generation, review, freezing, or Forge execution.
+
+If an independently generated case provides a valid structured `public_contract` but omits the redundant textual import declaration, the producer renders that sentence from the structured module and symbol before independent review. The frozen case records `public_import_declaration_added=true`. An existing but inconsistent textual declaration remains a rejection; semantic preflight and review are unchanged.
 
 ## Deriving Adjudicated Metrics
 

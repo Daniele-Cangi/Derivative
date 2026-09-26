@@ -139,7 +139,9 @@ def produce_and_freeze_blind_bundle(
                 requirements_origin=(
                     "Separate stateless generation and review requests per requirement "
                     "from a domain-neutral benchmark brief; no Forge source, generated "
-                    "artifact, or prior blind case was supplied."
+                    "artifact, or prior blind case was supplied. A missing textual public "
+                    "import declaration was mechanically rendered from the producer's "
+                    "structured public contract before review."
                 ),
                 oracle_origin=(
                     "Separate stateless generation and review requests per verified "
@@ -297,10 +299,11 @@ def _generate_requirement_case(
             feedback = _structured_output_feedback("requirement")
             continue
         raw_case = payload.get("case")
-        error = _single_case_error(raw_case, accepted_cases)
+        completed_case, declaration_added = _complete_public_import_declaration(raw_case)
+        error = _single_case_error(completed_case, accepted_cases)
         if error is None:
             candidate = {
-                **dict(raw_case),
+                **dict(completed_case),
                 "expected_terminal_status": expected_status,
             }
             preflight_error = requirement_preflight_error(
@@ -329,6 +332,10 @@ def _generate_requirement_case(
                             "review_model": model,
                             "findings": [],
                         }
+                        if declaration_added:
+                            candidate["_requirement_validation"][
+                                "public_import_declaration_added"
+                            ] = True
                         return candidate
                     failure_class = "independent_review"
                     rejection_classes.append(failure_class)
@@ -357,6 +364,27 @@ def _generate_requirement_case(
         f"Requirement producer failed validation for slot {index}; "
         f"rejection_classes={classes}"
     )
+
+
+def _complete_public_import_declaration(case: object) -> tuple[object, bool]:
+    if not isinstance(case, dict):
+        return case, False
+    requirement = case.get("requirement")
+    if not isinstance(requirement, str) or len(requirement.strip()) < 80:
+        return case, False
+    if re.search(r"\bpublic\s+import\s+contract\b", requirement, re.IGNORECASE):
+        return case, False
+    try:
+        contract = load_public_import_contract(
+            case.get("public_contract"), label="Produced case", required=True
+        )
+    except ValueError:
+        return case, False
+    completed = (
+        requirement.rstrip()
+        + f"\nPublic import contract: from {contract.module} import {contract.symbol}."
+    )
+    return {**case, "requirement": completed}, True
 
 
 def _review_requirement_case(
