@@ -320,6 +320,8 @@ Two local producer invocations on that commit failed closed before publication o
 
 Offline diagnosis found no evidence that the rejected requirements were wrongly classified. The producer requests an explicit impossibility witness, while the fail-closed preflight accepts an `infeasible_proven` label only when it can establish a deterministic contradiction. The second failure therefore reached one of the three infeasible slots (10–12), but the earlier CLI output did not retain the exact slot or rejected private text. Future failures report the slot number without disclosing the requirement; this diagnostic change does not alter generation, review, preflight, or freezing.
 
+For a future production, the producer checks the infeasible slots first and asks for an unconditional concrete witness with two incompatible mandatory outcomes. It still publishes cases in their original slot order and keeps all existing preflight and independent-review gates. This controls the cost of another rejected impossibility without changing the eventual case distribution.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.

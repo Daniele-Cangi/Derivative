@@ -187,18 +187,24 @@ def _generate_requirement_cases(
         *([TERMINAL_VALIDATION_FAILED] * config.validation_failed_cases),
         *([TERMINAL_INFEASIBLE_PROVEN] * config.infeasible_cases),
     ]
-    cases: list[dict[str, Any]] = []
-    for index, status in enumerate(statuses, start=1):
-        cases.append(
-            _generate_requirement_case(
-                generator=generator,
-                model=model,
-                config=config,
-                index=index,
-                expected_status=status,
-                accepted_cases=cases,
-            )
+    accepted_cases: list[dict[str, Any]] = []
+    produced: dict[int, dict[str, Any]] = {}
+    slots = sorted(
+        enumerate(statuses, start=1),
+        key=lambda slot: slot[1] != TERMINAL_INFEASIBLE_PROVEN,
+    )
+    for index, status in slots:
+        case = _generate_requirement_case(
+            generator=generator,
+            model=model,
+            config=config,
+            index=index,
+            expected_status=status,
+            accepted_cases=accepted_cases,
         )
+        accepted_cases.append(case)
+        produced[index] = case
+    cases = [produced[index] for index in range(1, config.total_cases + 1)]
     error = _case_set_error(cases, config)
     if error is not None:
         raise ValueError(
@@ -670,7 +676,10 @@ def _requirement_producer_instructions(
         TERMINAL_INFEASIBLE_PROVEN: (
             "The requirement must contain a precise mathematical or finite constraint "
             "contradiction independent of platform or implementation difficulty, with "
-            "an explicit witness that deterministic preflight can verify."
+            "an explicit witness that deterministic preflight can verify. State a concrete "
+            "counterexample or bound and the two incompatible mandatory outcomes. The "
+            "conflict must be unconditional; a hypothetical impossible condition or an "
+            "assertion of impossibility is not a witness."
         ),
     }[expected_status]
     return f"""You are an independent software benchmark producer operating without access to Forge source code.

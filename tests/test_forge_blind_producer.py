@@ -183,16 +183,26 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
         "forge_blind_v4_oracle",
         "forge_blind_v4_oracle_review",
     ]
+    requirement_slots = [
+        generator.calls[index]["input_text"].splitlines()[0]
+        for index in (0, 2, 4)
+    ]
+    assert requirement_slots == [
+        "Create benchmark slot 3 of 3.",
+        "Create benchmark slot 1 of 3.",
+        "Create benchmark slot 2 of 3.",
+    ]
     requirement_review_request = generator.calls[1]["input_text"]
-    assert _case_payload()["cases"][0]["requirement"] in requirement_review_request
+    assert _case_payload()["cases"][2]["requirement"] in requirement_review_request
     assert "never include confirming observations as findings" in generator.calls[1][
         "instructions"
     ]
-    assert "logically satisfiable in principle" in generator.calls[2][
+    assert "logically satisfiable in principle" in generator.calls[4][
         "instructions"
     ]
+    assert "concrete counterexample or bound" in generator.calls[0]["instructions"]
     assert "importable main(argv: list[str] | None = None) -> int" in generator.calls[
-        0
+        2
     ]["instructions"]
     oracle_request = generator.calls[6]["input_text"]
     assert _case_payload()["cases"][0]["requirement"] in oracle_request
@@ -210,6 +220,7 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     assert manifest["forge_baseline"]["digest_mode"] == "canonical_lf_v1"
     assert set(manifest["oracle_sha256"]) == {"V4-001"}
     cases = json.loads((output_root / "cases.json").read_text(encoding="utf-8"))
+    assert [case["case_id"] for case in cases] == ["V4-001", "V4-002", "V4-003"]
     assert cases[0]["tags"][0] == "blind-v4"
     assert cases[0]["public_contract"] == {
         "kind": "function",
@@ -228,6 +239,51 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
         "review_model": "external-test-model",
         "static_checks_passed": True,
     }
+
+
+def test_producer_checks_infeasibility_before_spending_on_other_slots(tmp_path):
+    destination = tmp_path / "rejected-infeasible"
+    calls: list[dict] = []
+
+    def generator(**kwargs):
+        calls.append(kwargs)
+        return json.dumps(
+            {
+                "case": {
+                    "requirement": (
+                        "For every finite list, return its unique arithmetic mean. "
+                        "If that mean is not unique, still return one integer result. "
+                        "Public import contract: from mean_tool import mean."
+                    ),
+                    "public_contract": {
+                        "module": "mean_tool",
+                        "symbol": "mean",
+                        "kind": "function",
+                    },
+                    "tags": ["arithmetic", "contradiction"],
+                }
+            }
+        )
+
+    with pytest.raises(ValueError, match="validation for slot 3"):
+        produce_and_freeze_blind_bundle(
+            output_root=destination,
+            repository_root=Path(__file__).resolve().parents[1],
+            config=BlindProducerConfig(
+                bundle_id="blind-v10-early-rejection",
+                benchmark_version="v10",
+                verified_cases=1,
+                validation_failed_cases=1,
+                infeasible_cases=1,
+                max_generation_attempts=1,
+            ),
+            text_generator=generator,
+            model="external-test-model",
+        )
+
+    assert len(calls) == 1
+    assert "Create benchmark slot 3 of 3." in calls[0]["input_text"]
+    assert destination.exists() is False
 
 
 def test_one_shot_producer_refuses_existing_destination_without_model_call(tmp_path):
