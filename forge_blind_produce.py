@@ -76,6 +76,9 @@ def main(
             f"Failure id: {failure_id}",
             err=True,
         )
+        failure_slot = _safe_failure_slot(exc)
+        if failure_slot is not None:
+            typer.echo(f"Failed requirement slot: {failure_slot}", err=True)
         typer.echo(f"Model requests before failure: {usage.request_count}", err=True)
         typer.echo(f"Model input tokens before failure: {usage.input_tokens}", err=True)
         typer.echo(f"Model output tokens before failure: {usage.output_tokens}", err=True)
@@ -121,6 +124,14 @@ def _safe_failure_category(exc: Exception) -> str:
 def _safe_rejection_classes(exc: Exception) -> str:
     match = re.search(r"rejection_classes=([a-z_,]+)", str(exc))
     return match.group(1) if match else "unclassified"
+
+
+def _safe_failure_slot(exc: Exception) -> int | None:
+    match = re.match(
+        r"Requirement producer failed validation for slot ([1-9][0-9]*);",
+        str(exc),
+    )
+    return int(match.group(1)) if match else None
 
 
 if __name__ == "__main__":

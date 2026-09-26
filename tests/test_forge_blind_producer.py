@@ -920,6 +920,30 @@ def test_producer_cli_reports_failure_without_traceback_or_locals(monkeypatch, t
     assert "raw_cases" not in result.output
 
 
+def test_producer_cli_reports_requirement_slot_without_private_requirement(monkeypatch, tmp_path):
+    def fail_production(**_kwargs):
+        raise ValueError(
+            "Requirement producer failed validation for slot 10; "
+            "rejection_classes=requirement_infeasibility_unproven; "
+            "private requirement text"
+        )
+
+    monkeypatch.setattr(
+        forge_blind_produce,
+        "produce_and_freeze_blind_bundle",
+        fail_production,
+    )
+    result = CliRunner().invoke(
+        forge_blind_produce.app,
+        [str(tmp_path / "bundle"), "--bundle-id", "blind-v10-safe-slot"],
+    )
+
+    assert result.exit_code == 1
+    assert "Failed requirement slot: 10" in result.output
+    assert "Rejection classes: requirement_infeasibility_unproven" in result.output
+    assert "private requirement text" not in result.output
+
+
 def test_oracle_preflight_failure_classes_do_not_expose_source():
     assert (
         oracle_preflight_failure_class(

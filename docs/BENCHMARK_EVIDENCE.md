@@ -318,6 +318,8 @@ The V10 host environment and byte-preserving Git attributes were committed on `d
 
 Two local producer invocations on that commit failed closed before publication on 2026-09-26, using `gpt-4.1-2025-04-14` and the configured rates of $2 per million input tokens and $8 per million output tokens. The first used one generation attempt and stopped at independent requirement review: 2 requests, 1,608 tokens, configured cost `$0.006054`, failure id `59e4c5949bb0`. The second used the producer's existing limit of five generation attempts and stopped on `requirement_infeasibility_unproven` and `static_case` rejections: 24 requests, 57,037 tokens, configured cost `$0.158636`, failure id `b0023161d213`. Combined production usage was 26 requests, 58,645 tokens, and `$0.164690` configured cost. These are failed production attempts, not blind benchmark measurements; neither published a bundle or ran a Forge baseline.
 
+Offline diagnosis found no evidence that the rejected requirements were wrongly classified. The producer requests an explicit impossibility witness, while the fail-closed preflight accepts an `infeasible_proven` label only when it can establish a deterministic contradiction. The second failure therefore reached one of the three infeasible slots (10–12), but the earlier CLI output did not retain the exact slot or rejected private text. Future failures report the slot number without disclosing the requirement; this diagnostic change does not alter generation, review, preflight, or freezing.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
