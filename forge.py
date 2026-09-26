@@ -55,7 +55,16 @@ def _capture_run_model_usage(function: Callable[..., ForgeResult]) -> Callable[.
     @wraps(function)
     def wrapped(*args: object, **kwargs: object) -> ForgeResult:
         with track_model_usage() as usage:
-            result = function(*args, **kwargs)
+            try:
+                result = function(*args, **kwargs)
+            except Exception as exc:
+                # The held-out runner still needs the usage recorded before a
+                # failed build; the exception itself remains the original type.
+                try:
+                    setattr(exc, "_forge_model_usage", usage)
+                except AttributeError:
+                    pass
+                raise
         estimated_cost, pricing_source = usage.estimated_cost()
         result.run_metrics.model_request_count = usage.request_count
         result.run_metrics.model_input_tokens = usage.input_tokens

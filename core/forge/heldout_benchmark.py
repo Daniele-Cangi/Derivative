@@ -4,6 +4,7 @@ import statistics
 import sys
 import tempfile
 import time
+import traceback
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,7 @@ from core.forge.public_contract import (
     load_public_import_contract,
     requirement_public_import_error,
 )
+from core.forge.telemetry import ModelUsage
 
 
 @dataclass(frozen=True)
@@ -445,13 +447,27 @@ def run_heldout_cases(
             success_after_repair = False
             repair_count = 0
             validation_attempts = 0
-            model_request_count = 0
-            model_input_tokens = 0
-            model_output_tokens = 0
-            model_total_tokens = 0
-            estimated_model_cost_usd = None
-            model_cost_pricing_source = "unavailable"
+            usage = getattr(exc, "_forge_model_usage", None)
+            if isinstance(usage, ModelUsage):
+                model_request_count = usage.request_count
+                model_input_tokens = usage.input_tokens
+                model_output_tokens = usage.output_tokens
+                model_total_tokens = usage.total_tokens
+                estimated_model_cost_usd = 0.0 if usage.request_count == 0 else None
+                model_cost_pricing_source = (
+                    "no_model_calls" if usage.request_count == 0 else "exception_incomplete"
+                )
+            else:
+                model_request_count = 0
+                model_input_tokens = 0
+                model_output_tokens = 0
+                model_total_tokens = 0
+                estimated_model_cost_usd = None
+                model_cost_pricing_source = "unavailable"
             error = f"{type(exc).__name__}: {exc}"
+            site = _internal_exception_site(exc)
+            if site is not None:
+                error += f" [site={site}]"
 
         status_matched = observed == case.expected_terminal_status
         oracle_gate_passed = (
@@ -489,6 +505,15 @@ def run_heldout_cases(
         )
 
     return _summarize_results(results, time.perf_counter() - run_started)
+
+
+def _internal_exception_site(exc: Exception) -> str | None:
+    root = Path(__file__).resolve().parents[2]
+    for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+        path = Path(frame.filename).resolve()
+        if path.is_relative_to(root):
+            return f"{path.relative_to(root).as_posix()}:{frame.name}:{frame.lineno}"
+    return None
 
 
 def _summarize_results(

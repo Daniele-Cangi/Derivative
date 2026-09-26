@@ -27,6 +27,8 @@ from core.forge.heldout_benchmark import (
 
 
 from core.forge.oracle_contract import oracle_contract_mismatches
+from core.forge.telemetry import record_model_request
+from forge import _capture_run_model_usage
 
 class _OracleRecordingExecutor:
     def __init__(self):
@@ -49,6 +51,42 @@ class _OracleRecordingExecutor:
             execution_time_seconds=0.02,
             isolation=self.policy.evidence(),
         )
+
+
+def test_heldout_exception_preserves_request_count_and_reports_internal_site():
+    @_capture_run_model_usage
+    def fail_after_request(_requirement):
+        record_model_request("offline-test-model")
+        raise TypeError("Object of type set is not JSON serializable")
+
+    summary = run_heldout_cases(
+        [HeldoutBenchmarkCase("X", "synthetic fixture", TERMINAL_INFEASIBLE_PROVEN)],
+        run_case=fail_after_request,
+    )
+    result = summary.case_results[0]
+    assert result.observed_terminal_status == "exception"
+    assert result.model_request_count == 1
+    assert result.model_total_tokens == 0
+    assert result.estimated_model_cost_usd is None
+    assert result.model_cost_pricing_source == "exception_incomplete"
+    assert "tests/test_forge_heldout_benchmark.py:fail_after_request:" in result.error
+    assert summary.total_model_requests == 1
+    assert summary.total_estimated_model_cost_usd is None
+
+
+def test_heldout_exception_without_model_request_reports_known_zero_cost():
+    @_capture_run_model_usage
+    def fail_before_request(_requirement):
+        raise ValueError("synthetic local failure")
+
+    summary = run_heldout_cases(
+        [HeldoutBenchmarkCase("X", "synthetic fixture", TERMINAL_INFEASIBLE_PROVEN)],
+        run_case=fail_before_request,
+    )
+    result = summary.case_results[0]
+    assert result.model_request_count == 0
+    assert result.estimated_model_cost_usd == 0.0
+    assert result.model_cost_pricing_source == "no_model_calls"
 
 
 def _forge_result(
