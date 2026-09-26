@@ -1131,6 +1131,7 @@ def test_oracle_preflight_rejects_program_placeholder_for_unnamed_cli():
 
     assert error is not None
     assert "invocation contract contradicts the requirement" in error
+    assert "includes program-name placeholder 'prog' as argv[0]" in error
     assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
 
 

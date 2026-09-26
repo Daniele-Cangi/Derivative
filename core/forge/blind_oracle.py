@@ -144,6 +144,13 @@ def oracle_contract_sanity_error(source: str, requirement: str) -> str | None:
             f"{mismatch.declared_pattern!r} classifies it as "
             f"{mismatch.derived_classification}"
         )
+    if "program-name placeholder" in mismatch.message:
+        return (
+            "oracle invocation contract contradicts the requirement in "
+            f"{mismatch.function}: main(argv) includes program-name placeholder "
+            f"{mismatch.first_argument!r} as argv[0], but sys.argv indexing defines "
+            "only user arguments"
+        )
     return (
         "oracle invocation contract contradicts the requirement in "
         f"{mismatch.function}: main({mismatch.argument_name}) passes declared CLI name "
