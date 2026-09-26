@@ -2,6 +2,7 @@ import copy
 import itertools
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -9,10 +10,15 @@ from core.forge.infeasibility_protocol import (
     PROTOCOL,
     bind_obligation,
     certify_infeasibility,
+    parse_public_obligation,
     validate_obligation,
     verify_infeasibility_certificate,
 )
 from core.forge.public_contract import PublicImportContract
+from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.planner_stage import PlannerStage
+from core.forge.contracts import FeasiblePlan, InfeasibilityCertificate
+from forge import run_forge
 from core.forge.blind_benchmark import load_blind_bundle
 from core.forge.blind_freeze import BlindFreezeProvenance, freeze_blind_bundle
 from core.forge.blind_requirement import requirement_preflight_error, requirement_preflight_failure_class
@@ -52,6 +58,53 @@ def test_certificate_is_exact_repeatable_and_requirement_bound():
         verify_infeasibility_certificate(
             "Different prose. " + requirement, "infeasible_proven", formal, proof, CONTRACT,
         )
+
+
+def test_public_requirement_is_parsed_and_proven_before_model_planning(tmp_path):
+    formal = obligation()
+    requirement = bind_obligation(PROSE, formal, CONTRACT)
+    parsed = parse_public_obligation(requirement)
+    assert parsed == (formal, CONTRACT)
+    spec = RequirementCompiler().compile(requirement)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    )
+    result = planner.plan(spec)
+    assert isinstance(result, InfeasibilityCertificate)
+    assert result.execution_evidence["source"] == "public_normative_requirement"
+    assert result.execution_evidence["assignments_checked"] == 3
+    assert result.execution_evidence["requirement_sha256"] == certify_infeasibility(
+        requirement, formal, CONTRACT,
+    )["requirement_sha256"]
+
+
+@pytest.mark.parametrize("case_id", ["V10-010", "V10-011", "V10-012"])
+def test_known_v10_replay_detects_formal_contradiction_without_api_or_docker(tmp_path, case_id):
+    dataset = json.loads(
+        (Path(__file__).resolve().parents[1] / "benchmarks/blind_v10/external_001/cases.json")
+        .read_text(encoding="utf-8")
+    )
+    requirement = next(item["requirement"] for item in dataset if item["case_id"] == case_id)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    )
+    result = run_forge(
+        requirement, execution_mode="local-only", execution_backend="docker",
+        output_root=str(tmp_path / "runs"),
+        packaging_output_root=str(tmp_path / "packages"),
+        planner_stage=planner,
+    )
+    assert result.terminal_status == "infeasible_proven"
+    assert result.infeasibility_certificate is not None
+    assert result.run_metrics.model_request_count == 0
+    assert result.artifact_path
+    assert not (tmp_path / "packages").exists()
 
 
 @pytest.mark.parametrize("change", [
@@ -116,6 +169,51 @@ def test_renderer_does_not_rewrite_existing_blocks_and_rejects_cli_contracts():
         bind_obligation(requirement, formal, CONTRACT)
     with pytest.raises(ValueError, match="not a CLI"):
         bind_obligation(PROSE, formal, PublicImportContract("allocation", "main", "cli_entrypoint"))
+
+
+def test_public_parser_rejects_partial_or_changed_blocks_without_proving():
+    formal = obligation()
+    requirement = bind_obligation(PROSE, formal, CONTRACT)
+    with pytest.raises(ValueError, match="public block"):
+        parse_public_obligation(requirement.replace("[END FINITE-LINEAR-V1]", ""))
+    with pytest.raises(ValueError, match="binding"):
+        parse_public_obligation(requirement.replace("not permitted", "permitted"))
+    with pytest.raises(ValueError, match="public block"):
+        parse_public_obligation(PROSE + " " + PROTOCOL)
+    assert parse_public_obligation(PROSE) is None
+
+
+def test_satisfiable_public_obligation_does_not_produce_false_proof(tmp_path):
+    formal = obligation()
+    formal["constraints"].pop()
+    requirement = bind_obligation(PROSE, formal, CONTRACT)
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    )
+    assert isinstance(planner.plan(RequirementCompiler().compile(requirement)), FeasiblePlan)
+
+
+def test_malformed_public_obligation_stops_before_packaging(tmp_path):
+    requirement = bind_obligation(PROSE, obligation(), CONTRACT).replace(
+        "not permitted", "permitted"
+    )
+    planner = PlannerStage(
+        execution_mode="local-only",
+        audit_log_file=str(tmp_path / "audit.json"),
+        memory_file=str(tmp_path / "memory.json"),
+        gene_pool_file=str(tmp_path / "genes.json"),
+    )
+    with pytest.raises(ValueError, match="binding mismatch"):
+        run_forge(
+            requirement, execution_mode="local-only", execution_backend="docker",
+            output_root=str(tmp_path / "runs"),
+            packaging_output_root=str(tmp_path / "packages"),
+            planner_stage=planner,
+        )
+    assert not (tmp_path / "packages").exists()
 
 
 @pytest.mark.parametrize("field,value", [

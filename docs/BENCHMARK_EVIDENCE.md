@@ -345,6 +345,11 @@ The [first known-case V10-011 diagnostic replay](https://github.com/Daniele-Cang
 - [V10-011 diagnostic replay](../benchmarks/blind_v10/external_001/post_fix_replay_001_v10_011.json)
 - [V10-011 diagnostic context](../benchmarks/blind_v10/external_001/post_fix_replay_001_v10_011_execution_context.json)
 
+The [second known-case V10-011 diagnostic replay](https://github.com/Daniele-Cangi/Derivative/actions/runs/36240771549) ran on `42ec3e6` after the general serialization correction. The exception disappeared, but Forge incorrectly returned `verified` for the explicitly unsatisfiable public output contract. This selected-case replay therefore failed its expected status and recorded external false-verified rate `1.000`; no acceptance oracle exists for an infeasible case. It used 10 model requests, 146,232 tokens, and `$0.376302` configured cost. Its locked dependency snapshot remained byte-identical to the baseline snapshot. This is a known regression diagnosis, not a revised blind measurement. The subsequent planner change independently proves exact public `finite-linear-v1` obligations before model planning; its effect requires another labeled replay.
+
+- [Second V10-011 diagnostic replay](../benchmarks/blind_v10/external_001/post_fix_replay_002_v10_011.json)
+- [Second V10-011 diagnostic context](../benchmarks/blind_v10/external_001/post_fix_replay_002_v10_011_execution_context.json)
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.

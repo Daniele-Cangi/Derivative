@@ -16,6 +16,12 @@ from core.forge.contracts import (
     PlanTest,
     ValidationStrategy,
 )
+from core.forge.infeasibility_protocol import (
+    PROTOCOL,
+    SatisfiableObligationError,
+    certify_infeasibility,
+    parse_public_obligation,
+)
 from core.kernel import ReasoningKernel, ReasoningResult
 from core.substrate import CognitiveSubstrate
 from memory.delta import DeltaMemory
@@ -43,6 +49,38 @@ class PlannerStage:
         self.gene_pool = gene_pool or DesignGenePool(storage_file=gene_pool_file)
 
     def plan(self, build_spec: BuildSpec) -> PlannerStageOutput:
+        public_obligation = parse_public_obligation(build_spec.raw_requirement)
+        if public_obligation is not None:
+            obligation, public_contract = public_obligation
+            try:
+                proof = certify_infeasibility(
+                    build_spec.raw_requirement, obligation, public_contract,
+                )
+            except SatisfiableObligationError:
+                pass
+            else:
+                count = proof["assignments_checked"]
+                return InfeasibilityCertificate(
+                    certificate_id=f"infeasible-{build_spec.build_id}",
+                    build_spec=build_spec,
+                    contradictions=[
+                        f"The mandatory {PROTOCOL} output contract has no satisfying "
+                        f"assignment among {count} complete integer assignments."
+                    ],
+                    violated_obligations=[f"Mandatory {PROTOCOL} output contract"],
+                    proof_summary=(
+                        f"Exact exhaustive enumeration of {count} bounded integer "
+                        "assignments found no permitted output."
+                    ),
+                    execution_evidence={
+                        "result_mode": "infeasible",
+                        "is_satisfiable": False,
+                        "proof_method": proof["method"],
+                        "assignments_checked": count,
+                        "requirement_sha256": proof["requirement_sha256"],
+                        "source": "public_normative_requirement",
+                    },
+                )
         requirement = build_spec.normalized_requirement
         design_context = self.memory.retrieve_design_context(requirement)
         framings = self.substrate.decompose(requirement)

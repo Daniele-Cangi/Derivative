@@ -11,6 +11,7 @@ import re
 
 from core.forge.public_contract import (
     PublicImportContract,
+    extract_public_import_contract,
     requirement_public_import_error,
 )
 
@@ -23,6 +24,10 @@ MAX_VARIABLES = 8
 MAX_CONSTRAINTS = 16
 MAX_DOMAIN_WIDTH = 16
 MAX_INTEGER = 1_000_000
+
+
+class SatisfiableObligationError(ValueError):
+    """A well-formed finite contract has at least one valid output."""
 
 
 def _object(value: object, keys: set[str], label: str) -> dict:
@@ -143,6 +148,30 @@ def bind_obligation(
     return requirement.strip() + "\n" + render_obligation(obligation, public_contract)
 
 
+def parse_public_obligation(
+    requirement: str,
+) -> tuple[dict, PublicImportContract] | None:
+    """Read only the exact normative block present in the public requirement."""
+    if not has_protocol_marker(requirement):
+        return None
+    if requirement.count(MARKER) != 1 or requirement.count(END_MARKER) != 1:
+        raise ValueError(f"{PROTOCOL}: incomplete or repeated public block")
+    contract = extract_public_import_contract(requirement, kind="function")
+    if contract is None:
+        raise ValueError(f"{PROTOCOL}: missing public import contract")
+    block_start = requirement.index(MARKER)
+    block_end = requirement.index("\n" + END_MARKER, block_start)
+    json_start = requirement.rfind("\n{", block_start, block_end)
+    if json_start < 0:
+        raise ValueError(f"{PROTOCOL}: missing structured obligation")
+    try:
+        obligation = json.loads(requirement[json_start + 1:block_end])
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{PROTOCOL}: malformed structured obligation") from exc
+    _check_binding(requirement, obligation, contract)
+    return obligation, contract
+
+
 def _check_binding(
     requirement: str, obligation: object, public_contract: PublicImportContract,
 ) -> None:
@@ -169,7 +198,9 @@ def _prove_unsatisfiable(obligation: dict) -> int:
             if not satisfied:
                 break
         else:
-            raise ValueError(f"{PROTOCOL}: satisfiable obligation; infeasibility unproven")
+            raise SatisfiableObligationError(
+                f"{PROTOCOL}: satisfiable obligation; infeasibility unproven"
+            )
     return total
 
 

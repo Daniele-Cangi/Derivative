@@ -4,8 +4,10 @@
 
 An infeasible expected label needs a deterministic proof **of mandatory requirements**,
 not an independent false formula, a model's confidence, or an implementation failure.
-This protocol governs benchmark admission only. It must never set Forge's observed
-terminal status, bypass fail-closed validation, or change best-candidate rollback.
+The independent certificate governs benchmark admission only. Forge may separately
+prove an infeasible requirement from its **public normative block**, but never from
+the private certificate or expected label. Neither path bypasses fail-closed
+validation or changes best-candidate rollback.
 
 Version `finite-linear-v1` is deliberately restricted. It supports independently
 authored, explicit finite integer output contracts. It does **not** formalize arbitrary
@@ -44,6 +46,16 @@ verifier checks the exact block and interface binding and **recomputes** the exh
 proof. A hash binds bytes; it does not prove that unrelated prose means the same thing.
 Forge receives the public requirement, including the normative constraints, but not
 the certificate, expected label, review findings, or enumeration outcome.
+
+After the first V10 baseline exposed missed contradictions, Forge's planner gained a
+separate, general reader for the exact public block. It validates the full binding
+and independently enumerates the finite domains before any model planning. An
+unsatisfiable block yields an internal infeasibility proof; a satisfiable block
+continues ordinary planning; a malformed or partially altered block fails closed.
+No requirement is inferred from prose and no benchmark-private data is consulted.
+This shared formal format narrows the independence claim: it tests execution of an
+explicit public contract, not discovery of contradictions in unrestricted prose.
+All V10 checks after the sealed baseline are known-case regressions, not blind scores.
 
 ## Soundness and resource limits
 
