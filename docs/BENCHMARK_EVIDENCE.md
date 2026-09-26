@@ -332,6 +332,14 @@ A sixth, independent invocation on `ea0eaf5` produced and sealed the first Blind
 
 - [Frozen V10 manifest](../benchmarks/blind_v10/external_001/manifest.json)
 
+The [first V10 baseline workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/36238863499) ran on commit `58030fc` with the sealed schema-4 manifest, locked Linux/Python 3.11 dependencies, Docker isolation, and `gpt-4.1-2025-04-14`. It completed in 10m57s and uploaded the immutable `sealed_baseline` receipt. Seven of twelve cases passed (`status_accuracy=0.5833`): four of six expected verified cases reached `verified` and passed their external oracles; all three expected `validation_failed` cases matched. The external false-verified rate was `0.000` among the four internally verified artifacts. V10-010, the only infeasible case that completed a Forge run, remained `validation_failed`. V10-011 and V10-012 raised `TypeError: Object of type set is not JSON serializable`, so the reported infeasibility detection rate of `0.000` includes two execution exceptions and must not be read as three completed detection attempts.
+
+The receipt reports 52 model requests and 507,413 tokens across ten cases with available usage, plus `$1.384516` configured cost for those ten cases. `total_estimated_model_cost_usd` correctly remains `null` with coverage 10/12. The benchmark exception handler records zero usage for the two exception cases; this does **not** establish that they made no model calls, so no complete run cost is claimed. A negative or incomplete benchmark score was deliberately non-blocking in the workflow so the evidence could still be preserved.
+
+- [Immutable V10 baseline](../benchmarks/blind_v10/external_001/baseline_result.json)
+- [V10 execution context](../benchmarks/blind_v10/external_001/baseline_execution_context.json)
+- [V10 dependency snapshot](../benchmarks/blind_v10/external_001/baseline_dependency_snapshot.txt)
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
