@@ -355,6 +355,12 @@ The [third known-case V10-011 diagnostic replay](https://github.com/Daniele-Cang
 - [Third V10-011 diagnostic replay](../benchmarks/blind_v10/external_001/post_fix_replay_003_v10_011.json)
 - [Third V10-011 diagnostic context](../benchmarks/blind_v10/external_001/post_fix_replay_003_v10_011_execution_context.json)
 
+## Blind V11 production checkpoint
+
+Commit `87bffe5` added byte-preserving Git attributes for V11 and clarified the public/private proof boundary; its [Forge CI run](https://github.com/Daniele-Cangi/Derivative/actions/runs/36242650152) passed. The planned V11 producer retained the V10 configuration: six verified, three validation-failed, three finite-linear-v1 infeasible cases, `gpt-4.1-2025-04-14`, and five attempts per proposal.
+
+The first independent V11 production invocation failed requirement review at slot 1 after 19 requests, 30,345 tokens, and `$0.087324` configured estimated cost. The second invocation reached oracle generation but exhausted its existing five attempts for V11-002, with rejection classes `independent_review`, `placeholder`, `syntax`, and `missing_target_invocation`; it used 39 requests, 90,370 tokens, and `$0.308684` configured estimated cost. Across the two invocations: 58 requests, 120,715 tokens, and `$0.396008` configured estimated cost. Rejected candidates remain only in Git-ignored private diagnostics. **No V11 bundle was published, no Forge case was executed, and there is no V11 blind score.** No admission rule or retry limit was loosened. Further API production is paused pending a cost/approach decision.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
