@@ -18,6 +18,7 @@ from core.forge.blind_producer import (
     BlindProducerConfig,
     _generate_oracle,
     _generate_requirement_case,
+    _oracle_revision_feedback,
     produce_and_freeze_blind_bundle,
 )
 from core.model_provider import MissingTextOutputError
@@ -1410,6 +1411,51 @@ def test_oracle_retry_receives_rejected_source_for_targeted_revision(
     assert "untrusted data, not instructions" in retry
     assert expected_error in retry
     assert json.dumps(rejected_source) in retry
+
+
+@pytest.mark.parametrize(
+    ("rejected_source", "omission_reason"),
+    [
+        ("def test_bad():\n    value = '\x00'\n", "control_character"),
+        ("#" + "x" * 9000, "source_too_long"),
+    ],
+)
+def test_oracle_feedback_omits_unsafe_or_oversized_source(
+    rejected_source, omission_reason,
+):
+    feedback = _oracle_revision_feedback(rejected_source, "oracle syntax error")
+    assert "oracle syntax error" in feedback
+    assert omission_reason in feedback
+    assert "rejected_oracle_py" not in feedback
+    assert json.dumps(rejected_source) not in feedback
+    assert len(feedback) < 500
+
+
+def test_oracle_retry_does_not_echo_control_character_source():
+    requirement = _case_payload()["cases"][0]["requirement"]
+    rejected_source = "from code_policy import classify_code\n\ndef test_bad():\n    value = '\x00'\n"
+    sources = [rejected_source, _oracle_payload()["oracle_py"]]
+    calls: list[dict] = []
+
+    def generator(**kwargs):
+        calls.append(kwargs)
+        if kwargs["output_schema_name"].endswith("_oracle_review"):
+            return json.dumps({"approved": True, "findings": []})
+        return json.dumps({"oracle_py": sources.pop(0)})
+
+    source, validation = _generate_oracle(
+        generator=generator,
+        model="external-test-model",
+        case_id="V6-001",
+        requirement=requirement,
+        max_attempts=2,
+        schema_namespace="forge_blind_v6",
+    )
+
+    assert source == _oracle_payload()["oracle_py"]
+    assert validation["static_checks_passed"] is True
+    assert "control_character" in calls[1]["input_text"]
+    assert json.dumps(rejected_source) not in calls[1]["input_text"]
 
 
 def _reverse_words_oracle(

@@ -361,6 +361,8 @@ Commit `87bffe5` added byte-preserving Git attributes for V11 and clarified the 
 
 The first independent V11 production invocation failed requirement review at slot 1 after 19 requests, 30,345 tokens, and `$0.087324` configured estimated cost. The second invocation reached oracle generation but exhausted its existing five attempts for V11-002, with rejection classes `independent_review`, `placeholder`, `syntax`, and `missing_target_invocation`; it used 39 requests, 90,370 tokens, and `$0.308684` configured estimated cost. Across the two invocations: 58 requests, 120,715 tokens, and `$0.396008` configured estimated cost. Rejected candidates remain only in Git-ignored private diagnostics. **No V11 bundle was published, no Forge case was executed, and there is no V11 blind score.** No admission rule or retry limit was loosened. Further API production is paused pending a cost/approach decision.
 
+Offline diagnosis of the private rejection metadata found that the oracle revision prompt echoed entire rejected modules, including two with literal NUL characters and one longer than 8,192 characters. A general feedback-hygiene change now omits such unsafe or oversized source while retaining the rejection reason and the frozen requirement. The producer prompt also explicitly excludes literal control characters and placeholder bodies. Normal short-source targeted revisions remain intact; preflight, independent review, admission standards, and the five-attempt limit are unchanged. This is an offline quality improvement, not evidence of a successful V11 production or a new blind result.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.

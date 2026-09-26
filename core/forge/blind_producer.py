@@ -50,6 +50,7 @@ from core.model_provider import (
 
 
 TextGenerator = Callable[..., str]
+MAX_ORACLE_FEEDBACK_SOURCE_CHARS = 8192
 
 
 class _RetryableStructuredOutputError(ValueError):
@@ -631,6 +632,21 @@ def _generate_oracle(
 
 
 def _oracle_revision_feedback(source: str, error: str) -> str:
+    unsafe_control = any(
+        (ord(char) < 32 or ord(char) == 127) and char not in "\n\r\t"
+        for char in source
+    )
+    if unsafe_control or len(source) > MAX_ORACLE_FEEDBACK_SOURCE_CHARS:
+        reason = "control_character" if unsafe_control else "source_too_long"
+        return (
+            "\nThe previous oracle was rejected. Regenerate a complete replacement "
+            "module from the frozen requirement; the rejected source is omitted "
+            "because it is unsafe or too long to use as revision context:\n"
+            + json.dumps(
+                {"validation_error": error, "rejected_source_omitted": reason},
+                sort_keys=True,
+            )
+        )
     revision = {
         "validation_error": error,
         "rejected_oracle_py": source,
