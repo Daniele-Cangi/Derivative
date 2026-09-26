@@ -477,3 +477,18 @@ This command makes no model calls, validates bundle hashes and case IDs, writes 
 V5, V6, V7, V8, and V9 are known regression corpora. They must not be optimized into new blind claims. V8-005 may be used only as a known regression case and never as new blind evidence. The next generality measurement must use a new schema-v3 bundle frozen before Forge sees its requirements or oracles.
 
 The target metrics are reported together: External Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, median/P95 latency, tokens, configured cost per externally accepted artifact, and repairs per successful build.
+
+## Offline Frozen-Oracle Preflight Audit (V2–V11)
+
+An offline audit ran the current oracle preflight over all 66 frozen oracle sources in V2–V11. It made no Forge executions and no API calls. Ten bundles passed manifest, dataset, and oracle integrity checks; their 60 oracles yielded 46 preflight passes and 14 preflight rejections, with no analyzer crashes. These are static contract classifications, not semantic oracle verdicts or new benchmark evidence.
+
+The V3 `external_001` manifest does not match its tracked `cases.json`: expected dataset SHA-256 `3908e48a822f9af0a86fd44478a30f1aa506aba53ab3dad45499f651f3150477`, actual `a6aa546158f82c76a8c4ca2ef2f52ff703477b51c23807964959907eae13cf47`. The worktree file is unchanged from Git. Its six oracle classifications were inspected but excluded from the integrity-verified totals; the frozen inputs and manifest were left untouched.
+
+Notable classifications in the integrity-verified bundles:
+
+- V2-002–006 are rejected by the current minimum of three independent pytest tests; these legacy one-test oracles are not thereby shown semantically invalid.
+- V3 external_002 has three harness/causal-assertion findings; V4-001 has a fixture/output contradiction; V5-001 and V5-004 retain documented argv and explicit-regex contradictions.
+- V7-001’s unusable context-manager binding is now classified as `oracle_harness_mismatch` instead of crashing the preflight formatter. V9-002 retains its newline-fidelity mismatch, and V11-001 retains its known argv-placeholder mismatch.
+- All six V8 oracles pass static preflight. V8-005 was not executed: it remains a known-regression-only case and was not treated as new blind evidence.
+
+The audit also added a synthetic regression for formatting/classifying unusable context-manager bindings. No immutable benchmark input, baseline receipt, or score was changed.

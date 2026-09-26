@@ -1136,6 +1136,36 @@ def test_oracle_preflight_rejects_program_placeholder_for_unnamed_cli():
     assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
 
 
+def test_oracle_preflight_classifies_unusable_context_manager_without_crashing():
+    requirement = (
+        "Build an importable function classify(value: str) -> str and include tests."
+    )
+    source = (
+        "from sample import classify\n\n"
+        "class capture:\n"
+        "    def __enter__(self):\n"
+        "        self.stdout = object()\n"
+        "    def __exit__(self, *args):\n"
+        "        pass\n\n"
+        "def test_capture():\n"
+        "    with capture() as redir:\n"
+        "        result = classify('a')\n"
+        "        assert result == 'a'\n"
+        "        assert redir.stdout\n\n"
+        "def test_b():\n"
+        "    assert classify('b') == 'b'\n\n"
+        "def test_c():\n"
+        "    assert classify('c') == 'c'\n"
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is not None
+    assert "test harness context binding is unusable" in error
+    assert "capture.__enter__ does not return a non-None value" in error
+    assert oracle_preflight_failure_class(error) == "oracle_harness_mismatch"
+
+
 def test_frozen_v11_oracle_audit_keeps_known_mismatch_isolated():
     root = Path(__file__).resolve().parents[1]
     bundle = load_blind_bundle(

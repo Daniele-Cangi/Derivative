@@ -144,6 +144,11 @@ def oracle_contract_sanity_error(source: str, requirement: str) -> str | None:
             f"{mismatch.declared_pattern!r} classifies it as "
             f"{mismatch.derived_classification}"
         )
+    if mismatch.contract_id == "context_manager_binding":
+        return (
+            "oracle test harness context binding is unusable in "
+            f"{mismatch.function}: {mismatch.message}"
+        )
     if "program-name placeholder" in mismatch.message:
         return (
             "oracle invocation contract contradicts the requirement in "
@@ -196,6 +201,7 @@ def oracle_preflight_failure_class(error: str) -> str:
         ("newline expectation contradicts", "oracle_output_fidelity_mismatch"),
         ("fixture expectation contradicts", "fixture_oracle_mismatch"),
         ("explicit pattern contract contradicts", "explicit_pattern_mismatch"),
+        ("test harness context binding is unusable", "oracle_harness_mismatch"),
         ("invocation contract contradicts", "oracle_contract_mismatch"),
     )
     return next(
