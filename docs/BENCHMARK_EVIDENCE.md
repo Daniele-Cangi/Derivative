@@ -340,6 +340,11 @@ The receipt reports 52 model requests and 507,413 tokens across ten cases with a
 - [V10 execution context](../benchmarks/blind_v10/external_001/baseline_execution_context.json)
 - [V10 dependency snapshot](../benchmarks/blind_v10/external_001/baseline_dependency_snapshot.txt)
 
+The [first known-case V10-011 diagnostic replay](https://github.com/Daniele-Cangi/Derivative/actions/runs/36240216435) ran on `85d1e3f` as `post_fix_replay`. It repeated the serialization exception without changing the frozen baseline score. Improved exception telemetry recorded five model requests, 52,187 tokens, and an unknown total cost because the run failed before a complete per-case cost receipt. The error site is `core/forge/evidence_integrity.py:canonical_json_bytes:18`: nested `set` evidence reached JSON serialization without a canonical representation. The dependency snapshot was byte-identical to the baseline snapshot. A subsequent general serializer change handles `set` and `frozenset` with stable ordering and explicit type tags; its effect on the known case requires a separately labeled replay.
+
+- [V10-011 diagnostic replay](../benchmarks/blind_v10/external_001/post_fix_replay_001_v10_011.json)
+- [V10-011 diagnostic context](../benchmarks/blind_v10/external_001/post_fix_replay_001_v10_011_execution_context.json)
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.

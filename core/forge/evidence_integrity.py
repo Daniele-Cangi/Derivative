@@ -42,6 +42,17 @@ def to_jsonable(value: Any) -> Any:
             "__forge_scalar__": "bytearray",
             "hex": value.hex(),
         }
+    if isinstance(value, (set, frozenset)):
+        items = [to_jsonable(item) for item in value]
+        items.sort(
+            key=lambda item: json.dumps(
+                item, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+        )
+        return {
+            "__forge_scalar__": "frozenset" if isinstance(value, frozenset) else "set",
+            "items": items,
+        }
     if isinstance(value, dict):
         return {str(key): to_jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
