@@ -163,10 +163,24 @@ def test_print_and_return_actions_compile_from_one_compound_consequent():
     ]
     assert len({item.trigger for item in obligations}) == 3
     assert {(item.observable_channel, item.expected_value) for item in obligations} == {
-        ("stdout", "ERROR"),
+        ("stdout", "ERROR\n"),
         ("exit_code", 2),
     }
     assert len(obligations) == 6
+
+
+def test_print_without_newline_is_only_exact_when_requirement_says_so():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI. If input is invalid, print 'ERROR' to stdout without a trailing newline. "
+        "Return exit status 2."
+    )
+
+    stdout_obligation = next(
+        item for item in spec.conditional_obligations
+        if item.observable_channel == "stdout"
+    )
+
+    assert stdout_obligation.expected_value == "ERROR"
 
 
 def test_known_v11_verified_requirements_normalize_without_condition_gaps():
@@ -575,6 +589,58 @@ def test_validator_owned_probe_rejects_wrong_branch_behavior(tmp_path):
     assert any(
         item["status"] == "failed"
         for item in evidence["validator_branch_probes"]
+    )
+
+
+def test_validator_owned_probe_requires_python_print_newline(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI that accepts one positive integer N from argv[1]. "
+        "If N is not a valid positive integer, print 'ERROR' to stdout and return exit status 2. "
+        "Public import contract: from branch_tool import main."
+    )
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    source_path = tmp_path / "src" / "branch_tool.py"
+    source_path.parent.mkdir(parents=True)
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+
+    source_path.write_text(
+        "def main(argv):\n"
+        "    print('ERROR', end='')\n"
+        "    return 2\n",
+        encoding="utf-8",
+    )
+    failures, signatures, evidence = validator.validate(
+        spec, plan, {"src/branch_tool.py": source_path}, tmp_path
+    )
+
+    assert failures
+    assert "conditional_obligation_mismatch" in signatures
+    stdout_check = next(
+        check
+        for probe in evidence["validator_branch_probes"]
+        for check in probe["checks"]
+        if check["channel"] == "stdout"
+    )
+    assert stdout_check["expected"] == "ERROR\n"
+    assert stdout_check["actual"] == "ERROR"
+    assert not stdout_check["passed"]
+
+    source_path.write_text(
+        "def main(argv):\n"
+        "    print('ERROR')\n"
+        "    return 2\n",
+        encoding="utf-8",
+    )
+    failures, signatures, evidence = validator.validate(
+        spec, plan, {"src/branch_tool.py": source_path}, tmp_path
+    )
+
+    assert not failures
+    assert "conditional_obligation_mismatch" not in signatures
+    assert all(
+        probe["status"] == "passed"
+        for probe in evidence["validator_branch_probes"]
     )
 
 

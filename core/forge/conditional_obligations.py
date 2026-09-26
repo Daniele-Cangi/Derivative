@@ -182,11 +182,14 @@ class ConditionalObligationNormalizer:
             consequent,
             re.IGNORECASE,
         ):
+            printed_text = match.group(2)
+            if self._print_appends_newline(consequent[match.end() :]):
+                printed_text += "\n"
             observations.append(
                 self._observation(
                     (match.group(3) or "stdout").lower(),
                     "equals",
-                    match.group(2),
+                    printed_text,
                     "exact_text",
                 )
             )
@@ -242,6 +245,18 @@ class ConditionalObligationNormalizer:
             if item not in deduped:
                 deduped.append(item)
         return deduped
+
+    @staticmethod
+    def _print_appends_newline(suffix: str) -> bool:
+        """Python's print verb emits a newline unless the requirement forbids it."""
+        explicit_no_newline = re.search(
+            r"\b(?:without\s+(?:a\s+)?(?:trailing\s+)?newline|"
+            r"no\s+(?:trailing\s+)?newline|newline\s+(?:is\s+)?not\s+"
+            r"(?:included|appended|written))\b",
+            suffix[:120],
+            re.IGNORECASE,
+        )
+        return explicit_no_newline is None
 
     @staticmethod
     def _observation(channel: str, relation: str, value: Any, fidelity: str) -> dict[str, Any]:
