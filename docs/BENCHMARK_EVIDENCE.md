@@ -350,6 +350,11 @@ The [second known-case V10-011 diagnostic replay](https://github.com/Daniele-Can
 - [Second V10-011 diagnostic replay](../benchmarks/blind_v10/external_001/post_fix_replay_002_v10_011.json)
 - [Second V10-011 diagnostic context](../benchmarks/blind_v10/external_001/post_fix_replay_002_v10_011_execution_context.json)
 
+The [third known-case V10-011 diagnostic replay](https://github.com/Daniele-Cangi/Derivative/actions/runs/36242083622) ran on `39434c4` after the public-contract planner change. It returned `infeasible_proven`, matching the frozen expected label. Its internal proof enumerated all 64 bounded assignments from the public normative requirement, with zero model requests, zero tokens, and zero configured model cost. The dependency snapshot was again byte-identical to the baseline. This demonstrates the mechanism on one known case; offline regressions cover V10-010 and V10-012, but neither this replay nor those tests alter the immutable V10 blind score or establish performance on unseen prose contradictions.
+
+- [Third V10-011 diagnostic replay](../benchmarks/blind_v10/external_001/post_fix_replay_003_v10_011.json)
+- [Third V10-011 diagnostic context](../benchmarks/blind_v10/external_001/post_fix_replay_003_v10_011_execution_context.json)
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
