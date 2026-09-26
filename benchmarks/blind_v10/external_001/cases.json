@@ -1,0 +1,653 @@
+[
+  {
+    "case_id": "V10-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V10-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot1",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string representing a non-negative decimal integer (with no leading zeros unless it is '0'), and prints the corresponding value written in English using only lowercase letters and spaces (e.g., 'zero', 'one', 'twenty three', 'one hundred forty two', 'one thousand', 'one million two hundred thirty four thousand five hundred sixty seven'). If the input cannot be parsed as a valid non-negative integer without leading zeros (except for '0'), prints 'error' and exits with status 1. Otherwise, prints the English representation and exits with status 0. The range is limited to integers 0 through 9999999 inclusive. If the value is outside this range, prints 'error' and exits with status 1. All output must be followed by a single newline. Public import contract: from forge_bench_slot1 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "english numerals",
+      "input validation",
+      "edge-cases",
+      "standard-library-only"
+    ]
+  },
+  {
+    "case_id": "V10-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V10-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot2",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string representing a date in the form 'YYYYMMDD' (four digits for the year, two for the month, two for the day, no delimiters). The CLI must print the ISO 8601 weekday name ('Monday', 'Tuesday', etc., capitalized) corresponding to that date. If the input is not exactly eight digits, or is not a valid calendar date in the Gregorian calendar between 19000101 and 20991231 inclusive, print 'error' followed by a single newline and exit with status 1. On valid input, print the weekday name followed by a single newline and exit with status 0. Dates with incorrect month or day (such as '20210230', '20001310', or '19990231') must be treated as invalid. Public import contract: from forge_bench_slot2 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "date-string",
+      "calendar-validation",
+      "weekday-name",
+      "edge-cases",
+      "main-interface"
+    ]
+  },
+  {
+    "case_id": "V10-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V10-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot3",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument, a string representing a non-negative integer N in decimal notation with no leading zeros except for '0'. If the argument is not a valid representation of such an integer in the inclusive range 0 to 1000, prints 'error' followed by a newline and exits with status 1. Otherwise, prints the number of distinct ways to climb a staircase of N steps taking steps of 1, 2, or 5 at a time, followed by a newline, and exits with status 0. The output must be the precise count as a decimal integer. For example, for input '5', the output would be '8'. For input '0', the output must be '1'. If N is '1000', the correct count must be calculated and output deterministically (no overflow or approximation). Output must not be affected by environment or locale. Behavior must be identical for in-process capture of sys.stdout. Public import contract: from forge_bench_slot3 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "staircase",
+      "integer parsing",
+      "combinatorics",
+      "terminal"
+    ]
+  },
+  {
+    "case_id": "V10-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V10-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot4",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string representing a pattern for a simple Run-Length Encoded (RLE) list using only ASCII digits and lowercase Latin letters, with no whitespace. Each run in the string is required to be consecutive: a run consists of 1 to 3 ASCII digits (interpreted as a decimal integer in the inclusive range 1 to 255) followed by a single lowercase letter. At least one run must be present and no additional characters are allowed. On valid input, the CLI prints the expanded sequence formed by repeating each letter in each run by the specified count, with runs concatenated in order, followed by a single newline. On any invalid input (such as empty string, missing or extra digits, uppercase letters, digits out of range, or leftover characters), the CLI must print 'error' followed by a newline and exit with status 1. Input such as '10a3b2z' prints 'aaaaaaaaaabbzz' and exits with status 0. Input such as '002a', '3A', '2', 'a2c' or '256b' is invalid. No environment, locale, or encoding effects are permitted. All output and exit behavior must be observable in sys.stdout and process exit code in-process. Public import contract: from forge_bench_slot4 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "run-length-encoding",
+      "pattern-expansion",
+      "strict-input-format"
+    ]
+  },
+  {
+    "case_id": "V10-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V10-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot5",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly two positional arguments: a string representing a positive integer N (in decimal notation, with no leading zeros except for '0' alone, and in the inclusive range 1 to 9999), and a string of lowercase ASCII letters ('a'-'z') of length at least 1 and at most N. On valid input, prints the N-length string obtained by cyclically repeating and truncating the letter string to length N (e.g., N=7, string='xyz' yields 'xyzxyzx'), followed by a single newline, and exits with status 0. On any invalid input (N not a valid positive integer in the prescribed range, N has leading zeros, N less than string length, second argument is empty, or contains non-lowercase-ASCII letters), prints 'error' followed by a single newline and exits with status 1. Output must be fully deterministic and observed in sys.stdout with process exit status capturable in-process. Public import contract: from forge_bench_slot5 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "terminal-verified",
+      "cyclic-repeat",
+      "string-processing",
+      "input-validation",
+      "error-handling"
+    ]
+  },
+  {
+    "case_id": "V10-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V10-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot6",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string consisting solely of up to 50 ASCII lowercase letters ('a'-'z'). The CLI must print the shortest possible palindrome string that can be formed by inserting zero or more lowercase letters at the end of the input string. If the input string already forms a palindrome, print it unchanged. If the input is not composed entirely of 1 to 50 lowercase letters, print 'error' followed by a newline and exit with status 1. Otherwise, print the constructed palindrome (using only lowercase ASCII letters), followed by a single newline and exit with status 0. The output must always be deterministic; for non-palindromic input, the solution must add the minimal possible number of characters. Only letters may appear in output; preservation of input is required when already a palindrome. Edge cases: the empty string is not valid input; single-letter strings are valid and must print as-is. Deterministic failure: on invalid input, behavior must match error contract exactly. Output and code must be fully capturable in-process via sys.stdout and integer return code. Public import contract: from forge_bench_slot6 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "palindrome",
+      "string-processing",
+      "argument-validation",
+      "deterministic",
+      "ascii-alpha"
+    ]
+  },
+  {
+    "case_id": "V10-007",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot7",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string representing a positive decimal integer (with no leading zeros allowed) in the inclusive range 1 to 4999. The CLI must print the Roman numeral representation (in uppercase, as per standard classical Roman numerals) of the input value, followed by a newline. If the input is not a valid positive integer in the prescribed range, or contains leading zeros, or is not entirely digits, or is out of range, print 'error' followed by a single newline and exit with status 1. On valid input, print the unique classical Roman numeral and exit with status 0. Edge: there is no requirement to support subtractive forms or mixed forms, but the provided output must be 'unique and standard classical' which is left to interpretation. Output and exit code must be deterministic and observable in-process via sys.stdout and integer return. Public import contract: from forge_bench_slot7 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "roman-numeral",
+      "input-validation",
+      "number-format",
+      "ambiguous-roman-definition"
+    ]
+  },
+  {
+    "case_id": "V10-008",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot8",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string representing a time in 24-hour format without separators (e.g., '235959', '081527'). The argument must consist of exactly six ASCII digits, representing hours (00 to 23), minutes (00 to 59), and seconds (00 to 60). On valid input, print the number of seconds since midnight for the specified time followed by a newline, and exit with status 0. If the input does not exactly match this six-digit pattern or does not correspond to a representable time (for example, minute > 59, hour > 23, second > 60), print 'error' followed by a newline and exit with status 1. In the event that the seconds component is exactly '60', the CLI must instead print 'ambiguous' and exit with status 2. However, it remains unspecified whether or not the representation of '60' seconds is admissible according to international timekeeping standards for all dates, and whether such inputs are ever valid. This ambiguity means the requirement cannot be conclusively validated in all cases. Public import contract: from forge_bench_slot8 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "time-format",
+      "24-hour",
+      "validation_failed",
+      "edge-case",
+      "ambiguous-spec"
+    ]
+  },
+  {
+    "case_id": "V10-009",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "forge_bench_slot9",
+      "symbol": "main"
+    },
+    "requirement": "Define a CLI entrypoint that accepts exactly one positional argument: a string representing a non-negative integer N (in decimal, no leading zeros except for '0') in the inclusive range 0 to 2000. The CLI must print the Nth term of a sequence defined as follows: S(0) = 2, S(1) = 7, and for every N >= 2, S(N) = the smallest integer greater than S(N-1) that shares no common digit with S(N-2), and is not divisible by 3. On valid input, print the Nth sequence value as a decimal integer, followed by a newline, and exit with status 0. On invalid input (not a decimal non-negative integer in the prescribed range or contains leading zeros except for '0'), print 'error' followed by a newline and exit with status 1. Ambiguity: The definition of 'shares no common digit' is unclear whether it refers to decimal representation as strings (e.g., S(4)=10 compared to S(2)=9: '1' and '9' have no digits in common, but interpretation could differ for multi-digit numbers), and the possibility of no such next number for certain terms is not universally excluded. Thus, validation of all sequence outputs is not objectively possible under the stated rules. All output must be deterministic, observable in sys.stdout, and process exit code capturable in-process. Public import contract: from forge_bench_slot9 import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "cli",
+      "sequence",
+      "integer",
+      "digits",
+      "validation_failed",
+      "ambiguity"
+    ]
+  },
+  {
+    "case_id": "V10-010",
+    "expected_terminal_status": "infeasible_proven",
+    "formal_obligation": {
+      "constraints": [
+        {
+          "coefficients": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 1
+        },
+        {
+          "coefficients": [
+            1,
+            1,
+            -1,
+            -1
+          ],
+          "relation": "eq",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        }
+      ],
+      "protocol": "finite-linear-v1",
+      "variables": [
+        {
+          "lower": -2,
+          "name": "key_a",
+          "upper": 3
+        },
+        {
+          "lower": -2,
+          "name": "key_b",
+          "upper": 3
+        },
+        {
+          "lower": -2,
+          "name": "key_c",
+          "upper": 3
+        },
+        {
+          "lower": -2,
+          "name": "key_d",
+          "upper": 3
+        }
+      ]
+    },
+    "infeasibility_certificate": {
+      "assignments_checked": 1296,
+      "method": "exhaustive-integer-enumeration",
+      "protocol": "finite-linear-v1",
+      "requirement_sha256": "ab2a9c242ed951f81004ba17cbc4c0bab0e8b76a09893b2577a529ee6f212887"
+    },
+    "public_contract": {
+      "kind": "function",
+      "module": "forge_bench_slot10",
+      "symbol": "strictly_balanced_dict"
+    },
+    "requirement": "Define a library function that returns a dictionary with four integer keys: 'key_a', 'key_b', 'key_c', and 'key_d'. Each value must be in the inclusive range from -2 to 3. The values must sum to 1, and the sum of 'key_a' and 'key_b' must equal the sum of 'key_c' and 'key_d'. In addition, all four values must be distinct. Public import contract: from forge_bench_slot10 import strictly_balanced_dict.\n[BEGIN FINITE-LINEAR-V1]\nNormative output contract (unconditional; not an example or a hypothetical).\nCalling forge_bench_slot10.strictly_balanced_dict() with no arguments must terminate normally and return a dict with exactly the variable names below as keys and Python int values (bool is excluded). Each value must lie between its lower and upper bounds, inclusive. All constraints must hold simultaneously. For each constraint, sum(coefficients[i] * value_of_variable_i) must have the stated relation to rhs: le means <=, eq means ==, ne means !=. Variable order is the listed order. Raising, returning None, reporting impossibility, skipping the call, or satisfying only a subset is not permitted. This obligation is mandatory regardless of any other prose; no exception or fallback overrides it.\n{\"constraints\":[{\"coefficients\":[1,1,1,1],\"relation\":\"eq\",\"rhs\":1},{\"coefficients\":[1,1,-1,-1],\"relation\":\"eq\",\"rhs\":0},{\"coefficients\":[1,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,0,1,-1],\"relation\":\"ne\",\"rhs\":0}],\"protocol\":\"finite-linear-v1\",\"variables\":[{\"lower\":-2,\"name\":\"key_a\",\"upper\":3},{\"lower\":-2,\"name\":\"key_b\",\"upper\":3},{\"lower\":-2,\"name\":\"key_c\",\"upper\":3},{\"lower\":-2,\"name\":\"key_d\",\"upper\":3}]}\n[END FINITE-LINEAR-V1]",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "infeasibility_protocol": "finite-linear-v1",
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "library",
+      "dict-values",
+      "integer-policy",
+      "distinctness",
+      "sum-constraint"
+    ]
+  },
+  {
+    "case_id": "V10-011",
+    "expected_terminal_status": "infeasible_proven",
+    "formal_obligation": {
+      "constraints": [
+        {
+          "coefficients": [
+            1,
+            1,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 10
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 2
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 1
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 1
+        },
+        {
+          "coefficients": [
+            1,
+            -2,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            2,
+            1,
+            -3
+          ],
+          "relation": "eq",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        }
+      ],
+      "protocol": "finite-linear-v1",
+      "variables": [
+        {
+          "lower": 1,
+          "name": "x",
+          "upper": 4
+        },
+        {
+          "lower": 1,
+          "name": "y",
+          "upper": 4
+        },
+        {
+          "lower": 1,
+          "name": "z",
+          "upper": 4
+        }
+      ]
+    },
+    "infeasibility_certificate": {
+      "assignments_checked": 64,
+      "method": "exhaustive-integer-enumeration",
+      "protocol": "finite-linear-v1",
+      "requirement_sha256": "5412bd34f434e5c291565770bc08ae3aae31189bc5423605d13bc5a1d763ab85"
+    },
+    "public_contract": {
+      "kind": "function",
+      "module": "forge_bench_slot11",
+      "symbol": "unique_mean_dict"
+    },
+    "requirement": "Define a library function that returns a dictionary with three integer keys: 'x', 'y', and 'z'. Each value must be in the inclusive range from 1 to 4. The value of 'x' must be twice the value of 'y', and the value of 'z' must be the mean (rounded down) of 'x' and 'y'. Additionally, 'x', 'y', and 'z' must all be distinct values, and the sum of all three must equal 10. No valid assignment exists that satisfies all conditions. Public import contract: from forge_bench_slot11 import unique_mean_dict.\n[BEGIN FINITE-LINEAR-V1]\nNormative output contract (unconditional; not an example or a hypothetical).\nCalling forge_bench_slot11.unique_mean_dict() with no arguments must terminate normally and return a dict with exactly the variable names below as keys and Python int values (bool is excluded). Each value must lie between its lower and upper bounds, inclusive. All constraints must hold simultaneously. For each constraint, sum(coefficients[i] * value_of_variable_i) must have the stated relation to rhs: le means <=, eq means ==, ne means !=. Variable order is the listed order. Raising, returning None, reporting impossibility, skipping the call, or satisfying only a subset is not permitted. This obligation is mandatory regardless of any other prose; no exception or fallback overrides it.\n{\"constraints\":[{\"coefficients\":[1,1,1],\"relation\":\"eq\",\"rhs\":10},{\"coefficients\":[1,0,0],\"relation\":\"eq\",\"rhs\":2},{\"coefficients\":[0,1,0],\"relation\":\"eq\",\"rhs\":1},{\"coefficients\":[0,0,1],\"relation\":\"eq\",\"rhs\":1},{\"coefficients\":[1,-2,0],\"relation\":\"eq\",\"rhs\":0},{\"coefficients\":[2,1,-3],\"relation\":\"eq\",\"rhs\":0},{\"coefficients\":[1,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,-1],\"relation\":\"ne\",\"rhs\":0}],\"protocol\":\"finite-linear-v1\",\"variables\":[{\"lower\":1,\"name\":\"x\",\"upper\":4},{\"lower\":1,\"name\":\"y\",\"upper\":4},{\"lower\":1,\"name\":\"z\",\"upper\":4}]}\n[END FINITE-LINEAR-V1]",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "infeasibility_protocol": "finite-linear-v1",
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "library",
+      "finite-linear-v1",
+      "dict-output",
+      "distinct-values",
+      "infeasible"
+    ]
+  },
+  {
+    "case_id": "V10-012",
+    "expected_terminal_status": "infeasible_proven",
+    "formal_obligation": {
+      "constraints": [
+        {
+          "coefficients": [
+            1,
+            1,
+            0,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 4
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 3
+        },
+        {
+          "coefficients": [
+            1,
+            1,
+            1,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 8
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        }
+      ],
+      "protocol": "finite-linear-v1",
+      "variables": [
+        {
+          "lower": 0,
+          "name": "alpha",
+          "upper": 5
+        },
+        {
+          "lower": 0,
+          "name": "beta",
+          "upper": 5
+        },
+        {
+          "lower": 0,
+          "name": "gamma",
+          "upper": 5
+        },
+        {
+          "lower": 0,
+          "name": "delta",
+          "upper": 5
+        }
+      ]
+    },
+    "infeasibility_certificate": {
+      "assignments_checked": 1296,
+      "method": "exhaustive-integer-enumeration",
+      "protocol": "finite-linear-v1",
+      "requirement_sha256": "b55658a7113626cfc905ab6596a6ff919565d88230008d93a1d4f390225c7a2e"
+    },
+    "public_contract": {
+      "kind": "function",
+      "module": "forge_bench_slot12",
+      "symbol": "partitioned_sum_dict"
+    },
+    "requirement": "Define a library function that returns a dictionary with four integer keys: 'alpha', 'beta', 'gamma', and 'delta'. Each value must be in the inclusive range from 0 to 5. The sum of 'alpha' and 'beta' must be exactly 4, the sum of 'gamma' and 'delta' must be exactly 3, and the total sum of all four keys must be 8. Additionally, 'alpha' and 'gamma' must be different, and 'beta' and 'delta' must also be different. No valid assignment exists that satisfies all conditions. Public import contract: from forge_bench_slot12 import partitioned_sum_dict.\n[BEGIN FINITE-LINEAR-V1]\nNormative output contract (unconditional; not an example or a hypothetical).\nCalling forge_bench_slot12.partitioned_sum_dict() with no arguments must terminate normally and return a dict with exactly the variable names below as keys and Python int values (bool is excluded). Each value must lie between its lower and upper bounds, inclusive. All constraints must hold simultaneously. For each constraint, sum(coefficients[i] * value_of_variable_i) must have the stated relation to rhs: le means <=, eq means ==, ne means !=. Variable order is the listed order. Raising, returning None, reporting impossibility, skipping the call, or satisfying only a subset is not permitted. This obligation is mandatory regardless of any other prose; no exception or fallback overrides it.\n{\"constraints\":[{\"coefficients\":[1,1,0,0],\"relation\":\"eq\",\"rhs\":4},{\"coefficients\":[0,0,1,1],\"relation\":\"eq\",\"rhs\":3},{\"coefficients\":[1,1,1,1],\"relation\":\"eq\",\"rhs\":8},{\"coefficients\":[1,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,-1],\"relation\":\"ne\",\"rhs\":0}],\"protocol\":\"finite-linear-v1\",\"variables\":[{\"lower\":0,\"name\":\"alpha\",\"upper\":5},{\"lower\":0,\"name\":\"beta\",\"upper\":5},{\"lower\":0,\"name\":\"gamma\",\"upper\":5},{\"lower\":0,\"name\":\"delta\",\"upper\":5}]}\n[END FINITE-LINEAR-V1]",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "infeasibility_protocol": "finite-linear-v1",
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v10",
+      "library",
+      "dict-output",
+      "finite-integer",
+      "terminal-infeasible",
+      "constraint-combinatorics",
+      "sum-partition"
+    ]
+  }
+]

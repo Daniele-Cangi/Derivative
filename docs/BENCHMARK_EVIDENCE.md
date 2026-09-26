@@ -328,6 +328,10 @@ A fourth invocation on `0f3f317` enabled private rejection capture. It failed at
 
 A fifth invocation on `355bf26` explicitly enabled `finite-linear-v1`. The complete requirement set passed admission and production reached the verified-oracle stage, where the producer exhausted its existing five-attempt limit with `discarded_entrypoint_result`. It made 34 requests, used 74,138 tokens, and recorded `$0.227716` configured cost. The staging bundle was removed without publication; no Forge baseline ran. Cumulative V10 production attempts: 70 requests, 140,818 tokens, `$0.424292`. Requirement rejections were captured privately; this version did not yet capture rejected oracle source, so the failing oracle's precise form is unknown. The subsequent general correction scopes the discarded CLI return rule to declared CLI contracts and captures future oracle rejections in the same private diagnostics stream. The correction does not certify this failed run or turn it into blind evidence.
 
+A sixth, independent invocation on `ea0eaf5` produced and sealed the first Blind V10 bundle before any Forge execution. It has six `verified`, three `validation_failed`, and three `infeasible_proven` cases. All three infeasible cases carry bounded `finite-linear-v1` certificates in schema 4; all six verified cases have independently reviewed external oracles. The producer made 47 requests, used 93,265 tokens, and recorded `$0.290144` configured cost. Its frozen manifest is `e5b4aa4a02199559c60607b1be43843f929dfbd36d29931613ff903fc5e86ac2`; the dataset digest is `c169d86be93700f38efbfc2f515738a283cbcfcfea6122bced9d76c7792e9a64`. Across all six V10 production invocations, cumulative usage was 117 requests, 234,083 tokens, and `$0.714436` configured cost. The failed proposals and their diagnostics remain private. No V10 Forge baseline has run at this checkpoint.
+
+- [Frozen V10 manifest](../benchmarks/blind_v10/external_001/manifest.json)
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
