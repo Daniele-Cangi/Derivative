@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from core.forge.conditional_evidence import (
@@ -142,6 +143,42 @@ def test_shared_subject_disjunctions_compile_passive_output_and_exit_obligations
     }
     assert {item.observable_channel for item in invalid_obligations} == {"exit_code"}
     assert {item.expected_value for item in invalid_obligations} == {2}
+
+
+def test_print_and_return_actions_compile_from_one_compound_consequent():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI. If the argument is missing or malformed or extra "
+        "positional arguments are supplied, print 'ERROR' to stdout, return exit "
+        "status 2."
+    )
+
+    assert spec.conditional_normalization_issues == []
+    parent = next(
+        atom for atom in spec.requirement_atoms if atom.text.startswith("If the argument")
+    )
+    obligations = [
+        item
+        for item in spec.conditional_obligations
+        if item.parent_requirement_id == parent.requirement_id
+    ]
+    assert len({item.trigger for item in obligations}) == 3
+    assert {(item.observable_channel, item.expected_value) for item in obligations} == {
+        ("stdout", "ERROR"),
+        ("exit_code", 2),
+    }
+    assert len(obligations) == 6
+
+
+def test_known_v11_verified_requirements_normalize_without_condition_gaps():
+    bundle = Path(__file__).resolve().parents[1] / "benchmarks/blind_v11/external_001/cases.json"
+    cases = json.loads(bundle.read_text(encoding="utf-8"))
+    verified = [case for case in cases if case["expected_terminal_status"] == "verified"]
+
+    assert len(verified) == 6
+    for case in verified:
+        spec = RequirementCompiler().compile(case["requirement"])
+        assert spec.conditional_normalization_issues == [], case["case_id"]
+        assert spec.conditional_obligations, case["case_id"]
 
 
 def test_disjunction_with_independent_subjects_does_not_inherit_the_first_subject():

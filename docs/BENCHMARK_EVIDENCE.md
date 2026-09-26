@@ -374,6 +374,8 @@ The [first V11 baseline workflow](https://github.com/Daniele-Cangi/Derivative/ac
 - [V11 execution context](../benchmarks/blind_v11/external_001/baseline_execution_context.json)
 - [V11 dependency snapshot](../benchmarks/blind_v11/external_001/baseline_dependency_snapshot.txt) — SHA-256 `8969E5C89441539E9AF15C22C67269C4B6CA17DEC4F48FCE72DFEA949F65AD02`
 
+Offline review found a common cause in the six expected-verified failures. Each requirement states one or more invalid-input conditions followed by two consequences, such as printing an exact error and returning or exiting with status 2. The general conditional normalizer had no `print` consequence and did not parse the stated exit-status forms, so it split at the later comma and lost the output obligation. A general parser correction now recognizes exact printed output and exit status together. A synthetic three-branch test and all six known V11 requirements pass normalization checks; the adjacent compiler suites pass 49 tests. This is a post-baseline code change. The V11 baseline remains immutable, and the correction's effect still needs a labeled known-case replay.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.

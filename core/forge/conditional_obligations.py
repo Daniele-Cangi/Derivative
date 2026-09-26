@@ -27,10 +27,10 @@ class ConditionalObligationNormalizer:
     _CONSEQUENT_START = re.compile(
         r"^(?:(?:the\s+)?(?:cli|tool|function|system|program|application|process|"
         r"result|output|record|line)|it|its\s+value)\b.{0,80}"
-        r"\b(?:returns?|outputs?|writes?|written|exits?|is|becomes?|remains?|raises?|"
+        r"\b(?:returns?|outputs?|writes?|prints?|written|exits?|is|becomes?|remains?|raises?|"
         r"reject(?:s|ed)?|skip(?:s|ped)?|omit(?:s|ted)?|ignore(?:s|d)?|"
         r"preserv(?:es|ed))\b|"
-        r"^(?:return|output|write|raise|exit|reject|skip)\b",
+        r"^(?:return|output|write|print|raise|exit|reject|skip)\b",
         re.IGNORECASE,
     )
 
@@ -176,6 +176,21 @@ class ConditionalObligationNormalizer:
         ):
             observations.append(self._observation(match.group(3).lower(), "equals", match.group(2), "exact_text"))
 
+        for match in re.finditer(
+            r"\bprints?\s+(?:exactly\s+)?(['\"])(.*?)\1"
+            r"(?:\s+to\s+(stderr|stdout))?",
+            consequent,
+            re.IGNORECASE,
+        ):
+            observations.append(
+                self._observation(
+                    (match.group(3) or "stdout").lower(),
+                    "equals",
+                    match.group(2),
+                    "exact_text",
+                )
+            )
+
         for channel in ("stdout", "stderr"):
             if re.search(
                 rf"(?:producing|with)\s+no\s+output\s+(?:to|on)\s+{channel}\b",
@@ -199,13 +214,16 @@ class ConditionalObligationNormalizer:
             )
 
         exit_match = re.search(
+            r"\b(?:returns?\s+)?(?:exit\s+)?status\s+(-?\d+)\b|"
+            r"\bexit\s+(?:with\s+)?(?:status|code)\s+(-?\d+)\b|"
+            r"\bexit\s+(-?\d+)\b|"
             r"\b(?:exits?\s+)?with\s+(?:exit\s+)?code\s+(-?\d+)\b|"
             r"\bexit\s+code\s+(?:is|equals?)\s+(-?\d+)\b",
             consequent,
             re.IGNORECASE,
         )
         if exit_match:
-            value = exit_match.group(1) or exit_match.group(2)
+            value = next(group for group in exit_match.groups() if group is not None)
             observations.append(self._observation("exit_code", "equals", int(value), "exact_scalar"))
 
         raise_match = re.search(r"\braises?\s+([A-Za-z_][A-Za-z0-9_]*)\b", consequent)
