@@ -312,6 +312,12 @@ Sources:
 - [Final V9-003 closure execution context](../benchmarks/blind_v9/external_001/post_fix_replay_003_v9_003_execution_context.json)
 - [Final V9-003 closure workflow](https://github.com/Daniele-Cangi/Derivative/actions/runs/36062980584)
 
+## Blind V10 production status
+
+The V10 host environment and byte-preserving Git attributes were committed on `de31193`; its [Forge CI run](https://github.com/Daniele-Cangi/Derivative/actions/runs/36232017231) passed. No V10 bundle has been frozen or executed by Forge.
+
+Two local producer invocations on that commit failed closed before publication on 2026-09-26, using `gpt-4.1-2025-04-14` and the configured rates of $2 per million input tokens and $8 per million output tokens. The first used one generation attempt and stopped at independent requirement review: 2 requests, 1,608 tokens, configured cost `$0.006054`, failure id `59e4c5949bb0`. The second used the producer's existing limit of five generation attempts and stopped on `requirement_infeasibility_unproven` and `static_case` rejections: 24 requests, 57,037 tokens, configured cost `$0.158636`, failure id `b0023161d213`. Combined production usage was 26 requests, 58,645 tokens, and `$0.164690` configured cost. These are failed production attempts, not blind benchmark measurements; neither published a bundle or ran a Forge baseline.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
