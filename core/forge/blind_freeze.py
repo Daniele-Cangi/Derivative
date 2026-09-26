@@ -7,6 +7,7 @@ from typing import List
 
 from core.forge.blind_benchmark import (
     BLIND_BENCHMARK_SCHEMA_VERSION,
+    BLIND_CERTIFIED_SCHEMA_VERSION,
     FORGE_BASELINE_DIGEST_MODE,
     BlindBenchmarkBundle,
     compute_forge_baseline_digest,
@@ -59,6 +60,13 @@ def freeze_blind_bundle(
     dataset = _resolve_input_file(root, dataset_path, "dataset")
     cases = load_heldout_cases(str(dataset), require_public_contract=True)
     _validate_oracle_semantic_sanity(cases)
+    certified = any(case.infeasibility_certificate is not None for case in cases)
+    if certified and any(
+        case.expected_terminal_status == "infeasible_proven"
+        and case.infeasibility_certificate is None
+        for case in cases
+    ):
+        raise ValueError("Certified blind bundles cannot mix certified and legacy infeasible cases.")
 
     oracle_digests = {
         case.case_id: _sha256_file(Path(case.oracle.path))
@@ -67,7 +75,9 @@ def freeze_blind_bundle(
     }
     baseline_digest, baseline_file_count = compute_forge_baseline_digest(repository_root)
     payload = {
-        "schema_version": BLIND_BENCHMARK_SCHEMA_VERSION,
+        "schema_version": (
+            BLIND_CERTIFIED_SCHEMA_VERSION if certified else BLIND_BENCHMARK_SCHEMA_VERSION
+        ),
         "bundle_id": identifier,
         "frozen_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
             "+00:00", "Z"
@@ -107,6 +117,9 @@ def _validate_oracle_semantic_sanity(cases: List[HeldoutBenchmarkCase]) -> None:
         requirement_error = requirement_preflight_error(
             case.requirement,
             case.expected_terminal_status,
+            formal_obligation=case.formal_obligation,
+            infeasibility_certificate=case.infeasibility_certificate,
+            public_contract=case.public_contract,
         )
         if requirement_error is not None:
             failure_class = requirement_preflight_failure_class(requirement_error)

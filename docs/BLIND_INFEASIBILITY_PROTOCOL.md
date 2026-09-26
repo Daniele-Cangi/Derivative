@@ -61,6 +61,21 @@ certificates are rejected, never classified as infeasible by default.
 
 ## Rollout checkpoints
 
+Enable the mode explicitly with `forge_blind_produce.py ... --infeasibility-protocol
+finite-linear-v1`. The default remains the legacy prose-only producer. Only infeasible
+slots request a formal obligation; verified and ambiguous slots keep their existing
+schemas. Proof generation adds no model calls and no retry allowance. The existing
+bounded replacement loop remains unchanged. Missing/invalid/satisfiable obligations
+are rejected before independent review; certificate failures never fall back to the
+legacy recognizers. Review rejection remains authoritative even with a valid proof.
+
+The freezer persists certified bundles as **manifest schema 4**, including every
+certificate in the hashed dataset. Schema 4 requires a certificate for every infeasible
+case and disallows a mix with legacy infeasibility admission. The loader rejects
+downgrades and rechecks every proof even when baseline verification is disabled for a
+replay. Older clients reject schema 4 as unsupported. Legacy bundles stay schemas 1–3;
+new legacy freezes remain schema 3. No existing bundle is rewritten.
+
 1. Exact verifier, canonical rendering, adversarial and independent-reference tests.
 2. Explicit producer opt-in, preflight, independent review, persistence, freeze/load
    verification, and a test demonstrating no certificate-to-observed-status shortcut.

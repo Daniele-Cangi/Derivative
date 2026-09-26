@@ -149,7 +149,7 @@ def _check_binding(
     block = render_obligation(obligation, public_contract)
     if (
         not requirement.endswith("\n" + block)
-        or requirement.lower().count(PROTOCOL) != 3
+        or has_protocol_marker(requirement[:-len(block)])
         or requirement_public_import_error(requirement, public_contract) is not None
     ):
         raise ValueError(f"{PROTOCOL}: normative requirement binding mismatch")
@@ -162,8 +162,10 @@ def _prove_unsatisfiable(obligation: dict) -> int:
         for constraint in obligation["constraints"]:
             lhs = sum(a * x for a, x in zip(constraint["coefficients"], values))
             rhs, relation = constraint["rhs"], constraint["relation"]
-            satisfied = (lhs <= rhs if relation == "le" else
-                         lhs == rhs if relation == "eq" else lhs != rhs)
+            satisfied = (
+                lhs <= rhs if relation == "le" else
+                lhs == rhs if relation == "eq" else lhs != rhs
+            )
             if not satisfied:
                 break
         else:

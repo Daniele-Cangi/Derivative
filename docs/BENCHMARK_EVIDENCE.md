@@ -369,6 +369,14 @@ python forge_blind_benchmark.py \
 
 ## Freezing a New Blind
 
+The opt-in [general infeasibility admission protocol](BLIND_INFEASIBILITY_PROTOCOL.md)
+adds mechanically rendered finite integer-output obligations and exhaustive certificates
+(`--infeasibility-protocol finite-linear-v1`, manifest schema 4). This is a distinct
+requirement format, not a repair of prior rejected V10 proposals and not new blind
+evidence. Certificate admission does not determine Forge's observed outcome. Legacy
+prose-only production remains the default. No new API production was performed while
+implementing the protocol.
+
 The freezer accepts an externally authored `cases.json` and referenced oracle files. It never generates either and refuses overwrite.
 
 ```bash

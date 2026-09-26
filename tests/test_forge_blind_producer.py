@@ -21,6 +21,7 @@ from core.forge.blind_producer import (
     produce_and_freeze_blind_bundle,
 )
 from core.model_provider import MissingTextOutputError
+from core.forge.infeasibility_protocol import PROTOCOL
 
 
 def _case_payload() -> dict:
@@ -145,6 +146,155 @@ class _RecordingGenerator:
             )
             return json.dumps(payload)
         return json.dumps(self.oracle_payload)
+
+
+class _ProtocolGenerator(_RecordingGenerator):
+    def __init__(self, *, satisfiable=False, missing=False, **kwargs):
+        super().__init__(**kwargs)
+        self.satisfiable = satisfiable
+        self.missing = missing
+
+    def __call__(self, **kwargs):
+        result = super().__call__(**kwargs)
+        if (
+            kwargs["output_schema_name"].endswith("_requirements")
+            and "Required terminal status: infeasible_proven" in kwargs["input_text"]
+        ):
+            case = {
+                "requirement": (
+                    "Build a Python library allocation exposing allocate() with no arguments. "
+                    "Return a dict whose integer quantity a lies between zero and two. "
+                    "The policy requires a equal to one and also unequal to one, simultaneously. "
+                    "Public import contract: from allocation import allocate."
+                ),
+                "public_contract": {"module": "allocation", "symbol": "allocate", "kind": "function"},
+                "tags": ["library", "allocation"],
+                "formal_obligation": {
+                    "protocol": PROTOCOL,
+                    "variables": [{"name": "a", "lower": 0, "upper": 2}],
+                    "constraints": [
+                        {"coefficients": [1], "relation": "eq", "rhs": 1},
+                        {"coefficients": [1], "relation": "ne", "rhs": 1},
+                    ],
+                },
+            }
+            if self.satisfiable:
+                case["formal_obligation"]["constraints"].pop()
+            if self.missing:
+                del case["formal_obligation"]
+            return json.dumps({"case": case})
+        return result
+
+
+def test_protocol_producer_freezes_schema4_and_keeps_proof_out_of_forge_input(tmp_path):
+    from core.forge.contracts import ForgeResult, ForgeRoute
+    from core.forge.heldout_benchmark import run_heldout_cases
+
+    generator = _ProtocolGenerator()
+    destination = tmp_path / "certified"
+    bundle = produce_and_freeze_blind_bundle(
+        output_root=destination, repository_root=Path(__file__).resolve().parents[1],
+        config=BlindProducerConfig(
+            bundle_id="synthetic-protocol-test", verified_cases=1, validation_failed_cases=1,
+            infeasible_cases=1, infeasibility_protocol=PROTOCOL,
+        ),
+        text_generator=generator, model="offline-test-model",
+    )
+    assert bundle.schema_version == 4
+    assert "not prose-only" in bundle.provenance.requirements_origin
+    case = bundle.cases[2]
+    assert case.infeasibility_certificate["assignments_checked"] == 3
+    frozen = json.loads((destination / "cases.json").read_text(encoding="utf-8"))
+    assert frozen[2]["requirement_validation"]["infeasibility_protocol"] == PROTOCOL
+    assert frozen[2]["infeasibility_certificate"] == case.infeasibility_certificate
+    review = json.loads(generator.calls[1]["input_text"].split("\n", 1)[1])
+    assert review["requirement"] == case.requirement
+    assert review["infeasibility_certificate"] == case.infeasibility_certificate
+    for call in generator.calls:
+        if call["output_schema_name"].endswith("_requirements"):
+            properties = call["output_schema"]["properties"]["case"]["properties"]
+            assert ("formal_obligation" in properties) == (
+                "Required terminal status: infeasible_proven" in call["input_text"]
+            )
+
+    observed_inputs = []
+
+    def run_case(requirement):
+        observed_inputs.append(requirement)
+        return ForgeResult(
+            route=ForgeRoute.TERMINAL_VALIDATION_FAILED,
+            terminal_status="validation_failed", summary="synthetic detector miss",
+        )
+
+    summary = run_heldout_cases([case], run_case)
+    assert observed_inputs == [case.requirement]
+    assert "requirement_sha256" not in observed_inputs[0]
+    assert "exhaustive-integer-enumeration" not in observed_inputs[0]
+    assert summary.case_results[0].observed_terminal_status == "validation_failed"
+    assert not summary.case_results[0].passed
+    assert summary.infeasible_detection_rate == 0.0
+
+
+@pytest.mark.parametrize("options", [{"satisfiable": True}, {"missing": True}])
+def test_protocol_rejects_before_review_without_legacy_fallback(tmp_path, options):
+    generator = _ProtocolGenerator(**options)
+    rejected = []
+    with pytest.raises(ValueError, match="rejection_classes=requirement_certificate_invalid"):
+        produce_and_freeze_blind_bundle(
+            output_root=tmp_path / "rejected", repository_root=Path(__file__).resolve().parents[1],
+            config=BlindProducerConfig(
+                bundle_id="synthetic-rejected", verified_cases=1, validation_failed_cases=1,
+                infeasible_cases=1, max_generation_attempts=1, infeasibility_protocol=PROTOCOL,
+            ),
+            text_generator=generator, model="offline-test-model", rejection_recorder=rejected.append,
+        )
+    assert len(generator.calls) == 1
+    assert rejected[0]["rejection_class"] == "requirement_certificate_invalid"
+    assert not (tmp_path / "rejected").exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_valid_certificate_does_not_bypass_independent_review():
+    generator = _ProtocolGenerator(requirement_review_payloads=[{
+        "approved": False, "findings": ["Candidate 3: output policy conflicts with prose."],
+    }])
+    with pytest.raises(ValueError, match="rejection_classes=independent_review"):
+        _generate_requirement_case(
+            generator=generator, model="offline-test-model",
+            config=BlindProducerConfig(
+                bundle_id="synthetic-review", max_generation_attempts=1, infeasibility_protocol=PROTOCOL,
+            ), index=3, expected_status="infeasible_proven", accepted_cases=[],
+        )
+    assert len(generator.calls) == 2
+
+
+def test_protocol_is_opt_in_and_unknown_version_is_rejected():
+    with pytest.raises(ValueError, match="Unsupported"):
+        BlindProducerConfig(bundle_id="bad", infeasibility_protocol="unknown")
+    generator = _ProtocolGenerator()
+    with pytest.raises(ValueError, match="requirement_certificate_invalid"):
+        _generate_requirement_case(
+            generator=generator, model="offline-test-model",
+            config=BlindProducerConfig(bundle_id="legacy", max_generation_attempts=1),
+            index=3, expected_status="infeasible_proven", accepted_cases=[],
+        )
+    assert len(generator.calls) == 1
+
+
+def test_cli_passes_explicit_protocol_without_api(monkeypatch, tmp_path):
+    received = []
+
+    def fail_before_api(**kwargs):
+        received.append(kwargs["config"].infeasibility_protocol)
+        raise ValueError("offline test stop")
+
+    monkeypatch.setattr(forge_blind_produce, "produce_and_freeze_blind_bundle", fail_before_api)
+    result = CliRunner().invoke(forge_blind_produce.app, [
+        str(tmp_path / "bundle"), "--bundle-id", "cli-test",
+        "--infeasibility-protocol", PROTOCOL,
+    ])
+    assert result.exit_code == 1
+    assert received == [PROTOCOL]
 
 
 def test_one_shot_producer_separates_generation_and_freezes_before_publication(tmp_path):

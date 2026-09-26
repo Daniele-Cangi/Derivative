@@ -30,6 +30,9 @@ requirement -> typed contract -> grounded plan -> generated code
 > [!IMPORTANT]
 > `verified` does not mean formally proven or universally correct. It means that the generated artifact satisfied the compiled requirement, quality, execution, and adversarial contracts at that revision. Independent blind-oracle acceptance is measured separately.
 
+Blind benchmark authors can opt into the [finite infeasibility admission protocol](docs/BLIND_INFEASIBILITY_PROTOCOL.md).
+It verifies explicit bounded output obligations, not arbitrary prose, and never sets Forge's observed result.
+
 [Quick start](#quick-start) | [How it works](#how-forge-works) | [Trust model](#trust-model) | [Current scope](#current-scope) | [Evidence](#evidence) | [Documentation](#documentation)
 
 ## Quick Start

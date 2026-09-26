@@ -33,6 +33,12 @@ from core.forge.public_contract import (
     public_import_contract_schema,
     requirement_public_import_error,
 )
+from core.forge.infeasibility_protocol import (
+    PROTOCOL,
+    bind_obligation,
+    certify_infeasibility,
+    obligation_schema,
+)
 from core.model_provider import (
     MissingTextOutputError,
     create_openai_client,
@@ -58,8 +64,11 @@ class BlindProducerConfig:
     validation_failed_cases: int = 3
     infeasible_cases: int = 3
     max_generation_attempts: int = 5
+    infeasibility_protocol: str | None = None
 
     def __post_init__(self) -> None:
+        if self.infeasibility_protocol not in (None, PROTOCOL):
+            raise ValueError("Unsupported blind infeasibility protocol.")
         if re.fullmatch(r"v[1-9][0-9]*", self.benchmark_version) is None:
             raise ValueError("Blind benchmark_version must match vN, for example 'v4'.")
 
@@ -142,6 +151,12 @@ def produce_and_freeze_blind_bundle(
                     "artifact, or prior blind case was supplied. A missing textual public "
                     "import declaration was mechanically rendered from the producer's "
                     "structured public contract before review."
+                    + (
+                        f" Infeasible cases use the opt-in {PROTOCOL} authored normative "
+                        "output contract, mechanically rendered and exhaustively certified "
+                        "before independent review. These are not prose-only cases."
+                        if config.infeasibility_protocol else ""
+                    )
                 ),
                 oracle_origin=(
                     "Separate stateless generation and review requests per verified "
@@ -255,6 +270,10 @@ def _generate_requirement_case(
     }
     feedback = ""
     rejection_classes: list[str] = []
+    if config.infeasibility_protocol and expected_status == TERMINAL_INFEASIBLE_PROVEN:
+        case_schema = schema["properties"]["case"]
+        case_schema["properties"]["formal_obligation"] = obligation_schema()
+        case_schema["required"].append("formal_obligation")
     for attempt in range(1, config.max_generation_attempts + 1):
         previous_requirements = [
             str(item["requirement"])
@@ -306,10 +325,20 @@ def _generate_requirement_case(
                 **dict(completed_case),
                 "expected_terminal_status": expected_status,
             }
-            preflight_error = requirement_preflight_error(
-                str(candidate["requirement"]),
-                expected_status,
-            )
+            try:
+                candidate = _prepare_requirement_certificate(candidate, config)
+            except ValueError as exc:
+                preflight_error = f"requirement certificate invalid: {exc}"
+            else:
+                preflight_error = requirement_preflight_error(
+                    str(candidate["requirement"]),
+                    expected_status,
+                    formal_obligation=candidate.get("formal_obligation"),
+                    infeasibility_certificate=candidate.get("infeasibility_certificate"),
+                    public_contract=load_public_import_contract(
+                        candidate.get("public_contract"), label="Produced case", required=True,
+                    ),
+                )
             if preflight_error is None:
                 try:
                     review = _review_requirement_case(
@@ -336,6 +365,8 @@ def _generate_requirement_case(
                             candidate["_requirement_validation"][
                                 "public_import_declaration_added"
                             ] = True
+                        if "infeasibility_certificate" in candidate:
+                            candidate["_requirement_validation"]["infeasibility_protocol"] = PROTOCOL
                         return candidate
                     failure_class = "independent_review"
                     rejection_classes.append(failure_class)
@@ -364,6 +395,26 @@ def _generate_requirement_case(
         f"Requirement producer failed validation for slot {index}; "
         f"rejection_classes={classes}"
     )
+
+
+def _prepare_requirement_certificate(case: dict, config: BlindProducerConfig) -> dict:
+    if "infeasibility_certificate" in case:
+        raise ValueError("producer must not supply its own certificate")
+    enabled = (
+        config.infeasibility_protocol is not None
+        and case["expected_terminal_status"] == TERMINAL_INFEASIBLE_PROVEN
+    )
+    if not enabled:
+        if "formal_obligation" in case:
+            raise ValueError("formal obligation requires explicit infeasible protocol opt-in")
+        return case
+    contract = load_public_import_contract(
+        case.get("public_contract"), label="Produced case", required=True,
+    )
+    obligation = case.get("formal_obligation")
+    requirement = bind_obligation(case["requirement"], obligation, contract)
+    certificate = certify_infeasibility(requirement, obligation, contract)
+    return {**case, "requirement": requirement, "infeasibility_certificate": certificate}
 
 
 def _complete_public_import_declaration(case: object) -> tuple[object, bool]:
@@ -456,6 +507,9 @@ def _materialize_cases_and_oracles(
             required=True,
         )
         case["public_contract"] = public_contract.to_payload()
+        if "infeasibility_certificate" in item:
+            case["formal_obligation"] = item["formal_obligation"]
+            case["infeasibility_certificate"] = item["infeasibility_certificate"]
         if status == TERMINAL_VERIFIED:
             relative_oracle = Path("oracles") / case_id / "oracle.py"
             oracle_source, oracle_validation = _generate_oracle(
@@ -741,6 +795,16 @@ def _requirement_producer_instructions(
             "assertion of impossibility is not a witness."
         ),
     }[expected_status]
+    if config.infeasibility_protocol and expected_status == TERMINAL_INFEASIBLE_PROVEN:
+        status_guidance = f"""Author a finite integer-output contract using {PROTOCOL}.
+The public interface must be a no-argument function returning a dict of named integer quantities. Describe a concrete policy for those
+quantities in the requirement prose and author its exact constraints in formal_obligation. Every obligation is unconditional and mandatory;
+no None, exception, conditional branch, impossibility report, or error fallback is allowed. The conjunction must have no satisfying assignment.
+Use protocol={PROTOCOL}; variables are ordered name/lower/upper objects with nonempty inclusive integer bounds (width <=16); constraints
+contain coefficients in variable order, relation le (<=), eq (==), or ne (!=), and rhs. Maximum 8 variables, 16 constraints, 4096 assignments;
+all integer magnitudes <=1000000. The structured constraints MUST describe the same output policy as the prose, not an unrelated added puzzle.
+The system renders the formal obligation as a mandatory public requirement block and checks it exhaustively before independent review.
+Do not write the block or protocol identifier in the prose yourself, and do not supply a certificate or a proof narrative."""
     return f"""You are an independent software benchmark producer operating without access to Forge source code.
 Create exactly one new greenfield Python requirement for slot {index} of {config.total_cases} within CLI, library, service-module, or
 data-pipeline surfaces. Its required terminal status is {expected_status}. {status_guidance}

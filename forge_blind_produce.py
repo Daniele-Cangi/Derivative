@@ -30,6 +30,10 @@ def main(
     verified_cases: int = typer.Option(6, "--verified-cases", min=1),
     validation_failed_cases: int = typer.Option(3, "--validation-failed-cases", min=1),
     infeasible_cases: int = typer.Option(3, "--infeasible-cases", min=1),
+    infeasibility_protocol: str | None = typer.Option(
+        None, "--infeasibility-protocol",
+        help="Opt in to finite-linear-v1 normative contracts for infeasible cases.",
+    ),
     max_generation_attempts: int = typer.Option(
         5,
         "--max-generation-attempts",
@@ -78,6 +82,7 @@ def main(
                     validation_failed_cases=validation_failed_cases,
                     infeasible_cases=infeasible_cases,
                     max_generation_attempts=max_generation_attempts,
+                    infeasibility_protocol=infeasibility_protocol,
                 ),
                 model=model,
                 rejection_recorder=rejection_recorder,

@@ -22,6 +22,10 @@ from core.forge.execution import (
     SandboxProcessRequest,
 )
 from core.forge.fixture_oracle import fixture_oracle_mismatches
+from core.forge.infeasibility_protocol import (
+    has_protocol_marker,
+    verify_infeasibility_certificate,
+)
 from core.forge.oracle_contract import oracle_contract_mismatches
 from core.forge.public_contract import (
     PublicImportContract,
@@ -44,6 +48,8 @@ class HeldoutBenchmarkCase:
     tags: List[str] = field(default_factory=list)
     oracle: OracleSpec | None = None
     public_contract: PublicImportContract | None = None
+    formal_obligation: dict | None = None
+    infeasibility_certificate: dict | None = None
 
 
 @dataclass
@@ -178,6 +184,16 @@ def load_heldout_cases(
             )
             if contract_error is not None:
                 raise ValueError(f"Held-out case '{case_id}' {contract_error}.")
+        formal_obligation = item.get("formal_obligation")
+        certificate = item.get("infeasibility_certificate")
+        if (
+            "formal_obligation" in item
+            or "infeasibility_certificate" in item
+            or has_protocol_marker(requirement)
+        ):
+            verify_infeasibility_certificate(
+                requirement, expected, formal_obligation, certificate, public_contract,
+            )
         cases.append(
             HeldoutBenchmarkCase(
                 case_id=case_id,
@@ -186,6 +202,8 @@ def load_heldout_cases(
                 tags=tags,
                 oracle=oracle,
                 public_contract=public_contract,
+                formal_obligation=formal_obligation,
+                infeasibility_certificate=certificate,
             )
         )
     if not cases:

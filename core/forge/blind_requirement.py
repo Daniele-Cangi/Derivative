@@ -3,12 +3,34 @@ import re
 from typing import Any
 
 from core.constraint_witnesses import finite_witness_contradictions
+from core.forge.infeasibility_protocol import (
+    has_protocol_marker,
+    verify_infeasibility_certificate,
+)
+from core.forge.public_contract import PublicImportContract
 
 
 def requirement_preflight_error(
     requirement: str,
     expected_terminal_status: str,
+    *,
+    formal_obligation: object = None,
+    infeasibility_certificate: object = None,
+    public_contract: PublicImportContract | None = None,
 ) -> str | None:
+    if (
+        formal_obligation is not None
+        or infeasibility_certificate is not None
+        or has_protocol_marker(requirement)
+    ):
+        try:
+            verify_infeasibility_certificate(
+                requirement, expected_terminal_status, formal_obligation,
+                infeasibility_certificate, public_contract,
+            )
+        except ValueError as exc:
+            return f"requirement certificate invalid: {exc}"
+        return None
     example_error = _same_length_example_error(requirement)
     finite_contradictions = finite_witness_contradictions(requirement)
     deterministic_contradictions = _deterministic_contradictions(requirement)
@@ -38,6 +60,8 @@ def requirement_preflight_error(
 
 
 def requirement_preflight_failure_class(error: str) -> str:
+    if error.startswith("requirement certificate invalid:"):
+        return "requirement_certificate_invalid"
     if "lacks a deterministic contradiction witness" in error:
         return "requirement_infeasibility_unproven"
     if "behavioral example contradiction" in error:
@@ -156,7 +180,11 @@ main(argv: list[str] | None = None) -> int interface that can be tested in-proce
 a live server, socket, subprocess, or HTTP client instead of a callable module interface. For universal character transformations with
 fixed output length, check finite witnesses whose case mapping expands to multiple code points. An infeasible label must be supported by
 an explicit finite, numeric, or logical contradiction that deterministic preflight can witness; a statement merely claiming that a task
-is impossible is not evidence. Return only the requested structured object."""
+is impossible is not evidence. For a finite-linear-v1 normative output block, the structured obligation is an authored part of the
+public requirement, not an inferred translation. Check that the surrounding prose describes that same no-argument callable and integer
+dict output, that the constraints express its actual policy, and that no conditional scope, alternative return, optional behavior,
+unrelated decorative contradiction, or conflicting interface is present. Reject these defects even if a certificate is valid.
+The certificate proves only the explicit finite obligation, not semantic equivalence with prose. Return only the requested structured object."""
 
 
 def _bounded_finding(value: str) -> str:

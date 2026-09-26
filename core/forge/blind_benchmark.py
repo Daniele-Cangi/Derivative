@@ -20,7 +20,8 @@ from core.forge.heldout_benchmark import (
 
 
 BLIND_BENCHMARK_SCHEMA_VERSION = 3
-SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+BLIND_CERTIFIED_SCHEMA_VERSION = 4
+SUPPORTED_BLIND_BENCHMARK_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4})
 FORGE_BASELINE_DIGEST_MODE = "canonical_lf_v1"
 BLIND_EXECUTION_KIND_BASELINE = "sealed_baseline"
 BLIND_EXECUTION_KIND_POST_FIX_REPLAY = "post_fix_replay"
@@ -162,6 +163,16 @@ def load_blind_bundle(
         str(dataset_path),
         require_public_contract=schema_version >= 3,
     )
+    certified_cases = [case for case in cases if case.infeasibility_certificate is not None]
+    if certified_cases and schema_version < BLIND_CERTIFIED_SCHEMA_VERSION:
+        raise ValueError("Certified blind cases require schema_version 4; downgrade rejected.")
+    if schema_version == BLIND_CERTIFIED_SCHEMA_VERSION:
+        if not certified_cases or any(
+            case.expected_terminal_status == "infeasible_proven"
+            and case.infeasibility_certificate is None
+            for case in cases
+        ):
+            raise ValueError("Schema_version 4 requires certificates for every infeasible case.")
     expected_oracles = {
         case.case_id: case
         for case in cases
