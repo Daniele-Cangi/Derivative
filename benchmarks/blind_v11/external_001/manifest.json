@@ -1,0 +1,31 @@
+{
+  "bundle_id": "forge-blind-v11-external-001",
+  "dataset": {
+    "path": "cases.json",
+    "sha256": "de1d7925487e363202783e26935a56b51744e404f39e854918617846cb800bc7"
+  },
+  "forge_baseline": {
+    "digest_mode": "canonical_lf_v1",
+    "file_count": 70,
+    "sha256": "a504eb95451fa186e7754e6e2f464b39a23e3e9bdf4b46a2261dd7db6b1239bb"
+  },
+  "frozen_at": "2026-09-26T13:17:00Z",
+  "oracle_sha256": {
+    "V11-001": "597f19b71a3b2d8c3a010879b8fcade6dc287c4741375d4e8b0ee41bdd34bd8d",
+    "V11-002": "cf75f1404d8c6c40de7c4eb8faab628f1fb7685b0b0a88ea3af8e4857726ea4e",
+    "V11-003": "562e321221e89e6dc7c1882ad9fc4e8b061b8f2aad99a8b5f38e9bec9fb6d19c",
+    "V11-004": "027584609d17711672f970dc4dab96ca9aa6174ca03dd0128cb2e1db4ab3fdba",
+    "V11-005": "8e7ccf489e037ab3cde839786167ca573deb21d4a8fe6f55b7949a1311f77872",
+    "V11-006": "2dfa2928d1bef719b09598576adf02affe48707b385d6f033673c8655acd8a89"
+  },
+  "provenance": {
+    "declaration": "Requirements and black-box oracles were generated, causally checked, independently reviewed, and sealed in one transaction before any case was executed by Forge.",
+    "independent_of_forge": true,
+    "oracle_origin": "Separate stateless generation and review requests per verified requirement; no Forge source or candidate implementation was supplied.",
+    "producer": "OpenAI Responses API isolated producer (gpt-4.1-2025-04-14)",
+    "requirements_origin": "Separate stateless generation and review requests per requirement from a domain-neutral benchmark brief; no Forge source, generated artifact, or prior blind case was supplied. A missing textual public import declaration was mechanically rendered from the producer's structured public contract before review. Infeasible cases use the opt-in finite-linear-v1 authored normative output contract, mechanically rendered and exhaustively certified before independent review. These are not prose-only cases.",
+    "sealed_before_first_execution": true
+  },
+  "schema_version": 4,
+  "source_urls": []
+}

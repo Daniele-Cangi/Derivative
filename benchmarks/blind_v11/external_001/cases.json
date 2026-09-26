@@ -1,0 +1,888 @@
+[
+  {
+    "case_id": "V11-001",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V11-001/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "divisors_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that, given a single positional integer argument N (as sys.argv[1]), prints to stdout a list of all divisors of N, sorted in ascending order, as a comma-separated string (with no spaces). For example, if N=12, the output must be '1,2,3,4,6,12'. If N=1, output is '1'. If N is negative, use its absolute value. If N=0, output the single value '0'. If an invalid or missing argument is supplied (including non-integer input), print 'ERROR' to stdout and return exit status 2. On successful output, return exit status 0. No writing to stderr is permitted for any path. No subprocess, HTTP, or sockets may be used. Public import contract: from divisors_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "integer-processing",
+      "deterministic-output",
+      "error-handling",
+      "divisor-listing"
+    ]
+  },
+  {
+    "case_id": "V11-002",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V11-002/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "palindrome_tagger_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that reads a single positional argument from sys.argv[1] representing a string of comma-separated lowercase words (for example: 'cat,bat,mat'). It must print to stdout a string where words that are palindromes (i.e., identical when reversed) are uppercased, but all others remain unchanged. The output words must remain in their original order, and the output must use the same comma-separated format with no spaces. For example, given 'level,river,radar,deed,cat', the output is 'LEVEL,river,RADAR,DEED,cat'. If the input argument contains any empty word (such as 'cat,,mat'), or if the argument is missing, print 'ERROR' to stdout and return exit status 2. On successful transformation, return exit status 0. No output may be written to stderr in any path. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Input and output must use only ASCII. Public import contract: from palindrome_tagger_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "palindrome",
+      "string",
+      "transform",
+      "deterministic",
+      "input-validation"
+    ]
+  },
+  {
+    "case_id": "V11-003",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V11-003/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "ascii_circle_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that, given a single positional argument representing a non-negative integer radius R (as sys.argv[1]), prints to stdout a textual circle outline using ASCII asterisks ('*') and spaces, with the circle centered in a square that is (2*R+1) lines high and wide. Each printed line must be exactly (2*R+1) characters long, and lines are delimited only by a single '\\n' (no trailing whitespace). A point (x, y) is part of the outline if and only if abs((x-R)**2 + (y-R)**2 - R**2) <= R, where (x, y) are 0-based coordinates corresponding to the character column and row, respectively. For example, for R=2, the first line corresponds to y=0, and the first character of each line is x=0. If R=0, output a single '*' and a newline. If the argument is missing, not a well-formed non-negative integer (decimal form only, without leading zeros unless the value is zero itself, and no sign or whitespace), or if extra arguments are present, print 'ERROR' to stdout and return exit status 2. On successful output, return exit status 0. No output may be written to stderr. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Public import contract: from ascii_circle_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "ascii-art",
+      "geometry",
+      "input-validation",
+      "integer-parsing",
+      "stdout-capture"
+    ]
+  },
+  {
+    "case_id": "V11-004",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V11-004/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "running_minimum_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that accepts exactly one positional argument from sys.argv[1]: a non-empty comma-separated sequence of unsigned decimal integers (each in [0, 2^31-1] inclusive, with no leading zeros except for the value zero itself, and no sign, whitespace, or empty values). The CLI must print to stdout a comma-separated string (no spaces) containing the running minimum of the input at each position, in order. For example, if input is '8,5,6,3,4,3,9', output must be '8,5,5,3,3,3,3'. If any input value is not a valid integer within bounds, is missing, has forbidden leading zeros, is negative, or if any word is empty, print 'ERROR' to stdout and return exit status 2. On success, return exit status 0. If extra positional arguments are present or the argument is missing, print 'ERROR' and exit 2. No output may be written to stderr in any case. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Input and output must use only ASCII. Public import contract: from running_minimum_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "integer-transform",
+      "streaming",
+      "argument-validation",
+      "deterministic-output"
+    ]
+  },
+  {
+    "case_id": "V11-005",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V11-005/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "rotate_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that accepts one required positional argument from sys.argv[1]: a non-empty string of comma-separated non-negative base-10 integers each in [0,999], without leading zeros (except for the value zero itself), with no empty segments, no sign or whitespace. The CLI must print to stdout, as a comma-separated ASCII string (no spaces), the sequence obtained by cyclically rotating the input list to the left by K positions, where K is the value of the first integer in the input. If K >= N (where N is the number of integers), treat K modulo N. For example, given '2,11,7,8', output must be '7,8,2,11'. If the input string is invalid, contains forbidden leading zeros, negative numbers, out-of-range values, empty, a missing argument, or extra positional arguments, print 'ERROR' to stdout and exit with status 2. On successful transformation, return exit status 0. No output may be written to stderr. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Input and output must use only ASCII. Public import contract: from rotate_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "integer-parsing",
+      "cyclic-rotation",
+      "argument-validation",
+      "edge-case",
+      "exit-code"
+    ]
+  },
+  {
+    "case_id": "V11-006",
+    "expected_terminal_status": "verified",
+    "oracle": {
+      "path": "oracles/V11-006/oracle.py",
+      "timeout_seconds": 30
+    },
+    "oracle_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "cyclic_bigram_set_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that accepts one required positional argument from sys.argv[1]: a string of comma-separated alphabetic words (ASCII lowercase only, non-empty, with no whitespace, no empty elements, and at least two words). The CLI must print to stdout, as a comma-separated ASCII string (no spaces), the unique set union of all cyclic bigram pairs for each word: for every word of length N >= 2, extract N pairs (two-letter substrings), where the first is word[0:2], then word[1:3], ..., wrapping around at the end so the last bigram includes the last and first letter. For example, for 'cab', output bigrams are: 'ca', 'ab', 'bc'. All bigrams from all input words are collected, deduplicated, sorted in lexicographic order, and output as a comma-separated string. If any word is less than two letters, contains non-lowercase-ASCII or whitespace, the input is missing, contains any empty word, or if extra arguments are given, print 'ERROR' to stdout and exit status 2. On successful output, return exit status 0. No output may be written to stderr. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Public import contract: from cyclic_bigram_set_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "ascii",
+      "string-processing",
+      "cyclic-bigram",
+      "deduplication",
+      "lexicographic-sort"
+    ]
+  },
+  {
+    "case_id": "V11-007",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "unique_prime_offset_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that accepts exactly one required positional argument from sys.argv[1]: a non-empty ASCII string containing comma-separated hexadecimal numbers in lowercase (0-9, a-f only), with no whitespace or leading zeros (except the single zero digit), and no empty segments. The CLI must print to stdout the offset (0-based index) of the first unique prime number among the decimal equivalents of the input list, or '-1' if none are unique primes or if any input is invalid. A number is unique if it appears exactly once in the list and is prime. For example, for input '2,3,a,11', output is '0' (since 2 is unique and prime), for 'a,a,2b,2b,1', output is '-1'. If any input value is not valid hexadecimal in the specified format, or the argument is missing, or extra arguments are present, print 'ERROR' to stdout and return exit status 2. On successful output (including '-1'), return exit status 0. No output may be written to stderr. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Uniqueness determination and prime checking must both be based on decimal equivalents, but the requirement does not specify the primality standard to use for numbers less than 2, negative or zero values, or for hexadecimal representations of non-integer or overly large inputs, which may affect determinism. Public import contract: from unique_prime_offset_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "hexadecimal",
+      "prime",
+      "uniqueness",
+      "validation_failed",
+      "ambiguity"
+    ]
+  },
+  {
+    "case_id": "V11-008",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "prime_length_reverse_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI that accepts one required positional argument from sys.argv[1]: a non-empty comma-separated sequence of strings, each of which must be an ASCII word (letters only, a-z or A-Z, at least one character, no whitespace, no empty values, no punctuation or digits). The CLI must print to stdout a comma-separated string (no spaces) containing the sequence obtained by reversing the words whose length is a prime number, and leaving others unchanged, preserving the original order. If the input is invalid (including missing argument, empty elements, words with invalid characters, or extra arguments), print 'ERROR' to stdout and return exit status 2. On successful output, return exit status 0. No output may be written to stderr in any case. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. However, the requirement universally demands that all implementations use 'standard' primality for determining if a length is prime, but 'standard' is not defined or referenced anywhere in the requirement. This prevents objective validation for word lengths 1, 2, 0, or very large values. Public import contract: from prime_length_reverse_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "string-transformation",
+      "prime",
+      "ambiguous-primality",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V11-009",
+    "expected_terminal_status": "validation_failed",
+    "public_contract": {
+      "kind": "cli_entrypoint",
+      "module": "growth_initial_cli",
+      "symbol": "main"
+    },
+    "requirement": "Create a CLI which takes a single required positional argument from sys.argv[1]: a comma-separated sequence of non-empty ASCII words (a-z, A-Z, case-sensitive, no empty words, no whitespace, digits, or punctuation). It must print to stdout a comma-separated string (no spaces) containing the first letter of each word, uppercased if that word's 'growth value' is strictly higher than all previous words, lowercased otherwise. The 'growth value' is the count of distinct letters in the word (case-insensitive). For ties in growth value, the original order prevails. If the input argument is missing, empty, contains any invalid words, or empty segments, print 'ERROR' to stdout and return exit status 2. On valid input, return exit status 0. No output may be written to stderr for any path. The CLI must provide an importable entry point as main(argv: list[str] | None = None) -> int, whose output is capturable in-process. Input and output must use only ASCII. However, the requirement universally claims the transformation must be applied for any sequence of ASCII words, but does not specify how to handle words longer than the number of ASCII letters, casing ambiguity, or what should happen if a word uses more than 52 distinct letters, making objectively correct certification impossible for those edge cases. Public import contract: from growth_initial_cli import main.",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "cli",
+      "ascii",
+      "transform",
+      "ambiguous_edge_case",
+      "requirement",
+      "validation_failed"
+    ]
+  },
+  {
+    "case_id": "V11-010",
+    "expected_terminal_status": "infeasible_proven",
+    "formal_obligation": {
+      "constraints": [
+        {
+          "coefficients": [
+            1,
+            1,
+            0,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 5
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 3
+        },
+        {
+          "coefficients": [
+            1,
+            -1,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        }
+      ],
+      "protocol": "finite-linear-v1",
+      "variables": [
+        {
+          "lower": 1,
+          "name": "apples",
+          "upper": 4
+        },
+        {
+          "lower": 1,
+          "name": "bananas",
+          "upper": 4
+        },
+        {
+          "lower": 1,
+          "name": "cherries",
+          "upper": 4
+        },
+        {
+          "lower": 1,
+          "name": "dates",
+          "upper": 4
+        }
+      ]
+    },
+    "infeasibility_certificate": {
+      "assignments_checked": 256,
+      "method": "exhaustive-integer-enumeration",
+      "protocol": "finite-linear-v1",
+      "requirement_sha256": "72d83a916bdbf6b8d800dfdae3a869fdf536ad82f9368dc050eb56bdf01bb43d"
+    },
+    "public_contract": {
+      "kind": "function",
+      "module": "fruit_counter",
+      "symbol": "impossible_fruit_allocation"
+    },
+    "requirement": "Create a function that returns a dictionary with exactly four keys: 'apples', 'bananas', 'cherries', and 'dates'. Each value must be an integer between 1 and 4, inclusive. The total sum of 'apples' and 'bananas' must be exactly 5, the sum of 'cherries' and 'dates' must be exactly 3, and all four values must be distinct integers. Public import contract: from fruit_counter import impossible_fruit_allocation.\n[BEGIN FINITE-LINEAR-V1]\nNormative output contract (unconditional; not an example or a hypothetical).\nCalling fruit_counter.impossible_fruit_allocation() with no arguments must terminate normally and return a dict with exactly the variable names below as keys and Python int values (bool is excluded). Each value must lie between its lower and upper bounds, inclusive. All constraints must hold simultaneously. For each constraint, sum(coefficients[i] * value_of_variable_i) must have the stated relation to rhs: le means <=, eq means ==, ne means !=. Variable order is the listed order. Raising, returning None, reporting impossibility, skipping the call, or satisfying only a subset is not permitted. This obligation is mandatory regardless of any other prose; no exception or fallback overrides it.\n{\"constraints\":[{\"coefficients\":[1,1,0,0],\"relation\":\"eq\",\"rhs\":5},{\"coefficients\":[0,0,1,1],\"relation\":\"eq\",\"rhs\":3},{\"coefficients\":[1,-1,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,0,1,-1],\"relation\":\"ne\",\"rhs\":0}],\"protocol\":\"finite-linear-v1\",\"variables\":[{\"lower\":1,\"name\":\"apples\",\"upper\":4},{\"lower\":1,\"name\":\"bananas\",\"upper\":4},{\"lower\":1,\"name\":\"cherries\",\"upper\":4},{\"lower\":1,\"name\":\"dates\",\"upper\":4}]}\n[END FINITE-LINEAR-V1]",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "infeasibility_protocol": "finite-linear-v1",
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "library",
+      "dict-output",
+      "fruit-allocation",
+      "finite-integer",
+      "impossible",
+      "benchmark-slot-10"
+    ]
+  },
+  {
+    "case_id": "V11-011",
+    "expected_terminal_status": "infeasible_proven",
+    "formal_obligation": {
+      "constraints": [
+        {
+          "coefficients": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 10
+        },
+        {
+          "coefficients": [
+            1,
+            -1,
+            0,
+            0,
+            0
+          ],
+          "relation": "le",
+          "rhs": -1
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1,
+            0,
+            0
+          ],
+          "relation": "le",
+          "rhs": -1
+        },
+        {
+          "coefficients": [
+            1,
+            -1,
+            0,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            -1,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            0,
+            1,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        }
+      ],
+      "protocol": "finite-linear-v1",
+      "variables": [
+        {
+          "lower": 1,
+          "name": "red",
+          "upper": 3
+        },
+        {
+          "lower": 1,
+          "name": "blue",
+          "upper": 3
+        },
+        {
+          "lower": 1,
+          "name": "green",
+          "upper": 3
+        },
+        {
+          "lower": 1,
+          "name": "yellow",
+          "upper": 3
+        },
+        {
+          "lower": 1,
+          "name": "purple",
+          "upper": 3
+        }
+      ]
+    },
+    "infeasibility_certificate": {
+      "assignments_checked": 243,
+      "method": "exhaustive-integer-enumeration",
+      "protocol": "finite-linear-v1",
+      "requirement_sha256": "4f9a367a5e6ca8c0dcddeb12e9f6db71e35fa1cd20bf475dbe80b1ab57be5b0a"
+    },
+    "public_contract": {
+      "kind": "function",
+      "module": "color_mixer",
+      "symbol": "impossible_color_mix"
+    },
+    "requirement": "Create a function that returns a dictionary with exactly five keys: 'red', 'blue', 'green', 'yellow', and 'purple'. Each value must be an integer between 1 and 3, inclusive. The sum of all five values must be exactly 10. No two values may be equal. The value of 'red' must be less than the value of 'blue', and the value of 'blue' must be less than the value of 'green'. Public import contract: from color_mixer import impossible_color_mix.\n[BEGIN FINITE-LINEAR-V1]\nNormative output contract (unconditional; not an example or a hypothetical).\nCalling color_mixer.impossible_color_mix() with no arguments must terminate normally and return a dict with exactly the variable names below as keys and Python int values (bool is excluded). Each value must lie between its lower and upper bounds, inclusive. All constraints must hold simultaneously. For each constraint, sum(coefficients[i] * value_of_variable_i) must have the stated relation to rhs: le means <=, eq means ==, ne means !=. Variable order is the listed order. Raising, returning None, reporting impossibility, skipping the call, or satisfying only a subset is not permitted. This obligation is mandatory regardless of any other prose; no exception or fallback overrides it.\n{\"constraints\":[{\"coefficients\":[1,1,1,1,1],\"relation\":\"eq\",\"rhs\":10},{\"coefficients\":[1,-1,0,0,0],\"relation\":\"le\",\"rhs\":-1},{\"coefficients\":[0,1,-1,0,0],\"relation\":\"le\",\"rhs\":-1},{\"coefficients\":[1,-1,0,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,-1,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,-1,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,0,1,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,0,1,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,0,0,1,-1],\"relation\":\"ne\",\"rhs\":0}],\"protocol\":\"finite-linear-v1\",\"variables\":[{\"lower\":1,\"name\":\"red\",\"upper\":3},{\"lower\":1,\"name\":\"blue\",\"upper\":3},{\"lower\":1,\"name\":\"green\",\"upper\":3},{\"lower\":1,\"name\":\"yellow\",\"upper\":3},{\"lower\":1,\"name\":\"purple\",\"upper\":3}]}\n[END FINITE-LINEAR-V1]",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "infeasibility_protocol": "finite-linear-v1",
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "dict-output",
+      "integer-values",
+      "distinct-values",
+      "conjunction-infeasible",
+      "finite-linear-v1"
+    ]
+  },
+  {
+    "case_id": "V11-012",
+    "expected_terminal_status": "infeasible_proven",
+    "formal_obligation": {
+      "constraints": [
+        {
+          "coefficients": [
+            1,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 6
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 11
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            1
+          ],
+          "relation": "eq",
+          "rhs": 4
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            -1,
+            0,
+            0
+          ],
+          "relation": "eq",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            -1
+          ],
+          "relation": "eq",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            0,
+            0,
+            1,
+            0,
+            -1
+          ],
+          "relation": "eq",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1,
+            0,
+            0,
+            0
+          ],
+          "relation": "le",
+          "rhs": -1
+        },
+        {
+          "coefficients": [
+            1,
+            -1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            -1,
+            0,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            -1,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            -1,
+            0,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            -1,
+            0,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            0,
+            -1,
+            0
+          ],
+          "relation": "ne",
+          "rhs": 0
+        },
+        {
+          "coefficients": [
+            0,
+            1,
+            0,
+            0,
+            0,
+            -1
+          ],
+          "relation": "ne",
+          "rhs": 0
+        }
+      ],
+      "protocol": "finite-linear-v1",
+      "variables": [
+        {
+          "lower": 2,
+          "name": "alpha",
+          "upper": 5
+        },
+        {
+          "lower": 2,
+          "name": "beta",
+          "upper": 5
+        },
+        {
+          "lower": 2,
+          "name": "gamma",
+          "upper": 5
+        },
+        {
+          "lower": 2,
+          "name": "delta",
+          "upper": 5
+        },
+        {
+          "lower": 2,
+          "name": "epsilon",
+          "upper": 5
+        },
+        {
+          "lower": 2,
+          "name": "zeta",
+          "upper": 5
+        }
+      ]
+    },
+    "infeasibility_certificate": {
+      "assignments_checked": 4096,
+      "method": "exhaustive-integer-enumeration",
+      "protocol": "finite-linear-v1",
+      "requirement_sha256": "eb75d027b058594fde3c461e3227f49ba3f49ccc04e36d6d0a600e6b748aacca"
+    },
+    "public_contract": {
+      "kind": "function",
+      "module": "impossible_linear_pack",
+      "symbol": "infeasible_variable_assignment"
+    },
+    "requirement": "Create a function that returns a dictionary with exactly six keys: 'alpha', 'beta', 'gamma', 'delta', 'epsilon', and 'zeta'. Each value must be an integer between 2 and 5, inclusive. The sum of 'alpha' and 'beta' must be exactly 6, the sum of 'gamma', 'delta', and 'epsilon' must be exactly 11, and 'zeta' must be exactly 4. Additionally, 'alpha', 'delta', and 'zeta' must all have the same value, and 'beta' must be strictly greater than 'gamma'. All values must be distinct. It is not possible to satisfy all these constraints simultaneously. Public import contract: from impossible_linear_pack import infeasible_variable_assignment.\n[BEGIN FINITE-LINEAR-V1]\nNormative output contract (unconditional; not an example or a hypothetical).\nCalling impossible_linear_pack.infeasible_variable_assignment() with no arguments must terminate normally and return a dict with exactly the variable names below as keys and Python int values (bool is excluded). Each value must lie between its lower and upper bounds, inclusive. All constraints must hold simultaneously. For each constraint, sum(coefficients[i] * value_of_variable_i) must have the stated relation to rhs: le means <=, eq means ==, ne means !=. Variable order is the listed order. Raising, returning None, reporting impossibility, skipping the call, or satisfying only a subset is not permitted. This obligation is mandatory regardless of any other prose; no exception or fallback overrides it.\n{\"constraints\":[{\"coefficients\":[1,1,0,0,0,0],\"relation\":\"eq\",\"rhs\":6},{\"coefficients\":[0,0,1,1,1,0],\"relation\":\"eq\",\"rhs\":11},{\"coefficients\":[0,0,0,0,0,1],\"relation\":\"eq\",\"rhs\":4},{\"coefficients\":[1,0,0,-1,0,0],\"relation\":\"eq\",\"rhs\":0},{\"coefficients\":[1,0,0,0,0,-1],\"relation\":\"eq\",\"rhs\":0},{\"coefficients\":[0,0,0,1,0,-1],\"relation\":\"eq\",\"rhs\":0},{\"coefficients\":[0,1,-1,0,0,0],\"relation\":\"le\",\"rhs\":-1},{\"coefficients\":[1,-1,0,0,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,-1,0,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,-1,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[1,0,0,0,0,-1],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,-1,0,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,-1,0,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,0,-1,0],\"relation\":\"ne\",\"rhs\":0},{\"coefficients\":[0,1,0,0,0,-1],\"relation\":\"ne\",\"rhs\":0}],\"protocol\":\"finite-linear-v1\",\"variables\":[{\"lower\":2,\"name\":\"alpha\",\"upper\":5},{\"lower\":2,\"name\":\"beta\",\"upper\":5},{\"lower\":2,\"name\":\"gamma\",\"upper\":5},{\"lower\":2,\"name\":\"delta\",\"upper\":5},{\"lower\":2,\"name\":\"epsilon\",\"upper\":5},{\"lower\":2,\"name\":\"zeta\",\"upper\":5}]}\n[END FINITE-LINEAR-V1]",
+    "requirement_validation": {
+      "findings": [],
+      "independent_review_passed": true,
+      "infeasibility_protocol": "finite-linear-v1",
+      "review_model": "gpt-4.1-2025-04-14",
+      "static_checks_passed": true
+    },
+    "tags": [
+      "blind-v11",
+      "infeasible_proven",
+      "finite-linear-v1",
+      "dict-output",
+      "library"
+    ]
+  }
+]
