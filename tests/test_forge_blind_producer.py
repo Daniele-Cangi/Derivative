@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 import forge_blind_produce
+from core.forge.blind_benchmark import load_blind_bundle
 from core.forge.blind_oracle import (
     oracle_preflight_error,
     oracle_preflight_failure_class,
@@ -1133,6 +1134,29 @@ def test_oracle_preflight_rejects_program_placeholder_for_unnamed_cli():
     assert "invocation contract contradicts the requirement" in error
     assert "includes program-name placeholder 'prog' as argv[0]" in error
     assert oracle_preflight_failure_class(error) == "oracle_contract_mismatch"
+
+
+def test_frozen_v11_oracle_audit_keeps_known_mismatch_isolated():
+    root = Path(__file__).resolve().parents[1]
+    bundle = load_blind_bundle(
+        root / "benchmarks/blind_v11/external_001/manifest.json",
+        verify_baseline=False,
+    )
+
+    outcomes = {}
+    for case in bundle.cases:
+        if case.oracle is None:
+            continue
+        source = Path(case.oracle.path).read_text(encoding="utf-8")
+        outcomes[case.case_id] = oracle_preflight_error(
+            source,
+            case.requirement,
+            case.public_contract,
+        )
+
+    assert set(outcomes) == {f"V11-{index:03}" for index in range(1, 7)}
+    assert "includes program-name placeholder 'prog' as argv[0]" in outcomes["V11-001"]
+    assert all(outcomes[case_id] is None for case_id in sorted(outcomes)[1:])
 
 
 def test_oracle_preflight_rejects_fixture_that_contradicts_explicit_regex():
