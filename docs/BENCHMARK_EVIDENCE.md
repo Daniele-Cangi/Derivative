@@ -326,6 +326,8 @@ A third invocation on `31aceea` used that ordering and the existing five-attempt
 
 A fourth invocation on `0f3f317` enabled private rejection capture. It failed at slot 10 after 5 requests, 3,955 tokens, and `$0.015416` configured cost, with `static_case` as its only rejection class. All five rejected proposals supplied a structured public contract but omitted its required textual declaration. A mechanical completion from that independently supplied contract makes all five pass the static check offline, but none passes the unchanged deterministic infeasibility preflight. The rejected texts remain only in Git-ignored local diagnostics and are not blind evidence. Total usage across four failed V10 invocations is 36 requests, 66,680 tokens, and `$0.196576` configured cost. No V10 bundle or Forge baseline exists.
 
+A fifth invocation on `355bf26` explicitly enabled `finite-linear-v1`. The complete requirement set passed admission and production reached the verified-oracle stage, where the producer exhausted its existing five-attempt limit with `discarded_entrypoint_result`. It made 34 requests, used 74,138 tokens, and recorded `$0.227716` configured cost. The staging bundle was removed without publication; no Forge baseline ran. Cumulative V10 production attempts: 70 requests, 140,818 tokens, `$0.424292`. Requirement rejections were captured privately; this version did not yet capture rejected oracle source, so the failing oracle's precise form is unknown. The subsequent general correction scopes the discarded CLI return rule to declared CLI contracts and captures future oracle rejections in the same private diagnostics stream. The correction does not certify this failed run or turn it into blind evidence.
+
 ## Historical V2/V3 Evidence
 
 Blind V2 and V3 remain immutable historical evidence under `benchmarks/`.
@@ -400,7 +402,7 @@ python forge_blind_produce.py PATH_TO_PRIVATE_BUNDLE \
 
 This is operational isolation, not cryptographic proof of model independence. The destination must not exist and the Forge baseline must be clean and committed.
 
-For a local diagnosis of rejected requirement proposals, add `--capture-rejections`. This opt-in writes each parsed rejected candidate, when available, and its validation reason to a unique JSONL file under Git-ignored `generated_artifacts/forge_blind_producer_diagnostics/`; the CLI prints only its path. Keep this file private. Rejected proposals are not benchmark cases or new blind evidence. Capture does not change generation, review, freezing, or Forge execution.
+For a local diagnosis of rejected requirement and oracle proposals, add `--capture-rejections`. This opt-in writes each parsed rejected candidate, when available, and its validation reason to a unique JSONL file under Git-ignored `generated_artifacts/forge_blind_producer_diagnostics/`; the CLI prints only its path. Keep this file private. Rejected proposals are not benchmark cases or new blind evidence. Capture does not change generation, review, freezing, or Forge execution.
 
 If an independently generated case provides a valid structured `public_contract` but omits the redundant textual import declaration, the producer renders that sentence from the structured module and symbol before independent review. The frozen case records `public_import_declaration_added=true`. An existing but inconsistent textual declaration remains a rejection; semantic preflight and review are unchanged.
 

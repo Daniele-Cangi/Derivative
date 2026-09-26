@@ -22,6 +22,7 @@ from core.forge.blind_producer import (
 )
 from core.model_provider import MissingTextOutputError
 from core.forge.infeasibility_protocol import PROTOCOL
+from core.forge.public_contract import PublicImportContract
 
 
 def _case_payload() -> dict:
@@ -939,6 +940,122 @@ def test_oracle_preflight_rejects_discarded_entrypoint_return_value():
         "oracle discards the return value of public entrypoint main; "
         "assert the returned exit code explicitly"
     )
+
+
+def test_discarded_return_gate_uses_declared_cli_kind_not_function_name():
+    source = (
+        "from file_writer import run\n\n"
+        "def test_one(tmp_path):\n"
+        "    run(tmp_path / 'one')\n"
+        "    assert (tmp_path / 'one').exists()\n\n"
+        "def test_two(tmp_path):\n"
+        "    run(tmp_path / 'two')\n"
+        "    assert (tmp_path / 'two').exists()\n\n"
+        "def test_three(tmp_path):\n"
+        "    run(tmp_path / 'three')\n"
+        "    assert (tmp_path / 'three').exists()\n"
+    )
+    requirement = (
+        "Build a Python library file_writer exposing run(path). Calling run writes a "
+        "file at the supplied path and returns None. Tests must observe file creation. "
+        "Public import contract: from file_writer import run."
+    )
+    assert oracle_preflight_error(
+        source, requirement,
+        public_contract=PublicImportContract("file_writer", "run", "function"),
+    ) is None
+    assert "discards the return value" in oracle_preflight_error(
+        source, requirement,
+        public_contract=PublicImportContract("file_writer", "run", "cli_entrypoint"),
+    )
+
+
+def test_discarded_cli_return_gate_catches_import_alias():
+    source = (
+        "from file_writer import main as entry\n\n"
+        "def test_one(tmp_path):\n"
+        "    entry(['one'])\n"
+        "    assert (tmp_path / 'one').exists()\n\n"
+        "def test_two(tmp_path):\n"
+        "    entry(['two'])\n"
+        "    assert (tmp_path / 'two').exists()\n\n"
+        "def test_three(tmp_path):\n"
+        "    entry(['three'])\n"
+        "    assert (tmp_path / 'three').exists()\n"
+    )
+    requirement = (
+        "Build a Python CLI file_writer exposing main(argv) that writes files and "
+        "returns an integer exit code. Public import contract: from file_writer import main."
+    )
+    assert "discards the return value" in oracle_preflight_error(
+        source, requirement,
+        public_contract=PublicImportContract("file_writer", "main", "cli_entrypoint"),
+    )
+
+
+def test_private_oracle_diagnostics_capture_rejection_without_changing_attempts():
+    bad = (
+        "from file_writer import main\n\n"
+        "def test_one(tmp_path):\n"
+        "    main(['one'])\n"
+        "    assert (tmp_path / 'one').exists()\n\n"
+        "def test_two(tmp_path):\n"
+        "    main(['two'])\n"
+        "    assert (tmp_path / 'two').exists()\n\n"
+        "def test_three(tmp_path):\n"
+        "    main(['three'])\n"
+        "    assert (tmp_path / 'three').exists()\n"
+    )
+    good = bad.replace("    main([", "    result = main([")
+    good = good.replace("    assert (tmp_path", "    assert result == 0\n    assert (tmp_path")
+    calls = []
+    events = []
+
+    def generator(**kwargs):
+        calls.append(kwargs["output_schema_name"])
+        if kwargs["output_schema_name"].endswith("_oracle_review"):
+            return json.dumps({"approved": True, "findings": []})
+        return json.dumps({"oracle_py": bad if calls.count("test_oracle") == 1 else good})
+
+    source, _ = _generate_oracle(
+        generator=generator, model="offline-test-model", case_id="V10-001",
+        requirement=(
+            "Build file_writer.main(argv) returning integer zero after writing a file. "
+            "Public import contract: from file_writer import main."
+        ),
+        max_attempts=2, schema_namespace="test",
+        public_contract=PublicImportContract("file_writer", "main", "cli_entrypoint"),
+        rejection_recorder=events.append,
+    )
+    assert source == good
+    assert calls == ["test_oracle", "test_oracle", "test_oracle_review"]
+    assert len(events) == 1
+    assert events[0] == {
+        "stage": "oracle", "case_id": "V10-001", "attempt": 1,
+        "rejection_class": "discarded_entrypoint_result",
+        "reason": "oracle discards the return value of public entrypoint main; assert the returned exit code explicitly",
+        "candidate": bad,
+    }
+
+
+def test_failed_bundle_records_oracle_rejection_privately(tmp_path):
+    source = "from code_policy import classify_code\n\ndef test_one():\n    assert True\n"
+    generator = _RecordingGenerator(oracle_payload={"oracle_py": source})
+    events = []
+    with pytest.raises(ValueError, match="Oracle producer failed validation"):
+        produce_and_freeze_blind_bundle(
+            output_root=tmp_path / "bundle", repository_root=Path(__file__).resolve().parents[1],
+            config=BlindProducerConfig(
+                bundle_id="offline-oracle-rejection", verified_cases=1,
+                validation_failed_cases=1, infeasible_cases=1, max_generation_attempts=1,
+            ),
+            text_generator=generator, model="offline-test-model",
+            rejection_recorder=events.append,
+        )
+    assert [(event["stage"], event["case_id"], event["rejection_class"])
+            for event in events] == [("oracle", "V3-001", "insufficient_tests")]
+    assert events[0]["candidate"] == source
+    assert not (tmp_path / "bundle").exists()
 
 
 def test_oracle_preflight_rejects_deterministic_fixture_contradiction():

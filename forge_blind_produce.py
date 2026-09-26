@@ -100,6 +100,9 @@ def main(
         failure_slot = _safe_failure_slot(exc)
         if failure_slot is not None:
             typer.echo(f"Failed requirement slot: {failure_slot}", err=True)
+        oracle_case = _safe_failed_oracle_case(exc)
+        if oracle_case is not None:
+            typer.echo(f"Failed oracle case: {oracle_case}", err=True)
         if diagnostics_path is not None and diagnostics_path.exists():
             typer.echo(f"Private rejection diagnostics: {diagnostics_path}", err=True)
         typer.echo(f"Model requests before failure: {usage.request_count}", err=True)
@@ -159,6 +162,11 @@ def _safe_failure_slot(exc: Exception) -> int | None:
         str(exc),
     )
     return int(match.group(1)) if match else None
+
+
+def _safe_failed_oracle_case(exc: Exception) -> str | None:
+    match = re.match(r"Oracle producer failed validation for ([A-Z][A-Z0-9-]*);", str(exc))
+    return match.group(1) if match else None
 
 
 def _private_rejection_recorder(

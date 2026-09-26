@@ -82,7 +82,9 @@ def oracle_preflight_error(
             return f"oracle test {function} does not directly invoke the public target"
         if not item.get("semantic"):
             return f"oracle test {function} has no causal behavioral assertion"
-    discarded_call = _discarded_entrypoint_call(tree, target_names, target_modules)
+    discarded_call = _discarded_entrypoint_call(
+        tree, target_names, target_modules, public_contract=public_contract,
+    )
     if discarded_call is not None:
         return discarded_call
     return oracle_semantic_sanity_error(source, requirement)
@@ -265,7 +267,11 @@ def _discarded_entrypoint_call(
     tree: ast.Module,
     target_names: set[str],
     target_modules: set[str],
+    *,
+    public_contract: PublicImportContract | None = None,
 ) -> str | None:
+    if public_contract is not None and public_contract.kind != "cli_entrypoint":
+        return None
     parent = {
         child: node
         for node in ast.walk(tree)
@@ -273,6 +279,15 @@ def _discarded_entrypoint_call(
     }
     module_aliases = _imported_module_aliases(tree, target_modules)
     entrypoint_names = {"cli", "main", "run"}
+    if public_contract is not None:
+        entrypoint_names = {public_contract.symbol}
+        for imported in tree.body:
+            if isinstance(imported, ast.ImportFrom) and imported.module == public_contract.module:
+                entrypoint_names.update(
+                    alias.asname or alias.name
+                    for alias in imported.names
+                    if alias.name == public_contract.symbol
+                )
     for node in ast.walk(tree):
         if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
             continue

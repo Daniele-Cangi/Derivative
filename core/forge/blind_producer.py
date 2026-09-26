@@ -136,6 +136,7 @@ def produce_and_freeze_blind_bundle(
             staging=staging,
             raw_cases=raw_cases,
             config=config,
+            rejection_recorder=rejection_recorder,
         )
         (staging / "cases.json").write_bytes(
             (json.dumps(dataset, indent=2, sort_keys=True) + "\n").encode("utf-8")
@@ -481,6 +482,7 @@ def _materialize_cases_and_oracles(
     staging: Path,
     raw_cases: list[dict[str, Any]],
     config: BlindProducerConfig,
+    rejection_recorder: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     dataset: list[dict[str, Any]] = []
     for index, item in enumerate(raw_cases, start=1):
@@ -520,6 +522,7 @@ def _materialize_cases_and_oracles(
                 public_contract=public_contract,
                 max_attempts=config.max_generation_attempts,
                 schema_namespace=config.schema_namespace,
+                rejection_recorder=rejection_recorder,
             )
             oracle_path = staging / relative_oracle
             oracle_path.parent.mkdir(parents=True, exist_ok=True)
@@ -542,6 +545,7 @@ def _generate_oracle(
     max_attempts: int,
     schema_namespace: str,
     public_contract: PublicImportContract | None = None,
+    rejection_recorder: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     schema = {
         "type": "object",
@@ -551,7 +555,7 @@ def _generate_oracle(
     }
     feedback = ""
     rejection_classes: list[str] = []
-    for _ in range(max_attempts):
+    for attempt in range(1, max_attempts + 1):
         try:
             payload = _request_json_object(
                 generator,
@@ -569,6 +573,12 @@ def _generate_oracle(
             )
         except _RetryableStructuredOutputError:
             rejection_classes.append("producer_output")
+            if rejection_recorder is not None:
+                rejection_recorder({
+                    "stage": "oracle", "case_id": case_id, "attempt": attempt,
+                    "rejection_class": "producer_output", "reason": "incomplete structured output",
+                    "candidate": None,
+                })
             feedback = _structured_output_feedback("oracle")
             continue
         source = str(payload.get("oracle_py", ""))
@@ -588,7 +598,8 @@ def _generate_oracle(
                     schema_namespace=schema_namespace,
                 )
             except _RetryableStructuredOutputError:
-                rejection_classes.append("review_output")
+                failure_class = "review_output"
+                rejection_classes.append(failure_class)
                 error = "independent oracle review returned incomplete structured output"
             else:
                 review_error = oracle_review_error(review)
@@ -599,10 +610,18 @@ def _generate_oracle(
                         "review_model": model,
                         "findings": [],
                     }
-                rejection_classes.append(oracle_review_failure_class(review_error))
+                failure_class = oracle_review_failure_class(review_error)
+                rejection_classes.append(failure_class)
                 error = review_error
         else:
-            rejection_classes.append(oracle_preflight_failure_class(error))
+            failure_class = oracle_preflight_failure_class(error)
+            rejection_classes.append(failure_class)
+        if rejection_recorder is not None:
+            rejection_recorder({
+                "stage": "oracle", "case_id": case_id, "attempt": attempt,
+                "rejection_class": failure_class, "reason": error,
+                "candidate": source,
+            })
         feedback = _oracle_revision_feedback(source, error)
     classes = ",".join(sorted(set(rejection_classes))) or "unknown"
     raise ValueError(
