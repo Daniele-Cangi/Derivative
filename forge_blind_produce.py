@@ -1,7 +1,10 @@
 import hashlib
+import json
 import os
 import re
 from pathlib import Path
+from typing import Any, Callable
+from uuid import uuid4
 
 import typer
 from dotenv import load_dotenv
@@ -33,6 +36,11 @@ def main(
         min=1,
         max=12,
     ),
+    capture_rejections: bool = typer.Option(
+        False,
+        "--capture-rejections",
+        help="Keep rejected requirement proposals in ignored local diagnostics.",
+    ),
     repository_root: str = typer.Option(".", "--repository-root"),
     input_cost_per_1m: float | None = typer.Option(
         None,
@@ -51,6 +59,13 @@ def main(
         os.environ["OPENAI_INPUT_COST_PER_1M_TOKENS"] = str(input_cost_per_1m)
         os.environ["OPENAI_OUTPUT_COST_PER_1M_TOKENS"] = str(output_cost_per_1m)
 
+    diagnostics_path: Path | None = None
+    rejection_recorder: Callable[[dict[str, Any]], None] | None = None
+    if capture_rejections:
+        diagnostics_path, rejection_recorder = _private_rejection_recorder(
+            Path(repository_root).resolve(), benchmark_version
+        )
+
     try:
         with track_model_usage() as usage:
             bundle = produce_and_freeze_blind_bundle(
@@ -65,8 +80,9 @@ def main(
                     max_generation_attempts=max_generation_attempts,
                 ),
                 model=model,
+                rejection_recorder=rejection_recorder,
             )
-    except (FileExistsError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         category = _safe_failure_category(exc)
         failure_id = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:12]
         estimated_cost, pricing_source = usage.estimated_cost()
@@ -79,6 +95,8 @@ def main(
         failure_slot = _safe_failure_slot(exc)
         if failure_slot is not None:
             typer.echo(f"Failed requirement slot: {failure_slot}", err=True)
+        if diagnostics_path is not None and diagnostics_path.exists():
+            typer.echo(f"Private rejection diagnostics: {diagnostics_path}", err=True)
         typer.echo(f"Model requests before failure: {usage.request_count}", err=True)
         typer.echo(f"Model input tokens before failure: {usage.input_tokens}", err=True)
         typer.echo(f"Model output tokens before failure: {usage.output_tokens}", err=True)
@@ -105,6 +123,8 @@ def main(
         + ("unavailable" if estimated_cost is None else f"${estimated_cost:.8f}")
     )
     typer.echo(f"Pricing source: {pricing_source}")
+    if diagnostics_path is not None and diagnostics_path.exists():
+        typer.echo(f"Private rejection diagnostics: {diagnostics_path}")
     typer.echo("Status: frozen_before_execution")
 
 
@@ -116,6 +136,8 @@ def _safe_failure_category(exc: Exception) -> str:
         return "oracle_preflight_failed"
     if isinstance(exc, FileExistsError):
         return "destination_exists"
+    if isinstance(exc, OSError):
+        return "storage_unavailable"
     if isinstance(exc, RuntimeError):
         return "provider_unavailable"
     return "production_failed"
@@ -132,6 +154,30 @@ def _safe_failure_slot(exc: Exception) -> int | None:
         str(exc),
     )
     return int(match.group(1)) if match else None
+
+
+def _private_rejection_recorder(
+    repository_root: Path,
+    benchmark_version: str,
+) -> tuple[Path, Callable[[dict[str, Any]], None]]:
+    directory = repository_root / "generated_artifacts" / "forge_blind_producer_diagnostics"
+    path = directory / f"{benchmark_version}-{uuid4().hex}.jsonl"
+    created = False
+
+    def record(event: dict[str, Any]) -> None:
+        nonlocal created
+        line = json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n"
+        if not created:
+            directory.mkdir(parents=True, exist_ok=True)
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(line)
+            created = True
+            return
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(line)
+
+    return path, record
 
 
 if __name__ == "__main__":

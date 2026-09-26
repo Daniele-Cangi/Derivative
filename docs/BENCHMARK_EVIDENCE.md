@@ -390,6 +390,8 @@ python forge_blind_produce.py PATH_TO_PRIVATE_BUNDLE \
 
 This is operational isolation, not cryptographic proof of model independence. The destination must not exist and the Forge baseline must be clean and committed.
 
+For a local diagnosis of rejected requirement proposals, add `--capture-rejections`. This opt-in writes each parsed rejected candidate, when available, and its validation reason to a unique JSONL file under Git-ignored `generated_artifacts/forge_blind_producer_diagnostics/`; the CLI prints only its path. Keep this file private. Rejected proposals are not benchmark cases or new blind evidence. Capture does not change generation, review, freezing, or Forge execution.
+
 ## Deriving Adjudicated Metrics
 
 After a sealed baseline and independent label-adjudication receipt exist:

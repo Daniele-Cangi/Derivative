@@ -88,6 +88,7 @@ def produce_and_freeze_blind_bundle(
     text_generator: TextGenerator | None = None,
     model: str | None = None,
     api_key: str | None = None,
+    rejection_recorder: Callable[[dict[str, Any]], None] | None = None,
 ) -> BlindBenchmarkBundle:
     destination = Path(output_root).resolve()
     if destination.exists():
@@ -118,6 +119,7 @@ def produce_and_freeze_blind_bundle(
             generator,
             resolved_model,
             config,
+            rejection_recorder=rejection_recorder,
         )
         dataset = _materialize_cases_and_oracles(
             generator=generator,
@@ -181,6 +183,8 @@ def _generate_requirement_cases(
     generator: TextGenerator,
     model: str,
     config: BlindProducerConfig,
+    *,
+    rejection_recorder: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     statuses = [
         *([TERMINAL_VERIFIED] * config.verified_cases),
@@ -201,6 +205,7 @@ def _generate_requirement_cases(
             index=index,
             expected_status=status,
             accepted_cases=accepted_cases,
+            rejection_recorder=rejection_recorder,
         )
         accepted_cases.append(case)
         produced[index] = case
@@ -222,6 +227,7 @@ def _generate_requirement_case(
     index: int,
     expected_status: str,
     accepted_cases: list[dict[str, Any]],
+    rejection_recorder: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     schema = {
         "type": "object",
@@ -247,7 +253,7 @@ def _generate_requirement_case(
     }
     feedback = ""
     rejection_classes: list[str] = []
-    for _ in range(config.max_generation_attempts):
+    for attempt in range(1, config.max_generation_attempts + 1):
         previous_requirements = [
             str(item["requirement"])
             for item in accepted_cases
@@ -275,7 +281,19 @@ def _generate_requirement_case(
                 output_schema_name=f"{config.schema_namespace}_requirements",
             )
         except _RetryableStructuredOutputError:
-            rejection_classes.append("producer_output")
+            failure_class = "producer_output"
+            rejection_classes.append(failure_class)
+            if rejection_recorder is not None:
+                rejection_recorder(
+                    {
+                        "slot": index,
+                        "attempt": attempt,
+                        "expected_terminal_status": expected_status,
+                        "rejection_class": failure_class,
+                        "reason": "incomplete structured output",
+                        "candidate": None,
+                    }
+                )
             feedback = _structured_output_feedback("requirement")
             continue
         raw_case = payload.get("case")
@@ -299,7 +317,8 @@ def _generate_requirement_case(
                         schema_namespace=config.schema_namespace,
                     )
                 except _RetryableStructuredOutputError:
-                    rejection_classes.append("review_output")
+                    failure_class = "review_output"
+                    rejection_classes.append(failure_class)
                     error = "independent requirement review returned incomplete structured output"
                 else:
                     review_error = requirement_review_error(review)
@@ -311,15 +330,27 @@ def _generate_requirement_case(
                             "findings": [],
                         }
                         return candidate
-                    rejection_classes.append("independent_review")
+                    failure_class = "independent_review"
+                    rejection_classes.append(failure_class)
                     error = review_error
             else:
-                rejection_classes.append(
-                    requirement_preflight_failure_class(preflight_error)
-                )
+                failure_class = requirement_preflight_failure_class(preflight_error)
+                rejection_classes.append(failure_class)
                 error = preflight_error
         else:
-            rejection_classes.append("static_case")
+            failure_class = "static_case"
+            rejection_classes.append(failure_class)
+        if rejection_recorder is not None:
+            rejection_recorder(
+                {
+                    "slot": index,
+                    "attempt": attempt,
+                    "expected_terminal_status": expected_status,
+                    "rejection_class": failure_class,
+                    "reason": error,
+                    "candidate": raw_case,
+                }
+            )
         feedback = f"\nThe previous response was rejected: {error}. Return a replacement."
     classes = ",".join(sorted(set(rejection_classes))) or "unknown"
     raise ValueError(

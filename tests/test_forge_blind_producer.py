@@ -151,6 +151,7 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
     repository_root = Path(__file__).resolve().parents[1]
     output_root = tmp_path / "blind-v4-external"
     generator = _RecordingGenerator()
+    rejected: list[dict] = []
 
     bundle = produce_and_freeze_blind_bundle(
         output_root=output_root,
@@ -164,8 +165,10 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
         ),
         text_generator=generator,
         model="external-test-model",
+        rejection_recorder=rejected.append,
     )
 
+    assert rejected == []
     assert output_root.is_dir()
     assert Path(bundle.manifest_path).is_file()
     assert len(bundle.cases) == 3
@@ -283,6 +286,117 @@ def test_producer_checks_infeasibility_before_spending_on_other_slots(tmp_path):
 
     assert len(calls) == 1
     assert "Create benchmark slot 3 of 3." in calls[0]["input_text"]
+    assert destination.exists() is False
+
+
+def test_rejected_requirement_diagnostics_preserve_each_candidate_without_publication(tmp_path):
+    responses = [
+        {
+            "case": {
+                "requirement": (
+                    "Build an arithmetic helper with specified input and output rules, "
+                    "but the structured public import refers to a different symbol. "
+                    "Public import contract: from mean_tool import mean."
+                ),
+                "public_contract": {
+                    "module": "mean_tool",
+                    "symbol": "other_mean",
+                    "kind": "function",
+                },
+                "tags": ["arithmetic", "contract"],
+            }
+        },
+        {
+            "case": {
+                "requirement": (
+                    "For every finite list, return its unique arithmetic mean. "
+                    "If that mean is not unique, still return one integer result. "
+                    "Public import contract: from mean_tool import mean."
+                ),
+                "public_contract": {
+                    "module": "mean_tool",
+                    "symbol": "mean",
+                    "kind": "function",
+                },
+                "tags": ["arithmetic", "contradiction"],
+            }
+        },
+    ]
+    events: list[dict] = []
+
+    def generator(**_kwargs):
+        return json.dumps(responses.pop(0))
+
+    destination = tmp_path / "rejected"
+    with pytest.raises(ValueError, match="validation for slot 3"):
+        produce_and_freeze_blind_bundle(
+            output_root=destination,
+            repository_root=Path(__file__).resolve().parents[1],
+            config=BlindProducerConfig(
+                bundle_id="blind-v10-private-diagnostics",
+                benchmark_version="v10",
+                verified_cases=1,
+                validation_failed_cases=1,
+                infeasible_cases=1,
+                max_generation_attempts=2,
+            ),
+            text_generator=generator,
+            model="external-test-model",
+            rejection_recorder=events.append,
+        )
+
+    assert [event["rejection_class"] for event in events] == [
+        "static_case",
+        "requirement_infeasibility_unproven",
+    ]
+    assert [event["attempt"] for event in events] == [1, 2]
+    assert events[0]["candidate"]["public_contract"]["symbol"] == "other_mean"
+    assert events[1]["candidate"]["public_contract"]["symbol"] == "mean"
+    assert destination.exists() is False
+
+
+def test_rejection_diagnostic_write_failure_prevents_bundle_publication(tmp_path):
+    destination = tmp_path / "diagnostic-write-failed"
+
+    def reject_record(_event):
+        raise OSError("diagnostic storage unavailable")
+
+    def generator(**_kwargs):
+        return json.dumps(
+            {
+                "case": {
+                    "requirement": (
+                        "For every finite list, return its unique arithmetic mean. "
+                        "If that mean is not unique, still return one integer result. "
+                        "Public import contract: from mean_tool import mean."
+                    ),
+                    "public_contract": {
+                        "module": "mean_tool",
+                        "symbol": "mean",
+                        "kind": "function",
+                    },
+                    "tags": ["arithmetic", "contradiction"],
+                }
+            }
+        )
+
+    with pytest.raises(OSError, match="diagnostic storage unavailable"):
+        produce_and_freeze_blind_bundle(
+            output_root=destination,
+            repository_root=Path(__file__).resolve().parents[1],
+            config=BlindProducerConfig(
+                bundle_id="blind-v10-diagnostic-write-failed",
+                benchmark_version="v10",
+                verified_cases=1,
+                validation_failed_cases=1,
+                infeasible_cases=1,
+                max_generation_attempts=1,
+            ),
+            text_generator=generator,
+            model="external-test-model",
+            rejection_recorder=reject_record,
+        )
+
     assert destination.exists() is False
 
 
@@ -998,6 +1112,51 @@ def test_producer_cli_reports_requirement_slot_without_private_requirement(monke
     assert "Failed requirement slot: 10" in result.output
     assert "Rejection classes: requirement_infeasibility_unproven" in result.output
     assert "private requirement text" not in result.output
+
+
+def test_producer_cli_writes_opt_in_private_rejections_without_leaking_text(monkeypatch, tmp_path):
+    def fail_production(**kwargs):
+        kwargs["rejection_recorder"](
+            {
+                "slot": 10,
+                "attempt": 1,
+                "expected_terminal_status": "infeasible_proven",
+                "rejection_class": "requirement_infeasibility_unproven",
+                "reason": "private reason",
+                "candidate": {"requirement": "private requirement text"},
+            }
+        )
+        raise ValueError(
+            "Requirement producer failed validation for slot 10; "
+            "rejection_classes=requirement_infeasibility_unproven"
+        )
+
+    monkeypatch.setattr(
+        forge_blind_produce,
+        "produce_and_freeze_blind_bundle",
+        fail_production,
+    )
+    result = CliRunner().invoke(
+        forge_blind_produce.app,
+        [
+            str(tmp_path / "bundle"),
+            "--bundle-id",
+            "blind-v10-private-diagnostics",
+            "--repository-root",
+            str(tmp_path),
+            "--capture-rejections",
+        ],
+    )
+
+    assert result.exit_code == 1
+    files = list((tmp_path / "generated_artifacts" / "forge_blind_producer_diagnostics").glob("*.jsonl"))
+    assert len(files) == 1
+    assert json.loads(files[0].read_text(encoding="utf-8"))["candidate"] == {
+        "requirement": "private requirement text"
+    }
+    assert str(files[0]) in result.output
+    assert "private requirement text" not in result.output
+    assert "private reason" not in result.output
 
 
 def test_oracle_preflight_failure_classes_do_not_expose_source():
