@@ -275,6 +275,12 @@ class ConditionalEvidenceValidator:
             build_spec.normalized_requirement,
             r"chunk\s+size|size|count|limit|shift",
         )
+        if (
+            numeric_index is None
+            and argument_count == 1
+            and obligation.witness_class == "invalid_positive_integer"
+        ):
+            numeric_index = 0
         fixture_path = workspace / ".forge_branch_probe_input"
         if filename_index is not None and filename_index < len(args):
             args[filename_index] = str(fixture_path)

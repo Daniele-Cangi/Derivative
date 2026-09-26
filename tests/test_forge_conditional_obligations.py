@@ -576,3 +576,45 @@ def test_validator_owned_probe_rejects_wrong_branch_behavior(tmp_path):
         item["status"] == "failed"
         for item in evidence["validator_branch_probes"]
     )
+
+
+def test_invalid_integer_probe_uses_only_argument_of_single_arg_cli(tmp_path):
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI that accepts one positive integer N from argv[1]. "
+        "If N is not a valid positive integer, print 'ERROR' to stdout, return "
+        "exit status 2. Public import contract: from number_cli import main."
+    )
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    obligation = next(
+        item
+        for item in spec.conditional_obligations
+        if item.witness_class == "invalid_positive_integer"
+    )
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+
+    probe = validator._build_cli_probe(spec, plan, obligation, tmp_path)
+
+    assert probe is not None
+    assert probe["evidence"]["argv"] == ["0"]
+    assert probe["evidence"]["witness_class"] == "invalid_positive_integer"
+
+
+def test_known_v11_001_invalid_integer_branch_gets_single_arg_probe(tmp_path):
+    bundle = Path(__file__).resolve().parents[1] / "benchmarks/blind_v11/external_001/cases.json"
+    cases = json.loads(bundle.read_text(encoding="utf-8"))
+    case = next(item for item in cases if item["case_id"] == "V11-001")
+    spec = RequirementCompiler().compile(case["requirement"])
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    obligation = next(
+        item
+        for item in spec.conditional_obligations
+        if item.witness_class == "invalid_positive_integer"
+    )
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+
+    probe = validator._build_cli_probe(spec, plan, obligation, tmp_path)
+
+    assert probe is not None
+    assert probe["evidence"]["argv"] == ["0"]
