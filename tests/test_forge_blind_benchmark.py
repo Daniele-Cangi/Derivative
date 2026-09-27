@@ -187,6 +187,25 @@ def test_gpt6_luna_v9_006_replay_is_locked_to_one_known_case():
     )
 
 
+def test_gpt6_luna_v12_workflow_runs_a_full_schema_v3_baseline():
+    repository_root = Path(__file__).resolve().parents[1]
+    workflow = (
+        repository_root / ".github/workflows/forge-blind-v12.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "OPENAI_MODEL: gpt-6-luna" in workflow
+    assert 'OPENAI_INPUT_COST_PER_1M_TOKENS: "0.10"' in workflow
+    assert 'OPENAI_OUTPUT_COST_PER_1M_TOKENS: "0.50"' in workflow
+    assert "benchmarks/blind_v12/external_001/manifest.json" in workflow
+    assert "bundle.schema_version == 3" in workflow
+    assert "len(bundle.cases) == 12" in workflow
+    assert "--execution-backend docker" in workflow
+    assert "--no-enforce-thresholds" in workflow
+    assert "--post-fix-replay" not in workflow
+    assert "--case-id" not in workflow
+    assert 'context["execution_kind"] = "sealed_baseline"' in workflow
+
+
 def test_blind_bundle_rejects_tampered_dataset(tmp_path):
     repository_root = Path(__file__).resolve().parents[1]
     manifest_path = _write_bundle(tmp_path, repository_root)
