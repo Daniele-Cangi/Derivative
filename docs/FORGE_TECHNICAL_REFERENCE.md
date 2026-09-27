@@ -284,7 +284,7 @@ Partial and failed runs remain auditable. Only verified artifacts are packaged.
 
 ```dotenv
 OPENAI_API_KEY="your-api-key-here"
-OPENAI_MODEL="gpt-4.1-mini"
+OPENAI_MODEL="gpt-6-luna"
 ```
 
 Optional cost telemetry is enabled only by explicit pricing metadata:

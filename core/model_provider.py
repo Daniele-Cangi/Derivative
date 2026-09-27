@@ -4,7 +4,7 @@ from typing import Any
 from core.forge.telemetry import record_model_request, record_model_response
 
 
-DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_MODEL = "gpt-6-luna"
 _NON_LIVE_KEYS = {"", "dummy_key_for_testing", "your-api-key-here"}
 
 

@@ -478,6 +478,8 @@ V5, V6, V7, V8, and V9 are known regression corpora. They must not be optimized 
 
 The target metrics are reported together: External Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, median/P95 latency, tokens, configured cost per externally accepted artifact, and repairs per successful build.
 
+New model-backed runs now default to `gpt-6-luna`; the local cost telemetry rates are $0.10 per million input tokens and $0.50 per million output tokens at standard pricing for prompts up to 272K input tokens. This is a future-run default only: V2–V11 sealed baselines and explicitly pinned historical workflows remain unchanged. Compare Luna on known regression cases before interpreting its results against the historical GPT-4.1 runs; V8-005 remains regression-only, never new blind evidence.
+
 ## Offline Frozen-Oracle Preflight Audit (V2–V11)
 
 An offline audit ran the current oracle preflight over all 66 frozen oracle sources in V2–V11. It made no Forge executions and no API calls. Ten bundles passed manifest, dataset, and oracle integrity checks; their 60 oracles yielded 46 preflight passes and 14 preflight rejections, with no analyzer crashes. These are static contract classifications, not semantic oracle verdicts or new benchmark evidence.

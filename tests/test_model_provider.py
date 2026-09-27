@@ -167,6 +167,7 @@ def test_openai_configuration_is_deterministic(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     assert resolve_openai_api_key() == ""
+    assert DEFAULT_OPENAI_MODEL == "gpt-6-luna"
     assert resolve_openai_model() == DEFAULT_OPENAI_MODEL
     assert is_live_openai_key("") is False
     assert is_live_openai_key("dummy_key_for_testing") is False

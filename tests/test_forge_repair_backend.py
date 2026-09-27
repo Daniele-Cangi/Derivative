@@ -1212,7 +1212,7 @@ def test_reasoning_kernel_returns_typed_revision_payload_without_execution_claim
     assert payload["files"][0]["path"] == "src/component.py"
     assert "complete replacements" in responses.request["instructions"]
     assert responses.request["max_output_tokens"] == 12000
-    assert responses.request["model"] == "gpt-4.1-mini"
+    assert responses.request["model"] == "gpt-6-luna"
     revision_schema = responses.request["text"]["format"]["schema"]
     assert revision_schema["properties"]["files"]["required"] == ["src/component.py"]
     assert revision_schema["properties"]["files"]["additionalProperties"] is False
