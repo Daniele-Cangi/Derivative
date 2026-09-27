@@ -139,6 +139,23 @@ def test_all_frozen_benchmark_inputs_match_their_manifests():
     assert observed_errors == {known_quarantined_bundle: known_dataset_mismatch}
 
 
+def test_gpt6_luna_v8_smoke_remains_a_bounded_regression_replay():
+    repository_root = Path(__file__).resolve().parents[1]
+    workflow = (
+        repository_root / ".github/workflows/forge-v8-luna-regression-smoke.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "OPENAI_MODEL: gpt-6-luna" in workflow
+    assert 'OPENAI_INPUT_COST_PER_1M_TOKENS: "0.10"' in workflow
+    assert 'OPENAI_OUTPUT_COST_PER_1M_TOKENS: "0.50"' in workflow
+    assert "--execution-backend docker" in workflow
+    assert "--post-fix-replay" in workflow
+    assert "--case-id V8-005" in workflow
+    assert "--max-planner-attempts 1" in workflow
+    assert "--max-coder-attempts 2" in workflow
+    assert '"execution_kind":"post_fix_replay"' in workflow
+
+
 def test_blind_bundle_rejects_tampered_dataset(tmp_path):
     repository_root = Path(__file__).resolve().parents[1]
     manifest_path = _write_bundle(tmp_path, repository_root)
