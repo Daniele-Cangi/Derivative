@@ -484,6 +484,8 @@ An offline audit ran the current oracle preflight over all 66 frozen oracle sour
 
 The V3 `external_001` manifest does not match its tracked `cases.json`: expected dataset SHA-256 `3908e48a822f9af0a86fd44478a30f1aa506aba53ab3dad45499f651f3150477`, actual `a6aa546158f82c76a8c4ca2ef2f52ff703477b51c23807964959907eae13cf47`. The worktree file is unchanged from Git. Its six oracle classifications were inspected but excluded from the integrity-verified totals; the frozen inputs and manifest were left untouched.
 
+Forge CI now discovers every `benchmarks/**/manifest.json` and loads each bundle with `verify_baseline=False`. This verifies frozen manifest, dataset, oracle, and certificate integrity without requiring the current Forge source to match each historical baseline. The known V3 mismatch is an exact, explicit quarantine; any new mismatch or any change to that known mismatch fails the test and requires deliberate adjudication.
+
 Notable classifications in the integrity-verified bundles:
 
 - V2-002–006 are rejected by the current minimum of three independent pytest tests; these legacy one-test oracles are not thereby shown semantically invalid.

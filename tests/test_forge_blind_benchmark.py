@@ -112,6 +112,33 @@ def test_bundled_blind_v2_is_frozen_and_complete():
     assert baseline["metrics"]["external_false_verified_rate"] == 0.0
 
 
+def test_all_frozen_benchmark_inputs_match_their_manifests():
+    repository_root = Path(__file__).resolve().parents[1]
+    known_quarantined_bundle = "benchmarks/blind_v3/external_001/manifest.json"
+    known_dataset_mismatch = (
+        "Blind benchmark dataset digest mismatch: "
+        "expected=3908e48a822f9af0a86fd44478a30f1aa506aba53ab3dad45499f651f3150477, "
+        "actual=a6aa546158f82c76a8c4ca2ef2f52ff703477b51c23807964959907eae13cf47."
+    )
+    observed_errors = {}
+
+    manifest_paths = sorted(repository_root.joinpath("benchmarks").rglob("manifest.json"))
+    assert manifest_paths, "No frozen benchmark manifests were found."
+
+    for manifest_path in manifest_paths:
+        relative_path = manifest_path.relative_to(repository_root).as_posix()
+        try:
+            load_blind_bundle(
+                str(manifest_path),
+                repository_root=repository_root,
+                verify_baseline=False,
+            )
+        except ValueError as exc:
+            observed_errors[relative_path] = str(exc)
+
+    assert observed_errors == {known_quarantined_bundle: known_dataset_mismatch}
+
+
 def test_blind_bundle_rejects_tampered_dataset(tmp_path):
     repository_root = Path(__file__).resolve().parents[1]
     manifest_path = _write_bundle(tmp_path, repository_root)
