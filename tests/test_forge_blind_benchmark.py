@@ -156,6 +156,37 @@ def test_gpt6_luna_v8_smoke_remains_a_bounded_regression_replay():
     assert '"execution_kind":"post_fix_replay"' in workflow
 
 
+def test_gpt6_luna_v9_006_replay_is_locked_to_one_known_case():
+    repository_root = Path(__file__).resolve().parents[1]
+    workflow = (
+        repository_root / ".github/workflows/forge-v9-006-luna-regression.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "OPENAI_MODEL: gpt-6-luna" in workflow
+    assert 'OPENAI_INPUT_COST_PER_1M_TOKENS: "0.10"' in workflow
+    assert 'OPENAI_OUTPUT_COST_PER_1M_TOKENS: "0.50"' in workflow
+    assert 'case_ids": ["V9-006"]' in workflow
+    assert '"execution_kind": "post_fix_replay"' in workflow
+    assert "--execution-backend docker" in workflow
+    assert "--post-fix-replay" in workflow
+    assert "--case-id V9-006" in workflow
+    assert "--max-planner-attempts 1" in workflow
+    assert "--max-coder-attempts 3" in workflow
+
+    bundle = load_blind_bundle(
+        str(repository_root / "benchmarks/blind_v9/external_001/manifest.json"),
+        verify_baseline=False,
+    )
+    assert bundle.manifest_sha256 == (
+        "02303b01513189a3668a24c8e95ae22d9414e1e30ed683a23a28581b7005258f"
+    )
+    case = next(case for case in bundle.cases if case.case_id == "V9-006")
+    assert case.expected_terminal_status == "verified"
+    assert case.oracle.path.replace("\\", "/").endswith(
+        "oracles/V9-006/oracle.py"
+    )
+
+
 def test_blind_bundle_rejects_tampered_dataset(tmp_path):
     repository_root = Path(__file__).resolve().parents[1]
     manifest_path = _write_bundle(tmp_path, repository_root)
