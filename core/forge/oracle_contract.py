@@ -81,10 +81,27 @@ class OracleHarnessMismatch:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class OracleStdinMockMismatch:
+    contract_id: str
+    function: str
+    class_name: str
+    assignment_line: int
+    message: str
+
+    def to_evidence(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 def oracle_contract_mismatches(
     source: str,
     requirement: str,
-) -> list[OracleContractMismatch | OraclePatternMismatch | OracleHarnessMismatch]:
+) -> list[
+    OracleContractMismatch
+    | OraclePatternMismatch
+    | OracleHarnessMismatch
+    | OracleStdinMockMismatch
+]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -95,6 +112,7 @@ def oracle_contract_mismatches(
     ] = [
         *explicit_pattern_fixture_mismatches(source, requirement, tree=tree),
         *context_manager_binding_mismatches(tree),
+        *stdin_mock_interface_mismatches(tree),
     ]
     # A CLI requirement that names sys.argv[1] defines one user argument, not
     # an explicit main(argv) list containing the executable. Oracle tests often
@@ -152,6 +170,83 @@ def oracle_contract_mismatches(
                     message=(
                         "oracle injects the declared CLI name as argv[0], but the "
                         "requirement does not define main(argv) as full sys.argv"
+                    ),
+                )
+            )
+    return mismatches
+
+
+def stdin_mock_interface_mismatches(
+    tree: ast.Module,
+) -> list[OracleStdinMockMismatch]:
+    """Reject partial stdin doubles that make valid read strategies fail."""
+    sys_aliases = {
+        alias.asname or alias.name.split(".", 1)[0]
+        for node in tree.body
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "sys"
+    }
+    mismatches: list[OracleStdinMockMismatch] = []
+    for function in (
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+    ):
+        local_classes = {
+            node.name: node for node in _local_class_definitions(function)
+        }
+        has_entrypoint_call = any(
+            isinstance(node, ast.Call)
+            and (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "main"
+                or isinstance(node.func, ast.Attribute)
+                and node.func.attr == "main"
+            )
+            for node in ast.walk(function)
+        )
+        if not has_entrypoint_call:
+            continue
+        for node in ast.walk(function):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = node.value
+            if not isinstance(value, ast.Call) or not isinstance(value.func, ast.Name):
+                continue
+            if not any(
+                isinstance(target, ast.Attribute)
+                and target.attr == "stdin"
+                and isinstance(target.value, ast.Name)
+                and target.value.id in sys_aliases
+                for target in targets
+            ):
+                continue
+            class_node = local_classes.get(value.func.id)
+            if class_node is None or class_node.bases:
+                continue
+            methods = {
+                method.name
+                for method in class_node.body
+                if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+            }
+            if "read" in methods or not methods.intersection(
+                {"readline", "readlines", "__iter__", "__next__"}
+            ):
+                continue
+            mismatches.append(
+                OracleStdinMockMismatch(
+                    contract_id="stdin_mock_interface",
+                    function=function.name,
+                    class_name=class_node.name,
+                    assignment_line=node.lineno,
+                    message=(
+                        f"oracle test {function.name} replaces sys.stdin with "
+                        f"{class_node.name}, which omits read(); a valid CLI may "
+                        "consume the same standard input with read() instead of "
+                        "line iteration"
                     ),
                 )
             )

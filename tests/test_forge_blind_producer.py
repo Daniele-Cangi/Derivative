@@ -1166,6 +1166,65 @@ def test_oracle_preflight_classifies_unusable_context_manager_without_crashing()
     assert oracle_preflight_failure_class(error) == "oracle_harness_mismatch"
 
 
+def test_oracle_preflight_rejects_incomplete_stdin_mock_interface():
+    requirement = (
+        "Write a Python CLI that reads lines from standard input and returns "
+        "exit code 2 without output when input contains undecodable UTF-8 bytes."
+    )
+    source = (
+        "import sys\n"
+        "from sample_cli import main\n\n"
+        "def test_decode_error():\n"
+        "    class BadStdin:\n"
+        "        def readline(self, *args, **kwargs):\n"
+        "            raise UnicodeDecodeError('utf-8', b'\\xff', 0, 1, 'bad')\n"
+        "    sys.stdin = BadStdin()\n"
+        "    assert main([]) == 2\n"
+        "\n"
+        "def test_valid():\n"
+        "    assert main([]) == 0\n"
+        "\n"
+        "def test_empty():\n"
+        "    assert main([]) == 0\n"
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is not None
+    assert "stdin substitute is incomplete" in error
+    assert "omits read()" in error
+    assert oracle_preflight_failure_class(error) == "oracle_harness_mismatch"
+
+
+def test_oracle_preflight_accepts_stdin_mock_with_read_method():
+    requirement = (
+        "Write a Python CLI that reads lines from standard input and returns "
+        "exit code 2 without output when input contains undecodable UTF-8 bytes."
+    )
+    source = (
+        "import sys\n"
+        "from sample_cli import main\n\n"
+        "def test_decode_error():\n"
+        "    class BadStdin:\n"
+        "        def read(self, *args, **kwargs):\n"
+        "            raise UnicodeDecodeError('utf-8', b'\\xff', 0, 1, 'bad')\n"
+        "        def readline(self, *args, **kwargs):\n"
+        "            raise UnicodeDecodeError('utf-8', b'\\xff', 0, 1, 'bad')\n"
+        "    sys.stdin = BadStdin()\n"
+        "    assert main([]) == 2\n"
+        "\n"
+        "def test_valid():\n"
+        "    assert main([]) == 0\n"
+        "\n"
+        "def test_empty():\n"
+        "    assert main([]) == 0\n"
+    )
+
+    error = oracle_preflight_error(source, requirement)
+
+    assert error is None
+
+
 def test_frozen_v11_oracle_audit_keeps_known_mismatch_isolated():
     root = Path(__file__).resolve().parents[1]
     bundle = load_blind_bundle(

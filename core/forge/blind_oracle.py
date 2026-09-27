@@ -149,6 +149,8 @@ def oracle_contract_sanity_error(source: str, requirement: str) -> str | None:
             "oracle test harness context binding is unusable in "
             f"{mismatch.function}: {mismatch.message}"
         )
+    if mismatch.contract_id == "stdin_mock_interface":
+        return "oracle test harness stdin substitute is incomplete: " + mismatch.message
     if "program-name placeholder" in mismatch.message:
         return (
             "oracle invocation contract contradicts the requirement in "
@@ -202,6 +204,7 @@ def oracle_preflight_failure_class(error: str) -> str:
         ("fixture expectation contradicts", "fixture_oracle_mismatch"),
         ("explicit pattern contract contradicts", "explicit_pattern_mismatch"),
         ("test harness context binding is unusable", "oracle_harness_mismatch"),
+        ("stdin substitute is incomplete", "oracle_harness_mismatch"),
         ("invocation contract contradicts", "oracle_contract_mismatch"),
     )
     return next(

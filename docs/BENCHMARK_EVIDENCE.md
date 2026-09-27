@@ -504,3 +504,9 @@ Notable classifications in the integrity-verified bundles:
 - All six V8 oracles pass static preflight. V8-005 was not executed: it remains a known-regression-only case and was not treated as new blind evidence.
 
 The audit also added a synthetic regression for formatting/classifying unusable context-manager bindings. No immutable benchmark input, baseline receipt, or score was changed.
+
+### Incomplete stdin test-double follow-up
+
+After the GPT-6 Luna V9-006 replay exposed a `BadStdin` object without `read()`, the static preflight gained a general check for oracle tests that replace `sys.stdin` with a line-oriented fake but omit the standard `read()` method. This avoids making acceptance depend on whether a valid CLI consumes standard input with `read()` or line iteration. The frozen inputs were not edited.
+
+The follow-up offline audit rechecked the same 10 integrity-valid bundles and 60 oracles, with zero Forge executions and zero API calls. The preflight now records 44 passes and 16 rejections (the prior snapshot was 46/14); the two additional `oracle_harness_mismatch` findings are V9-004 and V9-006. The exact known V3 dataset mismatch remains quarantined, and no baseline score or immutable bundle was changed. Unit coverage checks both rejection of an incomplete stdin mock and acceptance when `read()` is implemented.
