@@ -56,13 +56,17 @@ jobs:
               verify_baseline=True,
           )
           assert bundle.bundle_id == "forge-blind-v12-external-001"
-          assert bundle.schema_version == 3
+          assert bundle.schema_version == 4
           assert len(bundle.cases) == 12
           assert len(bundle.oracle_sha256) == 6
           assert sum(case.expected_terminal_status == TERMINAL_VERIFIED for case in bundle.cases) == 6
           assert sum(case.expected_terminal_status == TERMINAL_VALIDATION_FAILED for case in bundle.cases) == 3
           assert sum(case.expected_terminal_status == TERMINAL_INFEASIBLE_PROVEN for case in bundle.cases) == 3
-          assert all(case.infeasibility_certificate is None for case in bundle.cases)
+          assert all(
+              (case.infeasibility_certificate is not None)
+              == (case.expected_terminal_status == TERMINAL_INFEASIBLE_PROVEN)
+              for case in bundle.cases
+          )
           context_path = Path(
               "generated_artifacts/forge_blind_benchmarks/v12_execution_context.json"
           )

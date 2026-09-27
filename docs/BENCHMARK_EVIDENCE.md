@@ -482,7 +482,7 @@ This command makes no model calls, validates bundle hashes and case IDs, writes 
 
 ## Next Evaluation Rule
 
-V5, V6, V7, V8, and V9 are known regression corpora. They must not be optimized into new blind claims. V8-005 may be used only as a known regression case and never as new blind evidence. The next generality measurement must use a new schema-v3 bundle frozen before Forge sees its requirements or oracles.
+V5, V6, V7, V8, and V9 are known regression corpora. They must not be optimized into new blind claims. V8-005 may be used only as a known regression case and never as new blind evidence. The next generality measurement must use a new independently produced schema-4 bundle frozen before Forge sees its requirements or oracles. Its three infeasible cases use the `finite-linear-v1` public obligation and independently checked private certificate; this distinct requirement format must be reported separately from prose-only results.
 
 The target metrics are reported together: External Verified@1, success after repair, external acceptance, false verification, infeasibility detection, invalid-benchmark rejection, median/P95 latency, tokens, configured cost per externally accepted artifact, and repairs per successful build.
 
@@ -517,4 +517,4 @@ The first GPT-6 Luna producer invocation on `fef512d` targeted a new schema-3 bu
 
 After increasing only the output budget for infeasible proposals to 3,000 tokens (commit `812db5a`; the existing five-attempt limit was unchanged), a second single invocation also failed closed at slot 10. All five structured proposals were rejected because the prose did not establish a deterministic contradiction witness (`requirement_infeasibility_unproven`). It used 5 requests, 2,658 input tokens, 11,118 output tokens, and `$0.00582480`. The rejected proposal bodies remain only in ignored local diagnostics; no bundle or Forge baseline was published.
 
-Combined producer usage was 10 requests, 5,332 input tokens, 20,118 output tokens, 25,450 total tokens, and `$0.01059220`. These are failed production attempts, not benchmark cases or evidence. The next production format remains undecided: schema-3 prose-only infeasibility versus the already-supported schema-4 `finite-linear-v1` certificates.
+Combined producer usage was 10 requests, 5,332 input tokens, 20,118 output tokens, 25,450 total tokens, and `$0.01059220`. These are failed production attempts, not benchmark cases or evidence. V12 now selects the already-supported schema-4 `finite-linear-v1` protocol for a fresh production attempt. This does not convert rejected schema-3 proposals into cases, alter earlier baselines, or add attempts to the producer's existing five-attempt bound.
