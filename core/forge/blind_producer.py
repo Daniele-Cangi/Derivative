@@ -57,6 +57,13 @@ class _RetryableStructuredOutputError(ValueError):
     pass
 
 
+def _safe_provider_label(value: str, *, fallback: str = "unknown") -> str:
+    normalized = str(value).strip()
+    if not normalized or re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", normalized) is None:
+        return fallback
+    return normalized
+
+
 @dataclass(frozen=True)
 class BlindProducerConfig:
     bundle_id: str
@@ -286,7 +293,11 @@ def _generate_requirement_case(
                 generator,
                 label=f"requirement producer slot {index}",
                 model=model,
-                max_output_tokens=1800,
+                max_output_tokens=(
+                    3000
+                    if expected_status == TERMINAL_INFEASIBLE_PROVEN
+                    else 1800
+                ),
                 instructions=_requirement_producer_instructions(
                     config,
                     expected_status,
@@ -303,7 +314,7 @@ def _generate_requirement_case(
                 output_schema=schema,
                 output_schema_name=f"{config.schema_namespace}_requirements",
             )
-        except _RetryableStructuredOutputError:
+        except _RetryableStructuredOutputError as exc:
             failure_class = "producer_output"
             rejection_classes.append(failure_class)
             if rejection_recorder is not None:
@@ -313,7 +324,7 @@ def _generate_requirement_case(
                         "attempt": attempt,
                         "expected_terminal_status": expected_status,
                         "rejection_class": failure_class,
-                        "reason": "incomplete structured output",
+                        "reason": str(exc),
                         "candidate": None,
                     }
                 )
@@ -350,10 +361,10 @@ def _generate_requirement_case(
                         index=index,
                         schema_namespace=config.schema_namespace,
                     )
-                except _RetryableStructuredOutputError:
+                except _RetryableStructuredOutputError as exc:
                     failure_class = "review_output"
                     rejection_classes.append(failure_class)
-                    error = "independent requirement review returned incomplete structured output"
+                    error = str(exc)
                 else:
                     review_error = requirement_review_error(review)
                     if review_error is None:
@@ -572,12 +583,12 @@ def _generate_oracle(
                 output_schema=schema,
                 output_schema_name=f"{schema_namespace}_oracle",
             )
-        except _RetryableStructuredOutputError:
+        except _RetryableStructuredOutputError as exc:
             rejection_classes.append("producer_output")
             if rejection_recorder is not None:
                 rejection_recorder({
                     "stage": "oracle", "case_id": case_id, "attempt": attempt,
-                    "rejection_class": "producer_output", "reason": "incomplete structured output",
+                    "rejection_class": "producer_output", "reason": str(exc),
                     "candidate": None,
                 })
             feedback = _structured_output_feedback("oracle")
@@ -598,10 +609,10 @@ def _generate_oracle(
                     source=source,
                     schema_namespace=schema_namespace,
                 )
-            except _RetryableStructuredOutputError:
+            except _RetryableStructuredOutputError as exc:
                 failure_class = "review_output"
                 rejection_classes.append(failure_class)
-                error = "independent oracle review returned incomplete structured output"
+                error = str(exc)
             else:
                 review_error = oracle_review_error(review)
                 if review_error is None:
@@ -788,14 +799,23 @@ def _request_json_object(
     try:
         raw = generator(**request)
     except MissingTextOutputError as exc:
+        status = _safe_provider_label(exc.status)
+        reason = _safe_provider_label(exc.reason)
         raise _RetryableStructuredOutputError(
-            f"{label} returned incomplete structured output"
+            f"{label} returned incomplete structured output "
+            f"(provider_status={status}, provider_reason={reason}, "
+            f"partial_output={exc.partial_output})"
         ) from exc
     try:
         return _parse_json_object(raw, label)
     except ValueError as exc:
+        failure_kind = (
+            "invalid_json" if isinstance(exc.__cause__, json.JSONDecodeError)
+            else "invalid_json_object"
+        )
         raise _RetryableStructuredOutputError(
-            f"{label} returned incomplete structured output"
+            f"{label} returned incomplete structured output "
+            f"(parse_failure={failure_kind})"
         ) from exc
 
 

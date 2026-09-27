@@ -855,6 +855,52 @@ def test_requirement_producer_retries_incomplete_generation_and_review_output():
     assert "incomplete structured output" in calls[3]["input_text"]
 
 
+@pytest.mark.parametrize(
+    ("expected_status", "expected_output_budget"),
+    [("verified", 1800), ("infeasible_proven", 3000)],
+)
+def test_requirement_output_budget_and_diagnostics_are_status_aware(
+    expected_status, expected_output_budget
+):
+    calls = []
+    diagnostics = []
+
+    def generator(**kwargs):
+        calls.append(kwargs)
+        raise MissingTextOutputError(
+            "provider response omitted from this test",
+            status="incomplete",
+            reason="max_output_tokens",
+            partial_output=True,
+        )
+
+    with pytest.raises(ValueError, match="Requirement producer failed validation"):
+        _generate_requirement_case(
+            generator=generator,
+            model="external-test-model",
+            config=BlindProducerConfig(
+                bundle_id="blind-v12-output-budget-test",
+                benchmark_version="v12",
+                verified_cases=1,
+                validation_failed_cases=1,
+                infeasible_cases=1,
+                max_generation_attempts=1,
+            ),
+            index=1,
+            expected_status=expected_status,
+            accepted_cases=[],
+            rejection_recorder=diagnostics.append,
+        )
+
+    assert len(calls) == 1
+    assert calls[0]["max_output_tokens"] == expected_output_budget
+    assert diagnostics[0]["reason"].endswith(
+        "provider_status=incomplete, provider_reason=max_output_tokens, "
+        "partial_output=True)"
+    )
+    assert "omitted from this test" not in diagnostics[0]["reason"]
+
+
 def test_oracle_producer_retries_incomplete_generation_and_review_output():
     calls: list[dict] = []
     oracle_attempts = 0
