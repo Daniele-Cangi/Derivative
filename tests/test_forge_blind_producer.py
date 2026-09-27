@@ -20,6 +20,7 @@ from core.forge.blind_producer import (
     _generate_oracle,
     _generate_requirement_case,
     _oracle_revision_feedback,
+    _single_case_error,
     produce_and_freeze_blind_bundle,
 )
 from core.model_provider import MissingTextOutputError
@@ -395,6 +396,23 @@ def test_one_shot_producer_separates_generation_and_freezes_before_publication(t
         "review_model": "external-test-model",
         "static_checks_passed": True,
     }
+
+
+def test_producer_rejects_public_module_that_shadows_standard_library():
+    candidate = dict(_case_payload()["cases"][0])
+    candidate["public_contract"] = {
+        "module": "calendar",
+        "symbol": "classify_code",
+        "kind": "function",
+    }
+    candidate["requirement"] = candidate["requirement"].replace(
+        "from code_policy import classify_code",
+        "from calendar import classify_code",
+    )
+
+    assert _single_case_error(candidate, []) == (
+        "public import module root must not shadow the standard library or reserved modules"
+    )
 
 
 def test_producer_checks_infeasibility_before_spending_on_other_slots(tmp_path):

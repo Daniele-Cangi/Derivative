@@ -229,7 +229,8 @@ by the requirement. Define at least three tests with non-trivial fixtures, direc
 edge cases, and required exception checks. Tests must be deterministic, cross-platform, offline, and standard-library-only except
 for pytest. Do not use subprocesses, sockets, HTTP clients, timing assumptions, skip/xfail, assert True, source inspection, manifest
 inspection, Forge modules, generated tests, or implementation-private names. Every test must invoke the imported public target itself.
-Use complete executable test bodies, never pass, ellipsis, or placeholder assertions. Represent control bytes with Python escapes or
+Use a direct top-level "from <module> import <symbol>" for the declared public target; never guard that import in try/except.
+Use complete executable test bodies, never pass (including in exception handlers), ellipsis, or placeholder assertions. Represent control bytes with Python escapes or
 constructors; do not place literal NUL or other control characters in the returned Python source.
 The target call must appear lexically inside each test function: do not place it in a local helper, fixture, wrapper, or setup hook.
 For an in-process CLI entrypoint, capture and assert its returned exit code; pass only user arguments to main(argv), excluding the

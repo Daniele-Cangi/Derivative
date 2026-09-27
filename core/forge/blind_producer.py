@@ -1,6 +1,7 @@
 import json
 import re
 import shutil
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -773,6 +774,8 @@ def _case_public_contract_error(case: dict[str, Any], requirement: str) -> str |
         )
     except ValueError as exc:
         return str(exc)
+    if contract.module.split(".", 1)[0] in (set(sys.stdlib_module_names) | {"pytest", "core", "forge"}):
+        return "public import module root must not shadow the standard library or reserved modules"
     return requirement_public_import_error(requirement, contract)
 
 
@@ -868,6 +871,7 @@ do not define a verified contract that requires subprocess, network, socket, or 
 must expose callable module interfaces rather than requiring a live server.
 Every case must include one canonical sentence exactly shaped as "Public import contract: from <module> import <symbol>." The structured
 public_contract module and symbol must match that sentence exactly; use kind=function, cli_entrypoint, or callable as appropriate.
+Choose a unique project module name: its root must not shadow a Python standard-library module, pytest, core, or forge.
 Do not label an environmental limitation as formal infeasibility and do not weaken impossible constraints. Do not include solutions,
 implementation hints, test code, oracle details, Markdown, or references to Forge internals.
 Return only the requested structured object."""
