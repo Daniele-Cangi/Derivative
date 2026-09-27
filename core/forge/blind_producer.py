@@ -293,11 +293,7 @@ def _generate_requirement_case(
                 generator,
                 label=f"requirement producer slot {index}",
                 model=model,
-                max_output_tokens=(
-                    3000
-                    if expected_status == TERMINAL_INFEASIBLE_PROVEN
-                    else 1800
-                ),
+                max_output_tokens=3000,
                 instructions=_requirement_producer_instructions(
                     config,
                     expected_status,
@@ -476,7 +472,7 @@ def _review_requirement_case(
         generator,
         label="requirement reviewer",
         model=model,
-        max_output_tokens=1200,
+        max_output_tokens=1800,
         instructions=requirement_reviewer_instructions(),
         input_text=(
             "Review this candidate before any oracle is authored:\n"

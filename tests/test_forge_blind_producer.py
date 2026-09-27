@@ -851,16 +851,21 @@ def test_requirement_producer_retries_incomplete_generation_and_review_output():
     assert candidate["requirement"] == source_case["requirement"]
     assert requirement_attempts == 3
     assert review_attempts == 2
+    assert all(
+        call["max_output_tokens"] == 1800
+        for call in calls
+        if call["output_schema_name"].endswith("_requirements_review")
+    )
     assert "incomplete or invalid" in calls[1]["input_text"]
     assert "incomplete structured output" in calls[3]["input_text"]
 
 
 @pytest.mark.parametrize(
-    ("expected_status", "expected_output_budget"),
-    [("verified", 1800), ("infeasible_proven", 3000)],
+    "expected_status",
+    ["verified", "validation_failed", "infeasible_proven"],
 )
-def test_requirement_output_budget_and_diagnostics_are_status_aware(
-    expected_status, expected_output_budget
+def test_requirement_output_budget_and_diagnostics_are_status_agnostic(
+    expected_status,
 ):
     calls = []
     diagnostics = []
@@ -893,7 +898,7 @@ def test_requirement_output_budget_and_diagnostics_are_status_aware(
         )
 
     assert len(calls) == 1
-    assert calls[0]["max_output_tokens"] == expected_output_budget
+    assert calls[0]["max_output_tokens"] == 3000
     assert diagnostics[0]["reason"].endswith(
         "provider_status=incomplete, provider_reason=max_output_tokens, "
         "partial_output=True)"
