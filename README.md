@@ -7,6 +7,7 @@
 [![Forge CI](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml/badge.svg)](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-1f6b58)](LICENSE)
+[![Listed in Awesome AI Coding Tools](https://img.shields.io/badge/LISTED_IN-Awesome_AI_Coding_Tools-8bd5ca?logo=github&logoColor=111111)](https://github.com/ai-for-developers/awesome-ai-coding-tools#coding-agents)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
 [![CodeTriage](https://www.codetriage.com/daniele-cangi/derivative/badges/users.svg)](https://www.codetriage.com/daniele-cangi/derivative)
 ![Tests](https://img.shields.io/badge/tests-546%20passing-2f855a)
