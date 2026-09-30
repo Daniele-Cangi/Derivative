@@ -2,7 +2,7 @@
 
 # Derivative
 
-**A computational invention engine that turns requirements into executable, testable systems.**
+**Build software from a requirement — and keep the result only if it survives independent verification.**
 
 [![Forge CI](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml/badge.svg)](https://github.com/Daniele-Cangi/Derivative/actions/workflows/forge-ci.yml)
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -10,8 +10,6 @@
 [![Listed in Awesome AI Coding Tools](https://img.shields.io/badge/LISTED_IN-Awesome_AI_Coding_Tools-8bd5ca?logo=github&logoColor=111111)](https://github.com/ai-for-developers/awesome-ai-coding-tools#coding-agents)
 [![Release](https://img.shields.io/github/v/release/Daniele-Cangi/Derivative?include_prereleases&sort=semver)](https://github.com/Daniele-Cangi/Derivative/releases)
 [![CodeTriage](https://www.codetriage.com/daniele-cangi/derivative/badges/users.svg)](https://www.codetriage.com/daniele-cangi/derivative)
-![Tests](https://img.shields.io/badge/tests-546%20passing-2f855a)
-![Evidence](https://img.shields.io/badge/evidence-blind%20V7-d39e2f)
 ![Sandbox](https://img.shields.io/badge/execution-Docker%20sandbox-2496ED?logo=docker&logoColor=white)
 
 </div>
@@ -20,23 +18,55 @@
   <img src="docs/assets/forge-overview.svg" alt="Derivative Forge requirement-to-verification flow" width="100%" />
 </p>
 
-Derivative and Forge are one system. **Derivative** is the computational reasoning substrate: it combines specialized libraries, deterministic solvers, obligation compilation, contradiction detection, execution, audit, and memory. **Forge** is its software-building pipeline: it turns a natural-language requirement into Python software, runs the generated build in isolation, validates it independently, and packages it only when every gate passes.
+Give Derivative a natural-language software requirement. **Forge** turns it into a structured contract, builds a Python implementation, runs that implementation in an isolated sandbox, and validates the result before packaging it.
+
+The generated code does not get to declare itself correct.
 
 ```text
-requirement -> typed contract -> grounded plan -> generated code
-            -> isolated execution -> independent validation
-            -> verified package or explicit failure evidence
+requirement
+    ↓
+structured contract
+    ↓
+software
+    ↓
+isolated execution
+    ↓
+independent validation
+    ↓
+verified package
+    or
+explicit failure evidence
 ```
 
-> [!IMPORTANT]
-> `verified` does not mean formally proven or universally correct. It means that the generated artifact satisfied the compiled requirement, quality, execution, and adversarial contracts at that revision. Independent blind-oracle acceptance is measured separately.
+[Try it](#quick-start) | [Why it exists](#why-derivative-exists) | [How it works](#how-forge-works) | [Trust model](#trust-model) | [Current scope](#current-scope) | [Evidence](#evidence)
 
-Blind benchmark authors can opt into the [finite infeasibility admission protocol](docs/BLIND_INFEASIBILITY_PROTOCOL.md).
-It verifies explicit bounded output obligations, not arbitrary prose. The private
-admission certificate never sets Forge's observed result; Forge can independently
-prove the same obligation when its normative block is present in the public requirement.
+## Example
 
-[Quick start](#quick-start) | [How it works](#how-forge-works) | [Trust model](#trust-model) | [Current scope](#current-scope) | [Evidence](#evidence) | [Documentation](#documentation)
+```bash
+python forge.py "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, flags contracts expiring in less than 90 days, writes a summary CSV, and includes tests."
+```
+
+Forge does not simply generate a plausible implementation and return it. The candidate must satisfy executable requirements, run successfully inside the sandbox, survive independent checks, and produce enough evidence for packaging.
+
+A run ends in one of three build outcomes:
+
+- **`verified`** — the required runtime, contract, and adversarial gates passed; packaging is allowed.
+- **`validation_failed`** — a candidate exists, but the evidence is insufficient; packaging is blocked.
+- **`infeasible_proven`** — the stated constraints are contradictory and Forge produced an evidence-backed certificate.
+
+Operational failures such as `sandbox_unavailable` or `sandbox_policy_violation` stop before a build outcome is claimed.
+
+## Why Derivative Exists
+
+Most code-generation systems are optimized to produce an implementation.
+
+Derivative is built around a stricter question:
+
+> **What evidence would justify accepting the generated software?**
+
+That changes the pipeline. Natural-language requirements are preserved as typed obligations, candidate code is executed outside the generator, validation has separate authority, repair is bounded by observed failures, and unsupported claims fail closed instead of being packaged optimistically.
+
+**Derivative** is the broader computational reasoning substrate behind this process. **Forge** is the software-building pipeline that applies it to executable software generation and verification.
 
 ## Quick Start
 
@@ -44,8 +74,10 @@ Prerequisites: Python 3.11 and Docker. Docker is required for production verific
 
 ```bash
 python -m venv .venv
+
 # Windows
 .venv\Scripts\activate
+
 # macOS/Linux
 source .venv/bin/activate
 
@@ -63,23 +95,20 @@ Enable model-backed candidate compilation and repair:
 
 ```bash
 python -m pip install -r requirements/model.txt
+
 # Set OPENAI_API_KEY in .env
 python forge.py "Build a Python REST service with tests." --mode hybrid
 ```
 
 Host credentials are never inherited by generated-code sandboxes.
 
-## Terminal Results
+## What `verified` Means
 
-A normal build reaches one of three terminal build statuses:
+`verified` does **not** mean formally proven or universally correct.
 
-- **`verified`**: all runtime, contract, and adversarial gates passed; packaging is allowed.
-- **`validation_failed`**: a candidate exists, but its evidence is insufficient; packaging is blocked.
-- **`infeasible_proven`**: stated constraints are contradictory and an evidence-backed certificate was emitted.
+It means that, at that revision, the generated artifact satisfied the compiled requirement, quality, execution, and adversarial contracts that Forge knew how to check. Independent blind-oracle acceptance is measured separately.
 
-Operational preflight can stop earlier with explicit errors such as `sandbox_unavailable` or `sandbox_policy_violation`; these do not masquerade as build outcomes.
-
-Failed and infeasible runs preserve their typed artifacts. Only `verified` builds enter `generated_artifacts/forge_packages/`.
+Unsupported or unproven behavior should end as `validation_failed`, never as optimistic packaging.
 
 ## How Forge Works
 
@@ -112,33 +141,35 @@ The planner cannot decide truth, the coder cannot decide correctness, and the va
 
 Forge is designed to fail closed.
 
-1. **Requirement preservation**: hard, ambiguous, and universal requirements remain traceable from source text to plan, files, tests, assertions, and validation evidence.
-2. **Quality contracts**: security, persistence, rate limiting, auditability, observability, and test-depth promises become executable obligations.
-3. **Isolated execution**: production validation runs in an ephemeral Docker container with no network, a read-only root filesystem, resource limits, and an environment allowlist.
-4. **Independent validation**: syntax/import/run, obligations/acceptance, and adversarial checks must all pass.
-5. **Bounded repair**: retries target observed failure signatures and must produce a material artifact change before revalidation.
-6. **Oracle preflight**: incoherent external benchmark harnesses terminate as `oracle_invalid` before Forge or model execution.
+1. **Requirement preservation** — hard, ambiguous, and universal requirements remain traceable from source text to plan, files, tests, assertions, and validation evidence.
+2. **Quality contracts** — security, persistence, rate limiting, auditability, observability, and test-depth promises can become executable obligations.
+3. **Isolated execution** — production validation runs in an ephemeral Docker container with no network, a read-only root filesystem, resource limits, and an environment allowlist.
+4. **Independent validation** — syntax/import/run, obligations/acceptance, and adversarial checks must all pass.
+5. **Bounded repair** — retries target observed failure signatures and must produce a material artifact change before revalidation.
+6. **Oracle preflight** — incoherent external benchmark harnesses terminate as `oracle_invalid` before Forge or model execution.
 
 <p align="center">
   <img src="docs/assets/verification-gates.svg" alt="Forge's three independent verification layers" width="100%" />
 </p>
 
-## Architecture Boundary
+## Derivative and Forge
 
-Derivative is broader than software generation, while Forge gives that substrate a concrete software-engineering contract. They are connected layers, not two competing agents.
+Derivative and Forge are connected layers, not competing agents.
 
 | Layer | Responsibility |
 | --- | --- |
 | **Derivative** | Computational lenses, deterministic solvers, obligation compilation, execution grounding, contradiction witnesses, audit, and memory |
 | **Forge** | Typed software-build contracts, candidate compilation, independent validation, bounded repair, and fail-closed packaging |
 
-Forge reuses Derivative as its truth-producing planning substrate. Derivative can ground a plan or prove a contradiction, but only Forge validation evidence can authorize packaging. Optional model and scientific runtimes load only when the selected mode or problem requires them.
+Derivative can ground a plan or prove a contradiction. Only Forge validation evidence can authorize packaging.
+
+Optional model and scientific runtimes load only when the selected mode or problem requires them.
 
 See [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md).
 
 ## Current Scope
 
-**Supported now**
+### Supported now
 
 - Greenfield Python CLI, REST service, data pipeline, and library artifacts.
 - Deterministic capability profiles with model-backed fallback.
@@ -147,7 +178,7 @@ See [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECT
 - Docker-isolated validation and independent black-box benchmark oracles.
 - Explicit infeasibility certificates and invalid-benchmark rejection.
 
-**Not claimed**
+### Not claimed
 
 - General existing-repository editing.
 - Additional programming languages or frontend generation.
@@ -155,32 +186,27 @@ See [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECT
 - Universal semantic coverage outside implemented contracts.
 - Distribution wheels, runtime containers, SBOMs, or supply-chain attestations.
 
-Unsupported or unproven behavior should end as `validation_failed`, never as optimistic packaging.
-
 ## Evidence
 
 The current `main` checkpoint passes **609 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **607 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
 
-Blind evidence is immutable and reported without retrospective score repair:
+The project deliberately separates **internal verification** from **external blind acceptance**. Frozen blind benchmarks are never retrospectively rescored after fixes.
 
-- **Blind V5** established the evidence-closure protocol and remains a regression corpus.
-- **Blind V6** exposed label and legacy public-import ambiguities; undefined external metrics remain `null`.
-- **Blind V7** is the first schema-v3 bundle with typed public import contracts. Its frozen baseline reported external Verified@1 at 0/6. The legacy raw false-verified field was `0.000` with no observed verified artifact; the schema-v3 adjudicated value is therefore `null`, not an asserted 0/0 rate.
-- A targeted V7 post-fix replay remained `0/5` externally accepted and exposed one invalid frozen oracle plus four genuine candidate-generation failures. The raw receipt is unchanged; oracle preflight now rejects the broken harness before spending model tokens.
+The latest frozen blind baseline is **V9**:
 
-These results show a strong fail-closed architecture, not completed generality. Known blind cases are regression evidence after first execution; future generality must be measured on a newly frozen distribution.
+- 12 sealed cases.
+- Status accuracy: **7/12**.
+- External Verified@1: **0/6**.
+- External acceptance after repair: **1/6**.
+- False verification: **4/5**.
+- Infeasibility detection: **0/3**.
+- All three expected `validation_failed` cases remained fail-closed.
 
-Blind V8 has already been executed and is therefore a known regression corpus. In particular, V8-005 may be replayed for regression diagnosis only and must not be reported as new blind evidence.
+Post-fix V9 replays are labeled as regression evidence rather than new blind results. Earlier V5–V8 runs remain preserved as historical evidence and regression corpora.
 
-The targeted V8-005 replay on `9d2f3a3` reached internal `verified` after one repair and its frozen external oracle passed 12/12. The receipt remains explicitly labeled `post_fix_replay` with `baseline_verified=false`; this is attributable regression evidence, not a new blind result. See [run 33297062090](https://github.com/Daniele-Cangi/Derivative/actions/runs/33297062090).
+The full record — including hashes, denominators, frozen receipts, replay labels, oracle adjudication, and reproduction commands — lives in [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md).
 
-Blind V9 was independently produced and frozen on `4d8ee7d` before its [first and only baseline](https://github.com/Daniele-Cangi/Derivative/actions/runs/33298884420). The sealed run passed 4/12 cases: status accuracy was 7/12, external Verified@1 was 0/6, external acceptance was 1/6 after repair, false verification was 4/5, and infeasibility detection was 0/3. All three expected `validation_failed` cases remained fail-closed. V9 is now a known regression corpus; these raw results are preserved rather than retrospectively repaired.
-
-A [targeted V9 post-fix replay](https://github.com/Daniele-Cangi/Derivative/actions/runs/33442276463) on `8744f00` exercised five affected known cases. V9-006 passed its frozen oracle 4/4; V9-001, V9-002, V9-003, and V9-005 remained fail-closed, while the two earlier binary-evidence serialization exceptions were eliminated. The receipt is explicitly `post_fix_replay` with `baseline_verified=false`, not new blind evidence.
-
-Two final, case-only V9-003 replays remained fail-closed. The [first closure run](https://github.com/Daniele-Cangi/Derivative/actions/runs/36060617880) exposed invalid generated stream fixtures; the [second closure run](https://github.com/Daniele-Cangi/Derivative/actions/runs/36062980584) reduced the result to one `candidate_preflight_failure` concerning exact line-ending evidence. No artifact reached internal verification, so no frozen oracle was executed and no false verification occurred. These runs are bounded regression evidence, not a revised blind score.
-
-Full metrics, hashes, denominators, replay labels, and commands are in [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md).
+Blind benchmark authors can also use the [finite infeasibility admission protocol](docs/BLIND_INFEASIBILITY_PROTOCOL.md) for explicit bounded output obligations. It does not allow a private certificate to set Forge's observed result.
 
 ## Installation Profiles
 
@@ -263,14 +289,14 @@ Evaluation protocols and replay commands are documented in [Benchmark Evidence](
 
 ## Documentation
 
-- [Technical Reference](docs/FORGE_TECHNICAL_REFERENCE.md): contracts, capabilities, validation, repair, isolation, dependencies, and artifact schema.
-- [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md): frozen blinds, receipts, metrics, adjudication, and reproducible commands.
-- [Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md): why Forge and Derivative are interconnected and how loading remains capability-driven.
-- [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md): requirements for adding a capability without weakening `verified`.
-- [Blind V5 Evidence Closure](docs/FORGE_V5_EVIDENCE_CLOSURE.md): the frozen evidence semantics established at the V5 checkpoint.
-- [v0.2.1 Release Notes](https://github.com/Daniele-Cangi/Derivative/releases/tag/v0.2.1): repair-safety and Qiskit runtime-stability checkpoint.
-- [Contributing](CONTRIBUTING.md): development workflow and acceptance expectations.
-- [MIT License](LICENSE): use and redistribution terms.
+- [Technical Reference](docs/FORGE_TECHNICAL_REFERENCE.md) — contracts, capabilities, validation, repair, isolation, dependencies, and artifact schema.
+- [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md) — frozen blinds, receipts, metrics, adjudication, and reproducible commands.
+- [Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECTURE.md) — how Forge and Derivative are interconnected and how loading remains capability-driven.
+- [Certified Extension Contract](docs/CERTIFIED_EXTENSION_CONTRACT.md) — requirements for adding a capability without weakening `verified`.
+- [Blind V5 Evidence Closure](docs/FORGE_V5_EVIDENCE_CLOSURE.md) — the frozen evidence semantics established at the V5 checkpoint.
+- [v0.2.1 Release Notes](https://github.com/Daniele-Cangi/Derivative/releases/tag/v0.2.1) — repair-safety and Qiskit runtime-stability checkpoint.
+- [Contributing](CONTRIBUTING.md) — development workflow and acceptance expectations.
+- [MIT License](LICENSE) — use and redistribution terms.
 
 ## Project Direction
 
