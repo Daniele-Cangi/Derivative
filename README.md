@@ -188,21 +188,17 @@ See [Derivative and Forge Architecture Boundary](docs/DERIVATIVE_FORGE_ARCHITECT
 
 ## Evidence
 
-The current `main` checkpoint passes **609 tests** in Linux/Python 3.11 CI. The complete local Windows run at the same checkpoint reported **607 passed, 2 skipped**. GitHub Actions also runs the minimal-runtime gate and the full Docker-backed 30-case regression gate.
+The [Forge CI run for `b541ec7`](https://github.com/Daniele-Cangi/Derivative/actions/runs/36740655419) passed **711 tests** on Linux/Python 3.11 on September 30, 2026. The workflow also runs the minimal-runtime smoke check and the Docker-backed extended benchmark quality gate.
 
 The project deliberately separates **internal verification** from **external blind acceptance**. Frozen blind benchmarks are never retrospectively rescored after fixes.
 
-The latest frozen blind baseline is **V9**:
+The latest frozen blind baseline is **V11**, a schema-4 bundle with 12 cases:
 
-- 12 sealed cases.
-- Status accuracy: **7/12**.
-- External Verified@1: **0/6**.
-- External acceptance after repair: **1/6**.
-- False verification: **4/5**.
-- Infeasibility detection: **0/3**.
-- All three expected `validation_failed` cases remained fail-closed.
+- Status accuracy: **6/12**.
+- External Verified@1: **0/6**; none of the six expected-verified cases reached its external oracle.
+- All three expected `validation_failed` cases and all three infeasible cases matched their labels.
 
-Post-fix V9 replays are labeled as regression evidence rather than new blind results. Earlier V5–V8 runs remain preserved as historical evidence and regression corpora.
+V5–V11 are known benchmark corpora; post-fix replays are regression evidence, not new blind results. V8-005 is regression-only and must not be reported as new blind evidence. V12 has no published bundle or baseline; its production status is recorded in the benchmark ledger.
 
 The full record — including hashes, denominators, frozen receipts, replay labels, oracle adjudication, and reproduction commands — lives in [Benchmark Evidence](docs/BENCHMARK_EVIDENCE.md).
 
