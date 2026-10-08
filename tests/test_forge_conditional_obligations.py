@@ -348,7 +348,7 @@ def test_behavioral_contract_seal_is_deterministic_and_semantically_sensitive():
     seal = behavioral_contract_seal(plan)
 
     assert seal == behavioral_contract_seal(plan)
-    assert seal["schema_version"] == 1
+    assert seal["schema_version"] == 2
     assert seal["digest_mode"] == "canonical_json_utf8_v1"
     assert len(seal["sha256"]) == 64
     assert seal["build_id"] == spec.build_id

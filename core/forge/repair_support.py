@@ -11,10 +11,11 @@ from core.forge.evidence_integrity import (
     canonical_json_bytes,
 )
 from core.forge.exact_output import ExactOutputContract, extract_exact_output_contracts
+from core.forge.expiration_contract import expiration_horizon_contract
 from core.forge.execution import LocalProcessExecutor, ProcessExecutor, SandboxProcessRequest
 
 
-BEHAVIORAL_CONTRACT_SCHEMA_VERSION = 1
+BEHAVIORAL_CONTRACT_SCHEMA_VERSION = 2
 BEHAVIORAL_CONTRACT_DIGEST_MODE = CANONICAL_JSON_DIGEST_MODE
 
 
@@ -155,7 +156,9 @@ def behavioral_generation_contracts(plan: FeasiblePlan) -> dict[str, Any]:
     """Expose validator-owned behavioral contracts to untrusted generation backends."""
 
     build_spec = plan.build_spec
+    numeric_contract = expiration_horizon_contract(build_spec)
     return {
+        "numeric_constraints": [numeric_contract] if numeric_contract is not None else [],
         "conditional_obligations": [
             _conditional_obligation_contract(obligation)
             for obligation in build_spec.conditional_obligations

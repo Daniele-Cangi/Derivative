@@ -14,6 +14,14 @@ from core.forge.contracts import (
 )
 from core.forge.conditional_obligations import ConditionalObligationNormalizer
 from core.forge.public_contract import extract_public_import_contract
+from core.forge.expiration_contract import compile_expiration_horizon
+from core.forge.requirement_text import (
+    explicit_test_coverage_target,
+    mask_quoted_literals,
+    normalize_requirement_text,
+    requirement_clause_key,
+    split_requirement_text,
+)
 from core.obligation_compiler import ObligationCompiler
 from core.problem_classifier import ProblemClassifier
 
@@ -80,6 +88,16 @@ class RequirementCompiler:
             functional_goals,
             acceptance_contract,
         )
+        expiration_horizon = (
+            compile_expiration_horizon(requirement_atoms)
+            if target_artifact_type == ArtifactTargetType.CLI
+            and self._has_positive_target_mention(mask_quoted_literals(normalized), r"\bcsv\b")
+            else None
+        )
+        if expiration_horizon is not None:
+            obligation_contract.context["expiration_horizon"] = expiration_horizon
+            if expiration_horizon["threshold_days"] is None:
+                ambiguity_flags.append("Materially unspecified expiration horizon: conflicting numeric thresholds.")
         quality_contract = self._extract_quality_contract(normalized)
 
         return BuildSpec(
@@ -137,17 +155,7 @@ class RequirementCompiler:
                 quality.auth_level = "hashed"
                 quality.secrets_in_plaintext = False
 
-        # Rate limiting quality
-        if any(token in lowered for token in ("distributed", "redis", "across instances")):
-            quality.rate_limit_scope = "distributed"
-            quality.rate_limit_persistent = True
-        elif any(token in lowered for token in ("per user", "per-user", "per client")):
-            quality.rate_limit_scope = "per_user"
-        elif "rate limit" in lowered or "rate limiting" in lowered:
-            quality.rate_limit_scope = "per_user"
-            quality.rate_limit_persistent = False
-        if any(token in lowered for token in ("persistent", "survives restart", "survive restart", "restart")):
-            quality.rate_limit_persistent = True
+        self._extract_rate_limit_quality(requirement, quality)
 
         # Persistence quality
         if any(token in lowered for token in ("migrations", "versioned schema", "alembic")):
@@ -181,6 +189,9 @@ class RequirementCompiler:
         if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
             quality.test_coverage_target = 0.8
             quality.integration_tests = True
+        explicit_coverage = explicit_test_coverage_target(requirement)
+        if explicit_coverage is not None:
+            quality.test_coverage_target = explicit_coverage
 
         computed_level = quality.compute_level()
         if any(token in lowered for token in ("microservice", "service", "rest", "api")) and computed_level < 5:
@@ -190,6 +201,34 @@ class RequirementCompiler:
         quality.overall_level = computed_level
         return quality
 
+    def _extract_rate_limit_quality(self, requirement: str, quality: QualityContract) -> None:
+        # Persistence of records or a negative mention does not prescribe durable
+        # limiter state. Only qualifiers in a positive limiter clause apply.
+        boundary = re.compile(r"(?<=[.!?])\s+|;\s*|,\s*|\s+and\s+", re.IGNORECASE)
+        rate_pattern = r"\brate[- ]limit(?:ing|er|ers)?\b|\blimiter\s+(?:state|counters?)\b"
+        text = mask_quoted_literals(requirement).lower()
+        modifier = r"(?:distributed|persistent|durable|per-user|local|redis-backed)"
+        # A comma inside coordinated pre-nominal modifiers does not start a
+        # separate storage requirement. Preserve the whole modifier/limiter span.
+        text = re.sub(
+            rf"\b(?:{modifier}\s*,\s*)+{modifier}\s+(?:rate[- ]limit(?:ing|er|ers)?)\b",
+            lambda match: match.group().replace(",", " "), text,
+        )
+        for text in split_requirement_text(text, boundary):
+            if not self._has_positive_target_mention(text, rate_pattern):
+                continue
+            distributed = any(
+                self._has_positive_target_mention(text, pattern)
+                for pattern in (r"\bdistributed\b", r"\bredis\b", r"\bacross\s+instances\b")
+            )
+            persistent = any(
+                self._has_positive_target_mention(text, pattern)
+                for pattern in (r"\bpersistent\b", r"\bdurable\b", r"\bsurvives?\s+restarts?\b")
+            )
+            if distributed:
+                quality.rate_limit_scope = "distributed"
+            quality.rate_limit_persistent |= distributed or persistent
+
     def _extract_requirement_atoms(self, requirement: str) -> List[RequirementAtom]:
         body = self._requirement_body(requirement)
         clauses = self._extract_atomic_clauses(body)
@@ -198,10 +237,10 @@ class RequirementCompiler:
         seen = set()
         index = 1
         for clause in clauses:
-            normalized_clause = " ".join(clause.split())
+            normalized_clause = normalize_requirement_text(clause)
             if not normalized_clause:
                 continue
-            dedupe_key = normalized_clause.lower()
+            dedupe_key = requirement_clause_key(normalized_clause)
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
@@ -248,8 +287,7 @@ class RequirementCompiler:
         return ""
 
     def _normalize_requirement(self, requirement: str) -> str:
-        collapsed = " ".join((requirement or "").strip().split())
-        return collapsed
+        return normalize_requirement_text(requirement or "")
 
     def _build_id(self, normalized_requirement: str) -> str:
         digest = hashlib.sha256(normalized_requirement.encode("utf-8")).hexdigest()[:12]
@@ -781,8 +819,13 @@ class RequirementCompiler:
             rf"\s+that\s+(?=(?:must\b|shall\b|should\b|will\b|{clause_verb}\b))",
             re.IGNORECASE,
         )
-        for sentence in re.split(r"(?<=[.!?])\s+|;\s*", body):
-            for clause in boundary.split(sentence):
+        sentences = split_requirement_text(body, re.compile(r"(?<=[.!?])\s+|;\s*"))
+        for sentence in sentences:
+            # Coordinated consequences belong to their condition. Splitting
+            # them creates unconditional atoms and deduplicates shared outcomes.
+            conditional = self.conditional_normalizer._conditional_parts(sentence)
+            parts = [sentence] if conditional is not None else split_requirement_text(sentence, boundary)
+            for clause in parts:
                 cleaned = re.sub(r"^(and|then)\s+", "", clause.strip(" ,.;"), flags=re.IGNORECASE)
                 if cleaned:
                     clauses.append(cleaned)
@@ -807,6 +850,7 @@ class RequirementCompiler:
                     re.IGNORECASE,
                 )
                 and index + 1 < len(normalized)
+                and self.conditional_normalizer._conditional_parts(current) is None
                 and not re.search(
                     r"\b(?:returns?|raises?|becomes?|remains?|is\s+returned|"
                     r"must|shall|should|unchanged|rejected|skipped)\b",
@@ -834,7 +878,9 @@ class RequirementCompiler:
             return "functional"
         if re.match(r"^(?:edge|boundary|corner)\s+cases?\s+(?:cover|include|exercise)\b", lowered):
             return "coverage_directive"
-        if re.match(r"^(?:no|never|without)\b", lowered):
+        if re.match(r"^(?:no|never|without)\b", lowered) or re.search(
+            r"\bis\s+(?:never|not)\s+(?:modified|mutated|changed)\b", lowered,
+        ):
             return "negative_constraint"
         universal_tokens = (
             "every possible",
@@ -920,7 +966,7 @@ class RequirementCompiler:
             lowered,
         ) and re.search(
             r"\b(?:returns?|raises?|becomes?|remains?|must|shall|unchanged|"
-            r"reject(?:s|ed)?|skip(?:s|ped)?|write(?:s|ten)?)\b",
+            r"reject(?:s|ed)?|skip(?:s|ped)?|write(?:s|ten)?|uses?|prints?)\b",
             lowered,
         ):
             if re.search(
@@ -943,7 +989,11 @@ class RequirementCompiler:
             return "non_functional"
         if comparator_pattern.search(clause):
             return "non_functional"
+        if re.search(r"\b(?:limited|bounded)\s+to\b.{0,100}\b\d+\b", lowered):
+            return "non_functional"
         if re.search(r"\b(?:must(?:\s+not)?|shall(?:\s+not)?)\b", lowered):
+            return "functional"
+        if re.search(r"\b(?:uses?|prints?)\b", lowered):
             return "functional"
         if any(token in lowered for token in functional_tokens):
             return "functional"

@@ -1,5 +1,6 @@
+import ast
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Iterable
 
 from core.forge.contracts import (
@@ -8,6 +9,15 @@ from core.forge.contracts import (
     CoverageDirective,
     RequirementAtom,
 )
+from core.forge.requirement_text import (
+    QUOTED_LITERAL_PATTERN,
+    mask_quoted_literals,
+    split_requirement_text,
+)
+
+
+class _UndecodableOutputLiteral(ValueError):
+    pass
 
 
 @dataclass
@@ -29,7 +39,7 @@ class ConditionalObligationNormalizer:
         r"result|output|record|line)|it|its\s+value)\b.{0,80}"
         r"\b(?:returns?|outputs?|writes?|prints?|written|exits?|is|becomes?|remains?|raises?|"
         r"reject(?:s|ed)?|skip(?:s|ped)?|omit(?:s|ted)?|ignore(?:s|d)?|"
-        r"preserv(?:es|ed))\b|"
+        r"preserv(?:es|ed)|closes?)\b|"
         r"^(?:return|output|write|print|raise|exit|reject|skip)\b",
         re.IGNORECASE,
     )
@@ -57,17 +67,48 @@ class ConditionalObligationNormalizer:
         self,
         atom: RequirementAtom,
     ) -> tuple[list[ConditionalObligation], ConditionalNormalizationIssue | None]:
-        if atom.category == "negative_constraint" or self._is_explicit_negative(atom.text):
-            obligation = self._compile_negative(atom)
-            return ([obligation] if obligation is not None else []), None
-
         parsed = self._conditional_parts(atom.text)
+        # Inverting a disjunction requires conjunction semantics and different
+        # witnesses. Never reuse the positive predicate taxonomy for "unless".
+        if re.match(r"^(?:deterministic\s+failure:\s*)?unless\b", atom.text, re.IGNORECASE):
+            return [], ConditionalNormalizationIssue(
+                parent_requirement_id=atom.requirement_id,
+                source_fragment=atom.source_fragment,
+                reason="conditional_antecedent_negation_not_safely_normalized",
+                hard=atom.strength in {"hard", "universal"},
+            )
         if parsed is None:
+            # A scoped prohibition must not be promoted to an unconditional one
+            # if its condition cannot be separated from the consequence.
+            if re.match(r"^(?:deterministic\s+failure:\s*)?(?:if|when)\b", atom.text, re.IGNORECASE):
+                if self._is_explicit_negative(atom.text):
+                    return [], self._compound_issue(atom)
+            elif atom.category == "negative_constraint" or self._is_explicit_negative(atom.text):
+                obligation = self._compile_negative(atom)
+                return ([obligation] if obligation is not None else []), None
             return [], self._compound_issue(atom) if self._looks_like_compound_conditional(atom.text) else None
 
         antecedent, consequent = parsed
         triggers = self._split_antecedent(antecedent)
-        observations = self._parse_observations(consequent)
+        try:
+            observations = self._parse_observations(consequent)
+        except _UndecodableOutputLiteral:
+            return [], ConditionalNormalizationIssue(
+                parent_requirement_id=atom.requirement_id,
+                source_fragment=atom.source_fragment,
+                reason="output_literal_not_safely_decoded",
+                hard=atom.strength in {"hard", "universal"},
+            )
+        if self._is_explicit_negative(consequent):
+            negative = self._compile_negative(replace(atom, text=consequent))
+            if negative is not None:
+                observations.append({
+                    "channel": negative.observable_channel,
+                    "relation": negative.comparison_relation,
+                    "value": negative.expected_value,
+                    "polarity": negative.polarity,
+                    "fidelity": negative.observation_fidelity,
+                })
         if not triggers or not observations:
             if self._looks_compound(antecedent) and atom.strength in {"hard", "universal"}:
                 return [], ConditionalNormalizationIssue(
@@ -110,11 +151,11 @@ class ConditionalObligationNormalizer:
             text.strip(),
             flags=re.IGNORECASE,
         )
-        match = re.match(r"^(?:if|when|unless)\s+(.+)$", normalized, re.IGNORECASE)
+        match = re.match(r"^(?:if|when|unless)\s+(.+)$", normalized, re.IGNORECASE | re.DOTALL)
         if match is None:
             return None
         body = match.group(1)
-        for comma in (item.start() for item in re.finditer(r",", body)):
+        for comma in (item.start() for item in re.finditer(r",", mask_quoted_literals(body))):
             antecedent = body[:comma].strip(" ,")
             consequent = body[comma + 1 :].strip(" ,")
             if antecedent and consequent and self._CONSEQUENT_START.search(consequent):
@@ -122,7 +163,9 @@ class ConditionalObligationNormalizer:
         return None
 
     def _split_antecedent(self, antecedent: str) -> list[str]:
-        raw_parts = re.split(r"\s*,?\s+or\s+(?:if\s+)?", antecedent, flags=re.IGNORECASE)
+        raw_parts = split_requirement_text(
+            antecedent, re.compile(r"\s*,?\s+or\s+(?:if\s+)?", re.IGNORECASE),
+        )
         triggers: list[str] = []
         shared_subject = ""
         shared_predicate = ""
@@ -170,30 +213,37 @@ class ConditionalObligationNormalizer:
         observations: list[dict[str, Any]] = []
 
         for match in re.finditer(
-            r"outputs?\s+exactly\s+(['\"])(.*?)\1\s+to\s+(stderr|stdout)",
+            rf"outputs?\s+exactly\s+(?P<quoted>{QUOTED_LITERAL_PATTERN})\s+to\s+(?P<channel>stderr|stdout)",
             consequent,
             re.IGNORECASE,
         ):
-            observations.append(self._observation(match.group(3).lower(), "equals", match.group(2), "exact_text"))
+            value = self._literal_value(match.group("quoted"))
+            if value is None:
+                raise _UndecodableOutputLiteral("Output literal cannot be safely decoded.")
+            observations.append(self._observation(match.group("channel").lower(), "equals", value, "exact_text"))
 
         for match in re.finditer(
-            r"\bprints?\s+(?:exactly\s+)?(['\"])(.*?)\1"
-            r"(?:\s+to\s+(stderr|stdout))?",
+            rf"\bprints?\s+(?:exactly\s+)?(?P<quoted>{QUOTED_LITERAL_PATTERN})"
+            r"(?:\s+to\s+(?P<channel>stderr|stdout))?",
             consequent,
             re.IGNORECASE,
         ):
-            printed_text = match.group(2)
+            printed_text = self._literal_value(match.group("quoted"))
+            if printed_text is None:
+                raise _UndecodableOutputLiteral("Printed literal cannot be safely decoded.")
             if self._print_appends_newline(consequent[match.end() :]):
                 printed_text += "\n"
             observations.append(
                 self._observation(
-                    (match.group(3) or "stdout").lower(),
+                    (match.group("channel") or "stdout").lower(),
                     "equals",
                     printed_text,
                     "exact_text",
                 )
             )
 
+        # Values such as "exit code 9" are output data, not extra obligations.
+        consequent = mask_quoted_literals(consequent)
         for channel in ("stdout", "stderr"):
             if re.search(
                 rf"(?:producing|with)\s+no\s+output\s+(?:to|on)\s+{channel}\b",
@@ -202,7 +252,7 @@ class ConditionalObligationNormalizer:
             ):
                 observations.append(self._observation(channel, "equals", "", "exact_text"))
 
-        if re.search(r"\boutput\s+is\s+empty\b", consequent, re.IGNORECASE):
+        if re.search(r"\boutput\s+is\s+empty\b|\boutputs?\s+nothing\b", consequent, re.IGNORECASE):
             observations.append(self._observation("stdout", "equals", "", "exact_text"))
 
         if re.search(
@@ -245,6 +295,14 @@ class ConditionalObligationNormalizer:
             if item not in deduped:
                 deduped.append(item)
         return deduped
+
+    @staticmethod
+    def _literal_value(quoted: str) -> str | None:
+        try:
+            value = ast.literal_eval(quoted)
+        except (ValueError, SyntaxError):
+            return None
+        return value if isinstance(value, str) else None
 
     @staticmethod
     def _print_appends_newline(suffix: str) -> bool:
@@ -394,9 +452,11 @@ class ConditionalObligationNormalizer:
 
     @staticmethod
     def _is_explicit_negative(text: str) -> bool:
+        text = mask_quoted_literals(text)
         return bool(
             re.match(r"^(?:no|never|without)\b", text, re.IGNORECASE)
             or re.search(r"\b(?:must|shall)\s+not\b", text, re.IGNORECASE)
+            or re.search(r"\bis\s+(?:never|not)\s+(?:modified|mutated|changed)\b", text, re.IGNORECASE)
         )
 
     @staticmethod

@@ -21,6 +21,7 @@ from core.forge.validation.common import ValidationLayerBase
 from core.forge.validation.adapter_capabilities import AdapterCapabilityContractChecker
 from core.forge.validation.capabilities import CapabilityContractChecker
 from core.forge.validation.quality import QualityContractChecker
+from core.forge.validation.numeric import NumericContractChecker
 
 
 class ObligationValidationLayer(ValidationLayerBase):
@@ -33,6 +34,7 @@ class ObligationValidationLayer(ValidationLayerBase):
         self.executor = executor
         self.timeout_seconds = timeout_seconds
         self.quality_checker = quality_checker
+        self.numeric_checker = NumericContractChecker(executor, timeout_seconds)
         self.capability_checker = CapabilityContractChecker()
         self.adapter_capability_checker = AdapterCapabilityContractChecker()
         self.conditional_evidence_validator = ConditionalEvidenceValidator(
@@ -186,6 +188,14 @@ class ObligationValidationLayer(ValidationLayerBase):
         for signature in conditional_signatures:
             self._append_unique(signatures, signature)
         evidence["conditional_obligation_checks"] = conditional_evidence
+
+        numeric_failures, numeric_signatures, numeric_evidence = self.numeric_checker.check(
+            build_spec, plan, workspace,
+        )
+        failures.extend(numeric_failures)
+        for signature in numeric_signatures:
+            self._append_unique(signatures, signature)
+        evidence["numeric_contract_checks"] = numeric_evidence
 
         exact_output_evidence = exact_output_contract_evidence(
             build_spec.normalized_requirement,

@@ -5,6 +5,7 @@ from typing import Dict, List, Tuple
 
 from core.forge.contracts import BuildSpec, CodeArtifact
 from core.forge.semantic_contracts import has_end_to_end_file_workflow_test
+from core.forge.requirement_text import explicit_test_coverage_target
 
 
 class QualityContractChecker:
@@ -39,6 +40,16 @@ class QualityContractChecker:
         if not checks["manifest_contract_matches"]:
             failures.append(
                 "quality_contract_violation: artifact manifest does not match BuildSpec quality contract"
+            )
+
+        if explicit_test_coverage_target(build_spec.normalized_requirement) is not None:
+            # Test execution and an artifact-supplied coverage percentage cannot
+            # prove an explicit numeric coverage target. This layer currently
+            # owns no coverage measurement, so fail closed instead of ignoring it.
+            checks["explicit_coverage_target_evidenced"] = False
+            failures.append(
+                "quality_contract_violation: explicit test coverage target "
+                f"{quality.test_coverage_target:g} lacks validator-owned measurement"
             )
 
         if quality.auth_level == "hashed":
