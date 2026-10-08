@@ -7,6 +7,7 @@ from core.forge.execution import LocalProcessExecutor
 from core.forge.planner_stage import PlannerStage
 from core.forge.repair_support import behavioral_contract_seal
 from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.requirement_text import explicit_test_coverage_target
 
 
 def _mapping_plan(spec):
@@ -123,6 +124,27 @@ def test_unless_is_rejected_explicitly_when_negated_trigger_cannot_be_probed(tmp
     assert "uncompiled_hard_conditional" in signatures
 
 
+@pytest.mark.parametrize("consequence", [
+    r'output exactly "C:\Users" to stdout',
+    'output exactly "first\nsecond" to stdout',
+    r'print "C:\Users"',
+    'print "first\nsecond" with exit code 0',
+])
+def test_undecodable_output_literals_fail_closed_even_for_simple_conditions(consequence, tmp_path):
+    spec = RequirementCompiler().compile(
+        f"Build a Python CLI. If the file is empty, {consequence}."
+    )
+    assert spec.conditional_obligations == []
+    assert any(issue.reason == "output_literal_not_safely_decoded" and issue.hard
+               for issue in spec.conditional_normalization_issues)
+    assert any("Materially unspecified conditional semantics" in flag for flag in spec.ambiguity_flags)
+    failures, signatures, _ = ConditionalEvidenceValidator(
+        LocalProcessExecutor(), timeout_seconds=10,
+    ).validate(spec, _mapping_plan(spec), {}, tmp_path)
+    assert failures
+    assert "uncompiled_hard_conditional" in signatures
+
+
 def test_unconditional_stream_negative_keeps_resource_contract():
     spec = RequirementCompiler().compile(
         "Build a Python library. The function must not close the stream."
@@ -196,3 +218,36 @@ def test_explicit_coverage_threshold_is_retained_and_requires_independent_measur
     failures, evidence = QualityContractChecker().check({}, artifact, spec)
     assert failures
     assert evidence["checks"]["explicit_coverage_target_evidenced"] is False
+
+
+@pytest.mark.parametrize("text", [
+    "Do not require test coverage of 80 percent",
+    "without a test coverage target of 80 percent",
+    "No code coverage target of 80 percent",
+    "Don't require test coverage of 80 percent",
+    "Test coverage of 80 percent is not required",
+])
+def test_negated_coverage_targets_do_not_create_positive_quality_obligations(text):
+    from dataclasses import asdict
+    from core.forge.contracts import CodeArtifact
+    from core.forge.validation.quality import QualityContractChecker
+
+    assert explicit_test_coverage_target(text) is None
+    spec = RequirementCompiler().compile("Build a Python library. " + text + ".")
+    assert spec.quality_contract.test_coverage_target == 0.6
+    artifact = CodeArtifact(
+        artifact_id="diagnostic", plan_id="diagnostic",
+        artifact_manifest={"quality_contract": asdict(spec.quality_contract)},
+    )
+    _, evidence = QualityContractChecker().check({}, artifact, spec)
+    assert "explicit_coverage_target_evidenced" not in evidence["checks"]
+
+
+@pytest.mark.parametrize("text", [
+    "Not only test coverage of 80 percent but integration tests",
+    "Without a test coverage target of 95 percent, require code coverage of 80 percent",
+    "Do not require test coverage of 95 percent but require code coverage of 80 percent",
+    "Do not mutate input and require test coverage of 80 percent",
+])
+def test_positive_coverage_targets_survive_unrelated_or_contrasted_negation(text):
+    assert explicit_test_coverage_target(text) == 0.8

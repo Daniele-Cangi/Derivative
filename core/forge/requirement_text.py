@@ -45,12 +45,39 @@ def split_requirement_text(text: str, boundary: re.Pattern[str]) -> list[str]:
 
 
 def explicit_test_coverage_target(requirement: str) -> float | None:
+    text = mask_quoted_literals(requirement)
     matches = re.finditer(
         r"\b(?:test|code)\s+coverage\s+"
         r"(?:(?:of|at\s+least|minimum(?:\s+of)?|target(?:\s+of)?|"
         r"must\s+be(?:\s+at\s+least)?)\s+)?"
         r"(?P<percent>\d+(?:\.\d+)?)\s*(?:%|percent\b)",
-        mask_quoted_literals(requirement), re.IGNORECASE,
+        text, re.IGNORECASE,
     )
-    targets = [float(match.group("percent")) / 100 for match in matches]
+    targets = [
+        float(match.group("percent")) / 100 for match in matches
+        if not _coverage_mention_is_negated(text, match.start(), match.end())
+    ]
     return max(targets) if targets else None
+
+
+def _coverage_mention_is_negated(text: str, start: int, end: int) -> bool:
+    """Keep rejection of a percentage separate from positive target clauses."""
+    prefix = re.split(r"[.;:!?]|\b(?:but|however|whereas)\b", text[:start], flags=re.IGNORECASE)[-1]
+    resets = list(re.finditer(
+        r"(?:\b(?:and|then)|,)\s+(?:requires?|includes?|provides?|uses?|enforces?|demands?)\b",
+        prefix, re.IGNORECASE,
+    ))
+    if resets:
+        prefix = prefix[resets[-1].end():]
+    prefix = re.sub(r"\bnot\s+only\b", "", prefix, flags=re.IGNORECASE)
+    negated_prefix = re.search(
+        r"\b(?:no|without|neither|nor|never|forbid(?:s|den)?|"
+        r"(?:do|does|must|is|are)n['’]t|"
+        r"(?:must|shall|may|does|do|is|are)\s+not)\b",
+        prefix, re.IGNORECASE,
+    )
+    negated_suffix = re.match(
+        r"\s+(?:is|are)\s+(?:not\s+(?:required|needed|mandatory)|optional|unnecessary)\b",
+        text[end:], re.IGNORECASE,
+    )
+    return bool(negated_prefix or negated_suffix)

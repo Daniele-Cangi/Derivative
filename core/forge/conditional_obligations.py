@@ -16,6 +16,10 @@ from core.forge.requirement_text import (
 )
 
 
+class _UndecodableOutputLiteral(ValueError):
+    pass
+
+
 @dataclass
 class ConditionalNormalizationResult:
     obligations: list[ConditionalObligation] = field(default_factory=list)
@@ -86,7 +90,15 @@ class ConditionalObligationNormalizer:
 
         antecedent, consequent = parsed
         triggers = self._split_antecedent(antecedent)
-        observations = self._parse_observations(consequent)
+        try:
+            observations = self._parse_observations(consequent)
+        except _UndecodableOutputLiteral:
+            return [], ConditionalNormalizationIssue(
+                parent_requirement_id=atom.requirement_id,
+                source_fragment=atom.source_fragment,
+                reason="output_literal_not_safely_decoded",
+                hard=atom.strength in {"hard", "universal"},
+            )
         if self._is_explicit_negative(consequent):
             negative = self._compile_negative(replace(atom, text=consequent))
             if negative is not None:
@@ -139,7 +151,7 @@ class ConditionalObligationNormalizer:
             text.strip(),
             flags=re.IGNORECASE,
         )
-        match = re.match(r"^(?:if|when|unless)\s+(.+)$", normalized, re.IGNORECASE)
+        match = re.match(r"^(?:if|when|unless)\s+(.+)$", normalized, re.IGNORECASE | re.DOTALL)
         if match is None:
             return None
         body = match.group(1)
@@ -206,8 +218,9 @@ class ConditionalObligationNormalizer:
             re.IGNORECASE,
         ):
             value = self._literal_value(match.group("quoted"))
-            if value is not None:
-                observations.append(self._observation(match.group("channel").lower(), "equals", value, "exact_text"))
+            if value is None:
+                raise _UndecodableOutputLiteral("Output literal cannot be safely decoded.")
+            observations.append(self._observation(match.group("channel").lower(), "equals", value, "exact_text"))
 
         for match in re.finditer(
             rf"\bprints?\s+(?:exactly\s+)?(?P<quoted>{QUOTED_LITERAL_PATTERN})"
@@ -217,7 +230,7 @@ class ConditionalObligationNormalizer:
         ):
             printed_text = self._literal_value(match.group("quoted"))
             if printed_text is None:
-                continue
+                raise _UndecodableOutputLiteral("Printed literal cannot be safely decoded.")
             if self._print_appends_newline(consequent[match.end() :]):
                 printed_text += "\n"
             observations.append(
