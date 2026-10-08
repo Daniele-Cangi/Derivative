@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from core.forge.conditional_evidence import (
     ConditionalEvidenceValidator,
     analyze_observation_fidelity,
@@ -676,11 +678,235 @@ def test_known_v11_001_invalid_integer_branch_gets_single_arg_probe(tmp_path):
     obligation = next(
         item
         for item in spec.conditional_obligations
-        if item.witness_class == "invalid_positive_integer"
+        if item.witness_class == "invalid_integer"
     )
     validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
 
     probe = validator._build_cli_probe(spec, plan, obligation, tmp_path)
 
     assert probe is not None
-    assert probe["evidence"]["argv"] == ["0"]
+    assert probe["evidence"]["argv"] == ["not-an-integer"]
+
+
+INTEGER_REQUIREMENT = (
+    "Build a Python CLI accepting one integer N from argv[1], including zero and negative integers. "
+    "If the input is non-integer, print 'ERROR' to stdout and return exit status 2. "
+    "Public import contract: from branch_tool import main."
+)
+
+
+def test_non_integer_predicate_and_coverage_do_not_imply_positivity():
+    spec = RequirementCompiler().compile(INTEGER_REQUIREMENT + " Edge cases cover non-integer inputs.")
+    assert {item.witness_class for item in spec.conditional_obligations} == {"invalid_integer"}
+    assert all(item.precondition == {"kind": "invalid_integer"} for item in spec.conditional_obligations)
+    assert spec.coverage_directives[0].witness_classes == ["invalid_integer"]
+    assert spec.coverage_directives[0].referenced_obligation_ids == [
+        item.obligation_id for item in spec.conditional_obligations
+    ]
+
+
+def test_integer_fix_does_not_promote_unrecognized_bounded_conditions():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI accepting an integer N from argv[1]. "
+        "If N is not a valid integer within bounds, print 'ERROR' to stdout and return exit status 2."
+    )
+    assert spec.conditional_obligations
+    assert all(item.witness_class == "" for item in spec.conditional_obligations)
+
+
+def test_non_integer_probe_accepts_reference_and_rejects_non_integer_mutant(tmp_path):
+    spec = RequirementCompiler().compile(INTEGER_REQUIREMENT)
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    target = tmp_path / "src" / "branch_tool.py"
+    target.parent.mkdir()
+    reference = (
+        "def main(argv):\n"
+        "    try:\n"
+        "        number = int(argv[0])\n"
+        "    except ValueError:\n"
+        "        print('ERROR')\n"
+        "        return 2\n"
+        "    print(number)\n"
+        "    return 0\n"
+    )
+    target.write_text(reference, encoding="utf-8")
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+    failures, signatures, evidence = validator.validate(spec, plan, {"src/branch_tool.py": target}, tmp_path)
+    assert not failures
+    assert not signatures
+    assert all(probe["probe_inputs"]["argv"] == ["not-an-integer"]
+               for probe in evidence["validator_branch_probes"])
+
+    target.write_text(reference.replace("print('ERROR')", "print('WRONG')"), encoding="utf-8")
+    failures, signatures, _ = validator.validate(spec, plan, {"src/branch_tool.py": target}, tmp_path)
+    assert failures
+    assert "conditional_obligation_mismatch" in signatures
+
+
+@pytest.mark.parametrize("value", ["0", "-12", "+12", "12"])
+def test_valid_integer_test_is_not_bound_to_non_integer_obligation(value):
+    spec = RequirementCompiler().compile(INTEGER_REQUIREMENT)
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    planned = next(item for item in plan.required_tests if item.conditional_obligation_ids)
+    expected_stdout = f"{int(value)}\n"
+    content = (
+        "def test_non_integer_and_valid_boundary(capsys):\n"
+        f"    status = main([{value!r}])\n"
+        "    assert status == 0\n"
+        f"    assert capsys.readouterr().out == {expected_stdout!r}\n"
+    )
+    evidence = analyze_test_expectations({f"tests/{planned.test_name}.py": content}, spec, plan)
+    assert evidence[0]["exercised_obligation_ids"] == []
+    assert evidence[0]["contradictions"] == []
+    lossy = analyze_observation_fidelity(
+        {f"tests/{planned.test_name}.py": content.replace(".out ==", ".out.strip() ==")}, spec, plan
+    )
+    assert lossy[0]["exact_obligation_ids"] == []
+
+
+@pytest.mark.parametrize("positive,value", [(False, "bad"), (True, "0"), (True, "-1"), (True, "bad")])
+def test_invalid_integer_test_expectations_still_fail_closed(positive, value):
+    requirement = INTEGER_REQUIREMENT if not positive else (
+        "Build a Python CLI accepting one positive integer N from argv[1]. "
+        "If N is not a valid positive integer, print 'ERROR' to stdout and return exit status 2."
+    )
+    spec = RequirementCompiler().compile(requirement)
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    content = f"def test_input():\n    status = main([{value!r}])\n    assert status == 0\n"
+    evidence = analyze_test_expectations({"tests/test_input.py": content}, spec, plan)
+    assert evidence[0]["contradictions"]
+
+
+def test_non_integer_probe_with_unbound_multi_argument_cli_is_unavailable(tmp_path):
+    spec = RequirementCompiler().compile(INTEGER_REQUIREMENT)
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 2
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+    failures, signatures, evidence = validator.validate(spec, plan, {}, tmp_path)
+    assert failures
+    assert "conditional_probe_unavailable" in signatures
+    assert all(probe["status"] == "unavailable" and probe["required"]
+               for probe in evidence["validator_branch_probes"])
+
+
+def test_non_integer_coverage_can_reference_stricter_positive_integer_branch():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI accepting one positive integer N from argv[1]. "
+        "If N is not a valid positive integer, print 'ERROR' to stdout and return exit status 2. "
+        "Edge cases cover non-integer inputs."
+    )
+    directive = spec.coverage_directives[0]
+    assert directive.witness_classes == ["invalid_integer"]
+    assert directive.referenced_obligation_ids == [item.obligation_id for item in spec.conditional_obligations]
+    assert ConditionalEvidenceValidator._coverage_directive_evidence(spec)[0]["unresolved_witness_classes"] == []
+
+
+def test_unknown_integer_input_retains_planned_evidence_fallback():
+    spec = RequirementCompiler().compile(INTEGER_REQUIREMENT)
+    plan = _plan_for(spec)
+    plan.interfaces[0].explicit_argv_count = 1
+    planned = next(item for item in plan.required_tests if item.conditional_obligation_ids)
+    content = "def test_input(value):\n    status = main([value])\n    assert status == 0\n"
+    evidence = analyze_test_expectations({f"tests/{planned.test_name}.py": content}, spec, plan)
+    assert evidence[0]["contradictions"]
+
+
+CLI_ROLE_LAYOUTS = [
+    "reads a filename from argv[1] and a chunk size from argv[2]",
+    "reads argv[1] as a filename and argv[2] as a chunk size",
+    "reads argv[2] as a chunk size and a filename from argv[1]",
+    "reads a filename from argv[1], with a chunk size provided as an integer in argv[2]",
+]
+
+
+def _role_binding_spec(layout):
+    return RequirementCompiler().compile(
+        f"Build a Python CLI that {layout}. "
+        "If the chunk size is non-integer, print 'ERROR' to stdout and return exit status 2. "
+        "Public import contract: from branch_tool import main."
+    )
+
+
+@pytest.mark.parametrize("layout", CLI_ROLE_LAYOUTS)
+def test_literal_integer_inputs_use_declared_role_in_both_orders(layout):
+    spec = _role_binding_spec(layout)
+    plan = _plan_for(spec)
+    planned = next(item for item in plan.required_tests if item.conditional_obligation_ids)
+    path = f"tests/{planned.test_name}.py"
+    valid = (
+        "def test_non_integer_and_valid_boundary(capsys):\n"
+        "    status = main(['file', '2'])\n"
+        "    assert status == 0\n"
+        "    assert capsys.readouterr().out == 'OK\\n'\n"
+    )
+    evidence = analyze_test_expectations({path: valid}, spec, plan)[0]
+    assert not evidence["exercised_obligation_ids"]
+    assert not evidence["contradictions"]
+    fidelity = analyze_observation_fidelity(
+        {path: valid.replace(".out ==", ".out.strip() ==")}, spec, plan
+    )[0]
+    assert not fidelity["exact_obligation_ids"]
+    assert not fidelity["lossy_observations"]
+
+    invalid = valid.replace("'2'", "'bad'").replace("test_non_integer_and_valid_boundary", "test_input")
+    evidence = analyze_test_expectations({"tests/test_input.py": invalid}, spec, plan)[0]
+    assert evidence["contradictions"]
+
+
+@pytest.mark.parametrize("layout", CLI_ROLE_LAYOUTS)
+def test_owned_probe_keeps_filename_and_numeric_role_separate(layout, tmp_path):
+    spec = _role_binding_spec(layout)
+    plan = _plan_for(spec)
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+    obligation = next(item for item in spec.conditional_obligations if item.witness_class == "invalid_integer")
+    probe = validator._build_cli_probe(spec, plan, obligation, tmp_path)
+    assert probe is not None
+    assert probe["evidence"]["argv"] == [".forge_branch_probe_input", "not-an-integer"]
+    target = tmp_path / "src" / "branch_tool.py"
+    target.parent.mkdir()
+    target.write_text(
+        "from pathlib import Path\n"
+        "def main(argv):\n"
+        "    assert Path(argv[0]).read_text() == 'sample'\n"
+        "    try:\n"
+        "        int(argv[1])\n"
+        "    except ValueError:\n"
+        "        print('ERROR')\n"
+        "        return 2\n"
+        "    print('OK')\n"
+        "    return 0\n",
+        encoding="utf-8",
+    )
+    failures, signatures, evidence = validator.validate(spec, plan, {"src/branch_tool.py": target}, tmp_path)
+    assert not failures
+    assert not signatures
+    assert all(item["status"] == "passed" for item in evidence["validator_branch_probes"])
+
+
+@pytest.mark.parametrize("layout", [
+    "reads a chunk size from argv[1] and another chunk size from argv[2]",
+    "reads a chunk size from argv[3]",
+    "reads argv[1] as both filename and chunk size",
+])
+def test_ambiguous_or_out_of_range_numeric_probe_is_unavailable(layout, tmp_path):
+    spec = _role_binding_spec(layout)
+    plan = _plan_for(spec)
+    validator = ConditionalEvidenceValidator(LocalProcessExecutor(), timeout_seconds=10)
+    failures, signatures, evidence = validator.validate(spec, plan, {}, tmp_path)
+    assert failures
+    assert "conditional_probe_unavailable" in signatures
+    assert all(item["status"] == "unavailable" and item["required"]
+               for item in evidence["validator_branch_probes"])
+
+
+@pytest.mark.parametrize("text", [
+    "Output exactly 'chunk size from argv[2]'.",
+    "The chunk size is unspecified. A separate argument comes from argv[2].",
+    "The chunk size comes from argv[0].",
+    "The count comes from argv[2] and the shift comes from argv[3].",
+])
+def test_numeric_binding_does_not_guess_from_literals_or_other_declarations(text):
+    assert ConditionalEvidenceValidator._argv_index(text, r"chunk\s+size|size|count|limit|shift") is None

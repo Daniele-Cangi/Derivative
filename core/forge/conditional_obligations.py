@@ -388,6 +388,10 @@ class ConditionalObligationNormalizer:
             obligation.obligation_id
             for obligation in obligations
             if obligation.witness_class in witness_classes
+            or (
+                "invalid_integer" in witness_classes
+                and obligation.witness_class == "invalid_positive_integer"
+            )
         ]
         return CoverageDirective(
             directive_id=f"{atom.requirement_id}.C01",
@@ -401,7 +405,8 @@ class ConditionalObligationNormalizer:
         lowered = text.lower()
         witnesses: list[str] = []
         patterns = (
-            ("invalid_positive_integer", r"invalid\s+[^,]*sizes?|non[- ]integer"),
+            ("invalid_positive_integer", r"invalid\s+[^,]*sizes?"),
+            ("invalid_integer", r"non[- ]integer"),
             ("empty_input", r"empty\s+(?:files?|inputs?)"),
             ("utf8_decode_failure", r"not\s+valid\s+utf[- ]?8|invalid\s+utf[- ]?8"),
             ("malformed_record", r"malformed\s+(?:rows?|records?)"),
@@ -425,8 +430,13 @@ class ConditionalObligationNormalizer:
             ("invalid_argument_count", r"\bnot\s+exactly\s+\w+\s+arguments?\b", {"kind": "invalid_argument_count"}),
             (
                 "invalid_positive_integer",
-                r"\bnot\s+a\s+valid\s+positive\s+integer\b|\bnon[- ]?integer\b|\binvalid\s+.*size\b",
+                r"\bnot\s+a\s+valid\s+positive\s+integer\b|\binvalid\s+.*size\b",
                 {"kind": "invalid_positive_integer"},
+            ),
+            (
+                "invalid_integer",
+                r"\bnon\s*integer\b",
+                {"kind": "invalid_integer"},
             ),
             ("file_read_failure", r"\bfile\s+(?:reading|read)\s+fails?\b", {"kind": "file_read_failure"}),
             ("utf8_decode_failure", r"\b(?:file\s+)?decod(?:e|ing)\s+fails?\b|\binvalid\s+utf\s*8\b", {"kind": "utf8_decode_failure"}),

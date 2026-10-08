@@ -9,6 +9,7 @@ from core.forge.conditional_test_evidence import (
     analyze_test_expectations,
 )
 from core.forge.execution import ProcessExecutor, SandboxProcessRequest
+from core.forge.requirement_text import explicit_cli_argument_index
 
 
 
@@ -223,6 +224,7 @@ class ConditionalEvidenceValidator:
             "empty_input",
             "numeric_argument_exceeds_input_length",
             "invalid_positive_integer",
+            "invalid_integer",
             "invalid_argument_count",
             "file_read_failure",
             "utf8_decode_failure",
@@ -278,9 +280,16 @@ class ConditionalEvidenceValidator:
         if (
             numeric_index is None
             and argument_count == 1
-            and obligation.witness_class == "invalid_positive_integer"
+            and obligation.witness_class in {"invalid_positive_integer", "invalid_integer"}
         ):
             numeric_index = 0
+        if any(
+            index is not None and index >= argument_count
+            for index in (filename_index, numeric_index)
+        ):
+            return None
+        if filename_index is not None and filename_index == numeric_index:
+            return None
         fixture_path = workspace / ".forge_branch_probe_input"
         if filename_index is not None and filename_index < len(args):
             args[filename_index] = str(fixture_path)
@@ -298,6 +307,10 @@ class ConditionalEvidenceValidator:
             if filename_index is not None:
                 fixture_path.write_text("sample", encoding="utf-8")
             args[numeric_index] = "0"
+        elif witness == "invalid_integer" and numeric_index is not None:
+            if filename_index is not None:
+                fixture_path.write_text("sample", encoding="utf-8")
+            args[numeric_index] = "not-an-integer"
         elif witness == "invalid_argument_count":
             args = args[:-1]
         elif witness == "file_read_failure" and filename_index is not None:
@@ -348,20 +361,7 @@ class ConditionalEvidenceValidator:
 
     @staticmethod
     def _argv_index(requirement: str, role_pattern: str) -> int | None:
-        forward = re.search(
-            rf"(?:{role_pattern}).{{0,80}}argv\s*\[\s*(\d+)\s*\]",
-            requirement,
-            re.IGNORECASE,
-        )
-        reverse = re.search(
-            rf"argv\s*\[\s*(\d+)\s*\].{{0,80}}(?:{role_pattern})",
-            requirement,
-            re.IGNORECASE,
-        )
-        match = forward or reverse
-        if match is None:
-            return None
-        return max(0, int(match.group(1)) - 1)
+        return explicit_cli_argument_index(requirement, role_pattern)
 
     @staticmethod
     def _decode_probe_result(stdout: str) -> dict[str, Any] | None:
@@ -411,6 +411,10 @@ class ConditionalEvidenceValidator:
             for obligation in build_spec.conditional_obligations
             if obligation.witness_class
         }
+        # Every non-integer also violates a positive-integer precondition.
+        # Keep the coverage request distinct while retaining its stricter branch.
+        if "invalid_positive_integer" in known_witnesses:
+            known_witnesses.add("invalid_integer")
         return [
             {
                 "directive_id": directive.directive_id,
