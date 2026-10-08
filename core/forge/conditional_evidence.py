@@ -9,6 +9,7 @@ from core.forge.conditional_test_evidence import (
     analyze_test_expectations,
 )
 from core.forge.execution import ProcessExecutor, SandboxProcessRequest
+from core.forge.requirement_text import explicit_cli_argument_index
 
 
 
@@ -282,6 +283,13 @@ class ConditionalEvidenceValidator:
             and obligation.witness_class in {"invalid_positive_integer", "invalid_integer"}
         ):
             numeric_index = 0
+        if any(
+            index is not None and index >= argument_count
+            for index in (filename_index, numeric_index)
+        ):
+            return None
+        if filename_index is not None and filename_index == numeric_index:
+            return None
         fixture_path = workspace / ".forge_branch_probe_input"
         if filename_index is not None and filename_index < len(args):
             args[filename_index] = str(fixture_path)
@@ -353,20 +361,7 @@ class ConditionalEvidenceValidator:
 
     @staticmethod
     def _argv_index(requirement: str, role_pattern: str) -> int | None:
-        forward = re.search(
-            rf"(?:{role_pattern}).{{0,80}}argv\s*\[\s*(\d+)\s*\]",
-            requirement,
-            re.IGNORECASE,
-        )
-        reverse = re.search(
-            rf"argv\s*\[\s*(\d+)\s*\].{{0,80}}(?:{role_pattern})",
-            requirement,
-            re.IGNORECASE,
-        )
-        match = forward or reverse
-        if match is None:
-            return None
-        return max(0, int(match.group(1)) - 1)
+        return explicit_cli_argument_index(requirement, role_pattern)
 
     @staticmethod
     def _decode_probe_result(stdout: str) -> dict[str, Any] | None:

@@ -3,6 +3,7 @@ import re
 from typing import Any, Iterable, Mapping
 
 from core.forge.contracts import BuildSpec, ConditionalObligation, FeasiblePlan
+from core.forge.requirement_text import explicit_cli_argument_index
 
 
 _LOSSY_METHODS = frozenset(
@@ -243,14 +244,12 @@ def _literal_integer_predicates(function: ast.AST, plan: FeasiblePlan) -> dict[s
     if count == 1:
         index = 0
     else:
-        match = re.search(
-            r"(?:chunk\s+size|size|count|limit|shift)\s+(?:from\s+)?argv\s*\[\s*(\d+)\s*\]",
+        index = explicit_cli_argument_index(
             plan.build_spec.normalized_requirement,
-            re.IGNORECASE,
+            r"chunk\s+size|size|count|limit|shift",
         )
-        if match is None:
+        if index is None:
             return {}
-        index = int(match.group(1)) - 1
     invalid_integer: list[bool] = []
     invalid_positive: list[bool] = []
     for args in calls:

@@ -33,6 +33,28 @@ def mask_quoted_literals(text: str) -> str:
     return _QUOTED_LITERAL.sub(lambda match: "~" * len(match.group()), text)
 
 
+def explicit_cli_argument_index(requirement: str, role_pattern: str) -> int | None:
+    """Resolve one role to one user argv slot without borrowing another binding.
+
+    Both role-before-index and index-before-role forms must stay within the
+    same declaration. Conflicting indices remain unknown rather than picking
+    the first or last match. Quoted output examples are not declarations.
+    """
+    text = mask_quoted_literals(requirement)
+    role = rf"\b(?:{role_pattern})\b"
+    argv = r"\bargv\s*\[\s*(?P<index>\d+)\s*\]"
+    bridge = r"(?:(?!\bargv\s*\[|\b(?:and|or)\b|[.,;:!?\n~]).){0,80}?"
+    indexes = {
+        int(match.group("index"))
+        for pattern in (rf"{role}{bridge}{argv}", rf"{argv}{bridge}{role}")
+        for match in re.finditer(pattern, text, re.IGNORECASE)
+    }
+    if len(indexes) != 1:
+        return None
+    index = indexes.pop()
+    return index - 1 if index > 0 else None
+
+
 def split_requirement_text(text: str, boundary: re.Pattern[str]) -> list[str]:
     masked = mask_quoted_literals(text)
     chunks: list[str] = []
