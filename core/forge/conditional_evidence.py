@@ -223,6 +223,7 @@ class ConditionalEvidenceValidator:
             "empty_input",
             "numeric_argument_exceeds_input_length",
             "invalid_positive_integer",
+            "invalid_integer",
             "invalid_argument_count",
             "file_read_failure",
             "utf8_decode_failure",
@@ -278,7 +279,7 @@ class ConditionalEvidenceValidator:
         if (
             numeric_index is None
             and argument_count == 1
-            and obligation.witness_class == "invalid_positive_integer"
+            and obligation.witness_class in {"invalid_positive_integer", "invalid_integer"}
         ):
             numeric_index = 0
         fixture_path = workspace / ".forge_branch_probe_input"
@@ -298,6 +299,10 @@ class ConditionalEvidenceValidator:
             if filename_index is not None:
                 fixture_path.write_text("sample", encoding="utf-8")
             args[numeric_index] = "0"
+        elif witness == "invalid_integer" and numeric_index is not None:
+            if filename_index is not None:
+                fixture_path.write_text("sample", encoding="utf-8")
+            args[numeric_index] = "not-an-integer"
         elif witness == "invalid_argument_count":
             args = args[:-1]
         elif witness == "file_read_failure" and filename_index is not None:
@@ -411,6 +416,10 @@ class ConditionalEvidenceValidator:
             for obligation in build_spec.conditional_obligations
             if obligation.witness_class
         }
+        # Every non-integer also violates a positive-integer precondition.
+        # Keep the coverage request distinct while retaining its stricter branch.
+        if "invalid_positive_integer" in known_witnesses:
+            known_witnesses.add("invalid_integer")
         return [
             {
                 "directive_id": directive.directive_id,

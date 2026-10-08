@@ -44,6 +44,7 @@ def analyze_test_expectations(
         for function in _test_functions(tree):
             source = ast.get_source_segment(content, function) or ast.unparse(function)
             witness_classes = _infer_witness_classes(function, source, plan)
+            integer_predicates = _literal_integer_predicates(function, plan)
             exercised = [
                 obligation
                 for obligation in obligations_by_id.values()
@@ -52,6 +53,7 @@ def analyze_test_expectations(
                     if witness_classes
                     else obligation.obligation_id in mapped_ids
                 )
+                and integer_predicates.get(obligation.witness_class) is not False
             ]
             observations = _asserted_observations(function)
             contradictions: list[dict[str, Any]] = []
@@ -116,6 +118,7 @@ def analyze_observation_fidelity(
         for function in _test_functions(tree):
             source = ast.get_source_segment(content, function) or ast.unparse(function)
             witnesses = _infer_witness_classes(function, source, plan)
+            integer_predicates = _literal_integer_predicates(function, plan)
             applicable = [
                 obligation
                 for obligation in exact_obligations.values()
@@ -124,6 +127,7 @@ def analyze_observation_fidelity(
                     if witnesses
                     else obligation.obligation_id in mapped_ids
                 )
+                and integer_predicates.get(obligation.witness_class) is not False
             ]
             lossy: list[dict[str, Any]] = []
             for assertion in (node for node in ast.walk(function) if isinstance(node, ast.Assert)):
@@ -174,7 +178,8 @@ def _infer_witness_classes(
     patterns = (
         ("empty_input", r"empty_(?:file|input)|write_(?:text|bytes)\s*\(\s*(?:b)?[\"']{2}"),
         ("numeric_argument_exceeds_input_length", r"(?:greater|exceeds?|larger|longer)_than_(?:input|length)|size_exceeds"),
-        ("invalid_positive_integer", r"invalid_(?:chunk_)?size|non_integer|not_integer|negative_size|zero_size"),
+        ("invalid_positive_integer", r"invalid_(?:chunk_)?size|negative_size|zero_size"),
+        ("invalid_integer", r"non_integer|not_integer"),
         ("invalid_argument_count", r"argument_count|missing_argument|too_(?:many|few)_arguments"),
         ("utf8_decode_failure", r"invalid_utf_?8|decode_failure"),
         ("file_read_failure", r"read_failure|missing_file|nonexistent_file"),
@@ -193,12 +198,14 @@ def _infer_witness_classes(
         text_lengths = [len(value) for value in writes if isinstance(value, str) and value]
         if numeric and text_lengths and max(numeric) > min(text_lengths):
             witnesses.add("numeric_argument_exceeds_input_length")
-        if any(
-            isinstance(value, str)
-            and (not re.fullmatch(r"\d+", value) or int(value) <= 0)
-            for value in args[1:]
-        ):
-            witnesses.add("invalid_positive_integer")
+    declared_classes = {item.witness_class for item in plan.build_spec.conditional_obligations}
+    if "invalid_integer" in witnesses and "invalid_positive_integer" in declared_classes:
+        witnesses.add("invalid_positive_integer")
+    for witness, applies in _literal_integer_predicates(function, plan).items():
+        if applies and witness in declared_classes:
+            witnesses.add(witness)
+        elif applies is False:
+            witnesses.discard(witness)
     expected_count = next(
         (
             interface.explicit_argv_count
@@ -213,6 +220,54 @@ def _infer_witness_classes(
     if any(isinstance(value, bytes) and _invalid_utf8(value) for value in writes):
         witnesses.add("utf8_decode_failure")
     return witnesses
+
+
+def _literal_integer_predicates(function: ast.AST, plan: FeasiblePlan) -> dict[str, bool]:
+    """Literal inputs take precedence over names and planned integer-branch mappings.
+
+    Unknown calls/argument bindings leave the existing evidence fallback intact;
+    this is not semantic adjudication of arbitrary test programs.
+    """
+    calls = _literal_main_calls(function)
+    count = next(
+        (
+            item.explicit_argv_count
+            for item in plan.interfaces
+            if item.interface_type == "cli_entrypoint"
+            and item.explicit_argv_count is not None
+        ),
+        None,
+    )
+    if not calls or count is None:
+        return {}
+    if count == 1:
+        index = 0
+    else:
+        match = re.search(
+            r"(?:chunk\s+size|size|count|limit|shift)\s+(?:from\s+)?argv\s*\[\s*(\d+)\s*\]",
+            plan.build_spec.normalized_requirement,
+            re.IGNORECASE,
+        )
+        if match is None:
+            return {}
+        index = int(match.group(1)) - 1
+    invalid_integer: list[bool] = []
+    invalid_positive: list[bool] = []
+    for args in calls:
+        if len(args) != count or not 0 <= index < len(args) or not isinstance(args[index], str):
+            return {}
+        try:
+            number = int(args[index])
+        except ValueError:
+            invalid_integer.append(True)
+            invalid_positive.append(True)
+        else:
+            invalid_integer.append(False)
+            invalid_positive.append(number <= 0)
+    return {
+        "invalid_integer": any(invalid_integer),
+        "invalid_positive_integer": any(invalid_positive),
+    }
 
 
 def _literal_file_writes(function: ast.AST) -> list[str | bytes]:
