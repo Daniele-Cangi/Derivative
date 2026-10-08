@@ -239,7 +239,7 @@ class ConditionalObligationNormalizer:
             ):
                 observations.append(self._observation(channel, "equals", "", "exact_text"))
 
-        if re.search(r"\boutput\s+is\s+empty\b", consequent, re.IGNORECASE):
+        if re.search(r"\boutput\s+is\s+empty\b|\boutputs?\s+nothing\b", consequent, re.IGNORECASE):
             observations.append(self._observation("stdout", "equals", "", "exact_text"))
 
         if re.search(

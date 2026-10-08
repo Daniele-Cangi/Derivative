@@ -24,6 +24,21 @@ def _mapping_plan(spec):
     )
 
 
+def test_repeated_consequences_remain_attached_to_each_condition():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI. If the file is empty, exit code 0 and output nothing. "
+        "If the input is invalid, exit code 2 and output nothing."
+    )
+    for trigger, status in [("the file is empty", 0), ("the input is invalid", 2)]:
+        obligations = [item for item in spec.conditional_obligations if item.trigger == trigger]
+        assert {(item.observable_channel, item.expected_value) for item in obligations} == {
+            ("exit_code", status), ("stdout", ""),
+        }
+        parents = {item.parent_requirement_id for item in obligations}
+        assert len(parents) == 1
+        assert any("and output nothing" in atom.text for atom in spec.requirement_atoms if atom.requirement_id in parents)
+
+
 @pytest.mark.parametrize(
     "expected",
     ["a  b", "a\tb", "a\nb", "a, returns b; writes c", "it's  exact", "exit code 9; raise ValueError"],

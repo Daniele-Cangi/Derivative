@@ -2,6 +2,7 @@ from typing import List, Set
 
 from core.forge.contracts import ArtifactTargetType, FeasiblePlan, PlanInterface, PlanTest
 from core.forge.domains.base import BaseDomainAdapter
+from core.forge.expiration_contract import expiration_horizon_days
 from core.forge.domains.cli_json_logs import (
     is_json_log_cli,
     render_json_log_file,
@@ -59,7 +60,7 @@ class CliDomainAdapter(BaseDomainAdapter):
         if normalized.endswith("src/contracts_csv.py"):
             return self._template_contracts_csv()
         if normalized.endswith("src/expiration_rules.py"):
-            return self._template_expiration_rules()
+            return self._template_expiration_rules(plan)
         if normalized.endswith("src/summary_writer.py"):
             return self._template_summary_writer()
         if normalized.startswith("tests/"):
@@ -152,7 +153,7 @@ class CliDomainAdapter(BaseDomainAdapter):
             f"    parser = argparse.ArgumentParser(description={parser_description!r})\n"
             f"    parser.add_argument('input_csv', help={input_help!r})\n"
             f"    parser.add_argument('output_csv', help={output_help!r})\n"
-            f"    parser.add_argument('--horizon-days', type=int, default=90, help={horizon_help!r})\n"
+            f"    parser.add_argument('--horizon-days', type=int, default={expiration_horizon_days(plan.build_spec)}, help={horizon_help!r})\n"
             "    return parser\n"
             "\n"
             "\n"
@@ -204,7 +205,7 @@ class CliDomainAdapter(BaseDomainAdapter):
             "    return rows\n"
         )
 
-    def _template_expiration_rules(self) -> str:
+    def _template_expiration_rules(self, plan: FeasiblePlan) -> str:
         return (
             "from datetime import date, datetime\n"
             "\n"
@@ -232,7 +233,7 @@ class CliDomainAdapter(BaseDomainAdapter):
             "\n"
             "def flag_expiring_contracts(\n"
             "    records: list[dict[str, str]],\n"
-            "    horizon_days: int = 90,\n"
+            f"    horizon_days: int = {expiration_horizon_days(plan.build_spec)},\n"
             "    today: date | None = None,\n"
             ") -> list[dict[str, str]]:\n"
             "    if today is None:\n"
@@ -456,8 +457,9 @@ class CliDomainAdapter(BaseDomainAdapter):
                 "    assert parsed.year == 2026\n"
             )
         if "flags_contracts_within_horizon" in name:
+            horizon = expiration_horizon_days(plan.build_spec)
             return (
-                "from datetime import date\n"
+                "from datetime import date, timedelta\n"
                 "from pathlib import Path\n"
                 "import sys\n"
                 "\n"
@@ -467,9 +469,11 @@ class CliDomainAdapter(BaseDomainAdapter):
                 "\n"
                 "\n"
                 "def test_flags_contracts_within_horizon():\n"
-                "    rows = [{'contract_id': 'A', 'expiration_date': '2026-01-20'}]\n"
-                "    flagged = flag_expiring_contracts(rows, horizon_days=90, today=date(2026, 1, 1))\n"
-                "    assert flagged[0]['is_expiring_within_horizon'] == 'True'\n"
+                f"    offsets = {[horizon - 1, horizon, horizon + 1]!r}\n"
+                "    today = date(2026, 1, 1)\n"
+                "    rows = [{'contract_id': str(n), 'expiration_date': (today + timedelta(days=n)).isoformat()} for n in offsets]\n"
+                "    flagged = flag_expiring_contracts(rows, today=today)\n"
+                "    assert [row['is_expiring_within_horizon'] for row in flagged] == ['True', 'False', 'False']\n"
             )
         if "overdue" in objective or "overdue" in name:
             return (

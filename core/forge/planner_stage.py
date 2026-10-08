@@ -22,6 +22,7 @@ from core.forge.infeasibility_protocol import (
     certify_infeasibility,
     parse_public_obligation,
 )
+from core.forge.expiration_contract import expiration_horizon_days
 from core.kernel import ReasoningKernel, ReasoningResult
 from core.substrate import CognitiveSubstrate
 from memory.delta import DeltaMemory
@@ -692,7 +693,7 @@ class PlannerStage:
                     name="flag_expiring_contracts",
                     interface_type="function",
                     signature=(
-                        "flag_expiring_contracts(records: list[dict[str, str]], horizon_days: int = 90) "
+                        f"flag_expiring_contracts(records: list[dict[str, str]], horizon_days: int = {expiration_horizon_days(build_spec)}) "
                         "-> list[dict[str, str]]"
                     ),
                     description="Flags contracts expiring within the configured horizon.",

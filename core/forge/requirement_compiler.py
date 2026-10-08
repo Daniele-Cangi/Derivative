@@ -14,6 +14,7 @@ from core.forge.contracts import (
 )
 from core.forge.conditional_obligations import ConditionalObligationNormalizer
 from core.forge.public_contract import extract_public_import_contract
+from core.forge.expiration_contract import compile_expiration_horizon
 from core.forge.requirement_text import (
     explicit_test_coverage_target,
     mask_quoted_literals,
@@ -87,6 +88,11 @@ class RequirementCompiler:
             functional_goals,
             acceptance_contract,
         )
+        expiration_horizon = compile_expiration_horizon(requirement_atoms)
+        if expiration_horizon is not None:
+            obligation_contract.context["expiration_horizon"] = expiration_horizon
+            if expiration_horizon["threshold_days"] is None:
+                ambiguity_flags.append("Materially unspecified expiration horizon: conflicting numeric thresholds.")
         quality_contract = self._extract_quality_contract(normalized)
 
         return BuildSpec(
@@ -803,7 +809,11 @@ class RequirementCompiler:
         )
         sentences = split_requirement_text(body, re.compile(r"(?<=[.!?])\s+|;\s*"))
         for sentence in sentences:
-            for clause in split_requirement_text(sentence, boundary):
+            # Coordinated consequences belong to their condition. Splitting
+            # them creates unconditional atoms and deduplicates shared outcomes.
+            conditional = self.conditional_normalizer._conditional_parts(sentence)
+            parts = [sentence] if conditional is not None else split_requirement_text(sentence, boundary)
+            for clause in parts:
                 cleaned = re.sub(r"^(and|then)\s+", "", clause.strip(" ,.;"), flags=re.IGNORECASE)
                 if cleaned:
                     clauses.append(cleaned)
@@ -828,6 +838,7 @@ class RequirementCompiler:
                     re.IGNORECASE,
                 )
                 and index + 1 < len(normalized)
+                and self.conditional_normalizer._conditional_parts(current) is None
                 and not re.search(
                     r"\b(?:returns?|raises?|becomes?|remains?|is\s+returned|"
                     r"must|shall|should|unchanged|rejected|skipped)\b",
