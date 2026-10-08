@@ -705,6 +705,15 @@ def test_non_integer_predicate_and_coverage_do_not_imply_positivity():
     ]
 
 
+def test_integer_fix_does_not_promote_unrecognized_bounded_conditions():
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI accepting an integer N from argv[1]. "
+        "If N is not a valid integer within bounds, print 'ERROR' to stdout and return exit status 2."
+    )
+    assert spec.conditional_obligations
+    assert all(item.witness_class == "" for item in spec.conditional_obligations)
+
+
 def test_non_integer_probe_accepts_reference_and_rejects_non_integer_mutant(tmp_path):
     spec = RequirementCompiler().compile(INTEGER_REQUIREMENT)
     plan = _plan_for(spec)

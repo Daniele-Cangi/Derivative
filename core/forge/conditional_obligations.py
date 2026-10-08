@@ -435,7 +435,7 @@ class ConditionalObligationNormalizer:
             ),
             (
                 "invalid_integer",
-                r"\bnon\s*integer\b|\bnot\s+(?:a\s+)?(?:valid\s+)?integer\b",
+                r"\bnon\s*integer\b",
                 {"kind": "invalid_integer"},
             ),
             ("file_read_failure", r"\bfile\s+(?:reading|read)\s+fails?\b", {"kind": "file_read_failure"}),
