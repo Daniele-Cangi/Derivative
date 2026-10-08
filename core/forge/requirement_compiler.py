@@ -15,6 +15,8 @@ from core.forge.contracts import (
 from core.forge.conditional_obligations import ConditionalObligationNormalizer
 from core.forge.public_contract import extract_public_import_contract
 from core.forge.requirement_text import (
+    explicit_test_coverage_target,
+    mask_quoted_literals,
     normalize_requirement_text,
     requirement_clause_key,
     split_requirement_text,
@@ -142,17 +144,7 @@ class RequirementCompiler:
                 quality.auth_level = "hashed"
                 quality.secrets_in_plaintext = False
 
-        # Rate limiting quality
-        if any(token in lowered for token in ("distributed", "redis", "across instances")):
-            quality.rate_limit_scope = "distributed"
-            quality.rate_limit_persistent = True
-        elif any(token in lowered for token in ("per user", "per-user", "per client")):
-            quality.rate_limit_scope = "per_user"
-        elif "rate limit" in lowered or "rate limiting" in lowered:
-            quality.rate_limit_scope = "per_user"
-            quality.rate_limit_persistent = False
-        if any(token in lowered for token in ("persistent", "survives restart", "survive restart", "restart")):
-            quality.rate_limit_persistent = True
+        self._extract_rate_limit_quality(requirement, quality)
 
         # Persistence quality
         if any(token in lowered for token in ("migrations", "versioned schema", "alembic")):
@@ -186,6 +178,9 @@ class RequirementCompiler:
         if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
             quality.test_coverage_target = 0.8
             quality.integration_tests = True
+        explicit_coverage = explicit_test_coverage_target(requirement)
+        if explicit_coverage is not None:
+            quality.test_coverage_target = explicit_coverage
 
         computed_level = quality.compute_level()
         if any(token in lowered for token in ("microservice", "service", "rest", "api")) and computed_level < 5:
@@ -194,6 +189,27 @@ class RequirementCompiler:
             computed_level = 9
         quality.overall_level = computed_level
         return quality
+
+    def _extract_rate_limit_quality(self, requirement: str, quality: QualityContract) -> None:
+        # Persistence of records or a negative mention does not prescribe durable
+        # limiter state. Only qualifiers in a positive limiter clause apply.
+        boundary = re.compile(r"(?<=[.!?])\s+|;\s*|,\s*|\s+and\s+", re.IGNORECASE)
+        rate_pattern = r"\brate[- ]limit(?:ing|er|ers)?\b"
+        for clause in split_requirement_text(requirement, boundary):
+            text = mask_quoted_literals(clause).lower()
+            if not self._has_positive_target_mention(text, rate_pattern):
+                continue
+            distributed = any(
+                self._has_positive_target_mention(text, pattern)
+                for pattern in (r"\bdistributed\b", r"\bredis\b", r"\bacross\s+instances\b")
+            )
+            persistent = any(
+                self._has_positive_target_mention(text, pattern)
+                for pattern in (r"\bpersistent\b", r"\bdurable\b", r"\bsurvives?\s+restarts?\b")
+            )
+            if distributed:
+                quality.rate_limit_scope = "distributed"
+            quality.rate_limit_persistent |= distributed or persistent
 
     def _extract_requirement_atoms(self, requirement: str) -> List[RequirementAtom]:
         body = self._requirement_body(requirement)
@@ -839,7 +855,9 @@ class RequirementCompiler:
             return "functional"
         if re.match(r"^(?:edge|boundary|corner)\s+cases?\s+(?:cover|include|exercise)\b", lowered):
             return "coverage_directive"
-        if re.match(r"^(?:no|never|without)\b", lowered):
+        if re.match(r"^(?:no|never|without)\b", lowered) or re.search(
+            r"\bis\s+(?:never|not)\s+(?:modified|mutated|changed)\b", lowered,
+        ):
             return "negative_constraint"
         universal_tokens = (
             "every possible",
@@ -925,7 +943,7 @@ class RequirementCompiler:
             lowered,
         ) and re.search(
             r"\b(?:returns?|raises?|becomes?|remains?|must|shall|unchanged|"
-            r"reject(?:s|ed)?|skip(?:s|ped)?|write(?:s|ten)?)\b",
+            r"reject(?:s|ed)?|skip(?:s|ped)?|write(?:s|ten)?|uses?|prints?)\b",
             lowered,
         ):
             if re.search(
@@ -948,7 +966,11 @@ class RequirementCompiler:
             return "non_functional"
         if comparator_pattern.search(clause):
             return "non_functional"
+        if re.search(r"\b(?:limited|bounded)\s+to\b.{0,100}\b\d+\b", lowered):
+            return "non_functional"
         if re.search(r"\b(?:must(?:\s+not)?|shall(?:\s+not)?)\b", lowered):
+            return "functional"
+        if re.search(r"\b(?:uses?|prints?)\b", lowered):
             return "functional"
         if any(token in lowered for token in functional_tokens):
             return "functional"

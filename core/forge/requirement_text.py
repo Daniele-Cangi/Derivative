@@ -42,3 +42,15 @@ def split_requirement_text(text: str, boundary: re.Pattern[str]) -> list[str]:
         start = match.end()
     chunks.append(text[start:])
     return chunks
+
+
+def explicit_test_coverage_target(requirement: str) -> float | None:
+    matches = re.finditer(
+        r"\b(?:test|code)\s+coverage\s+"
+        r"(?:(?:of|at\s+least|minimum(?:\s+of)?|target(?:\s+of)?|"
+        r"must\s+be(?:\s+at\s+least)?)\s+)?"
+        r"(?P<percent>\d+(?:\.\d+)?)\s*(?:%|percent\b)",
+        mask_quoted_literals(requirement), re.IGNORECASE,
+    )
+    targets = [float(match.group("percent")) / 100 for match in matches]
+    return max(targets) if targets else None

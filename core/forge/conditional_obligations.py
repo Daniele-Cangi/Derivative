@@ -443,6 +443,7 @@ class ConditionalObligationNormalizer:
         return bool(
             re.match(r"^(?:no|never|without)\b", text, re.IGNORECASE)
             or re.search(r"\b(?:must|shall)\s+not\b", text, re.IGNORECASE)
+            or re.search(r"\bis\s+(?:never|not)\s+(?:modified|mutated|changed)\b", text, re.IGNORECASE)
         )
 
     @staticmethod

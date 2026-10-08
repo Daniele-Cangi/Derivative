@@ -117,3 +117,62 @@ def test_unconditional_stream_negative_keeps_resource_contract():
     assert obligation.trigger == "always"
     assert obligation.precondition == {"kind": "always"}
     assert obligation.expected_value == "closed"
+
+
+@pytest.mark.parametrize(
+    "instruction",
+    [
+        "If N is negative, use its absolute value.",
+        "Input is never modified.",
+        "The range is limited to integers 0 through 9999999 inclusive.",
+        "Otherwise, print the English representation.",
+    ],
+)
+def test_precise_instructions_reach_acceptance_and_planned_evidence(instruction):
+    spec = RequirementCompiler().compile("Build a Python library. " + instruction)
+    atom = next(item for item in spec.requirement_atoms if item.text == instruction.rstrip("."))
+    plan = _mapping_plan(spec)
+
+    assert atom.category != "ambiguity"
+    assert atom.strength == "hard"
+    assert any(atom.requirement_id in item.requirement_ids for item in spec.acceptance_contract.criteria)
+    assert plan.requirement_coverage[atom.requirement_id]["acceptance_criteria"]
+    assert plan.requirement_coverage[atom.requirement_id]["tests"]
+
+
+@pytest.mark.parametrize(
+    ("requirement", "persistent", "scope"),
+    [
+        ("Build a Python service. Use persistent per-user rate limiting.", True, "per_user"),
+        ("Build a Python service. Rate limiting must survive restart.", True, "per_user"),
+        ("Build a Python service. Use distributed rate limiting across instances.", True, "distributed"),
+        ("Build a Python service. Do not use persistent rate limiting. State must not survive restart.", False, "per_user"),
+        ("Build a Python library that writes persistent records to SQLite.", False, "per_user"),
+        ("Build a Python service with rate limiting and persistent storage for records.", False, "per_user"),
+        ("Build a Python service with rate limiting. The limiter must not survive restart.", False, "per_user"),
+    ],
+)
+def test_rate_limit_quality_respects_persistence_scope_and_negation(requirement, persistent, scope):
+    quality = RequirementCompiler().compile(requirement).quality_contract
+
+    assert quality.rate_limit_persistent is persistent
+    assert quality.rate_limit_scope == scope
+
+
+@pytest.mark.parametrize("percent", [60, 80, 95])
+def test_explicit_coverage_threshold_is_retained_and_requires_independent_measurement(percent, tmp_path):
+    from dataclasses import asdict
+    from core.forge.contracts import CodeArtifact
+    from core.forge.validation.quality import QualityContractChecker
+
+    spec = RequirementCompiler().compile(
+        f"Build a Python service with test coverage at least {percent} percent."
+    )
+    assert spec.quality_contract.test_coverage_target == percent / 100
+    artifact = CodeArtifact(
+        artifact_id="diagnostic", plan_id="diagnostic",
+        artifact_manifest={"quality_contract": asdict(spec.quality_contract)},
+    )
+    failures, evidence = QualityContractChecker().check({}, artifact, spec)
+    assert failures
+    assert evidence["checks"]["explicit_coverage_target_evidenced"] is False
