@@ -47,11 +47,11 @@ def test_expiration_bound_is_compiled_implemented_and_independently_probed(horiz
     assert validation.passed, validation.failures
     checks = validation.layer2_result.evidence["numeric_contract_checks"]["contracts"]
     assert checks[0]["passed"]
-    assert checks[0]["observed"]["function_flags"] == ["True", "False", "False"]
-    assert checks[0]["observed"]["cli_flags"] == ["True", "False", "False"]
+    assert checks[0]["observed"]["function_flags"] == checks[0]["expected_flags"]
+    assert checks[0]["observed"]["cli_flags"] == checks[0]["expected_flags"]
 
 
-@pytest.mark.parametrize("mutation", ["function_default", "cli_default", "inclusive_comparison"])
+@pytest.mark.parametrize("mutation", ["function_default", "cli_default", "inclusive_comparison", "spurious_lower_bound"])
 def test_validator_owned_bound_probe_rejects_wrong_default_or_relation(mutation):
     spec, plan = _numeric_plan(30)
     artifact = CoderStage().generate(plan)
@@ -63,11 +63,15 @@ def test_validator_owned_bound_probe_rejects_wrong_default_or_relation(mutation)
             generated.content = generated.content.replace("default=30", "default=90")
         elif mutation == "inclusive_comparison" and generated.path == "src/expiration_rules.py":
             generated.content = generated.content.replace("days < horizon_days", "days <= horizon_days")
+        elif mutation == "spurious_lower_bound" and generated.path == "src/expiration_rules.py":
+            generated.content = generated.content.replace("days < horizon_days", "10 < days < horizon_days")
     assert any(a.content != b.content for a, b in zip(artifact.files, mutant.files))
 
     validation = ValidatorStage().validate(mutant, plan, spec)
     assert validation.passed is False
     assert "numeric_contract_mismatch" in validation.failure_signatures
+    if mutation == "spurious_lower_bound":
+        assert "test_execution_failure" not in validation.failure_signatures
     checks = validation.layer2_result.evidence["numeric_contract_checks"]["contracts"]
     assert checks[0]["passed"] is False
 

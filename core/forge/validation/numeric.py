@@ -31,7 +31,8 @@ class NumericContractChecker:
             }
         # Both the function's default and the public CLI's default must implement
         # the compiled bound; passing --horizon-days would hide a wrong default.
-        script = self._expiration_probe(horizon, module_name, interface.name)
+        offsets = sorted({-31, -1, 0, 1, horizon // 2, horizon - 31, horizon - 1, horizon, horizon + 1})
+        script = self._expiration_probe(offsets, module_name, interface.name)
         result = self.executor.run(SandboxProcessRequest(
             command=["python", "-B", "-c", script], workspace=workspace,
             timeout_seconds=self.timeout_seconds,
@@ -41,7 +42,7 @@ class NumericContractChecker:
             observed = json.loads(result.stdout.strip())
         except (ValueError, TypeError):
             observed = None
-        expected = ["True", "False", "False"]
+        expected = [str(offset < horizon) for offset in offsets]
         passed = (
             result.returncode == 0
             and isinstance(observed, dict)
@@ -51,6 +52,7 @@ class NumericContractChecker:
         )
         evidence = {"contracts": [{
             "contract": contract, "boundary_offsets": [horizon - 1, horizon, horizon + 1],
+            "probe_offsets": offsets,
             "expected_flags": expected, "observed": observed, "passed": passed,
             "returncode": result.returncode, "stderr": result.stderr,
             "backend": result.backend, "isolation": result.isolation,
@@ -64,14 +66,14 @@ class NumericContractChecker:
         ], evidence
 
     @staticmethod
-    def _expiration_probe(horizon: int, module_name: str, symbol: str) -> str:
+    def _expiration_probe(offsets: list[int], module_name: str, symbol: str) -> str:
         return (
             "import csv, importlib, json\n"
             "from datetime import date, timedelta\n"
             "from pathlib import Path\n"
             "rules = importlib.import_module('expiration_rules')\n"
             f"entrypoint = getattr(importlib.import_module({module_name!r}), {symbol!r})\n"
-            f"offsets = {[horizon - 1, horizon, horizon + 1]!r}\n"
+            f"offsets = {offsets!r}\n"
             "def rows_for(today):\n"
             "    return [{'contract_id': str(n), 'expiration_date': (today + timedelta(days=n)).isoformat()} for n in offsets]\n"
             "rows = rows_for(date(2026, 1, 1))\n"

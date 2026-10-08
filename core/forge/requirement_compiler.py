@@ -206,8 +206,15 @@ class RequirementCompiler:
         # limiter state. Only qualifiers in a positive limiter clause apply.
         boundary = re.compile(r"(?<=[.!?])\s+|;\s*|,\s*|\s+and\s+", re.IGNORECASE)
         rate_pattern = r"\brate[- ]limit(?:ing|er|ers)?\b|\blimiter\s+(?:state|counters?)\b"
-        for clause in split_requirement_text(requirement, boundary):
-            text = mask_quoted_literals(clause).lower()
+        text = mask_quoted_literals(requirement).lower()
+        modifier = r"(?:distributed|persistent|durable|per-user|local|redis-backed)"
+        # A comma inside coordinated pre-nominal modifiers does not start a
+        # separate storage requirement. Preserve the whole modifier/limiter span.
+        text = re.sub(
+            rf"\b(?:{modifier}\s*,\s*)+{modifier}\s+(?:rate[- ]limit(?:ing|er|ers)?)\b",
+            lambda match: match.group().replace(",", " "), text,
+        )
+        for text in split_requirement_text(text, boundary):
             if not self._has_positive_target_mention(text, rate_pattern):
                 continue
             distributed = any(
