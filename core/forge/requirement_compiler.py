@@ -14,6 +14,11 @@ from core.forge.contracts import (
 )
 from core.forge.conditional_obligations import ConditionalObligationNormalizer
 from core.forge.public_contract import extract_public_import_contract
+from core.forge.requirement_text import (
+    normalize_requirement_text,
+    requirement_clause_key,
+    split_requirement_text,
+)
 from core.obligation_compiler import ObligationCompiler
 from core.problem_classifier import ProblemClassifier
 
@@ -198,10 +203,10 @@ class RequirementCompiler:
         seen = set()
         index = 1
         for clause in clauses:
-            normalized_clause = " ".join(clause.split())
+            normalized_clause = normalize_requirement_text(clause)
             if not normalized_clause:
                 continue
-            dedupe_key = normalized_clause.lower()
+            dedupe_key = requirement_clause_key(normalized_clause)
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
@@ -248,8 +253,7 @@ class RequirementCompiler:
         return ""
 
     def _normalize_requirement(self, requirement: str) -> str:
-        collapsed = " ".join((requirement or "").strip().split())
-        return collapsed
+        return normalize_requirement_text(requirement or "")
 
     def _build_id(self, normalized_requirement: str) -> str:
         digest = hashlib.sha256(normalized_requirement.encode("utf-8")).hexdigest()[:12]
@@ -781,8 +785,9 @@ class RequirementCompiler:
             rf"\s+that\s+(?=(?:must\b|shall\b|should\b|will\b|{clause_verb}\b))",
             re.IGNORECASE,
         )
-        for sentence in re.split(r"(?<=[.!?])\s+|;\s*", body):
-            for clause in boundary.split(sentence):
+        sentences = split_requirement_text(body, re.compile(r"(?<=[.!?])\s+|;\s*"))
+        for sentence in sentences:
+            for clause in split_requirement_text(sentence, boundary):
                 cleaned = re.sub(r"^(and|then)\s+", "", clause.strip(" ,.;"), flags=re.IGNORECASE)
                 if cleaned:
                     clauses.append(cleaned)
