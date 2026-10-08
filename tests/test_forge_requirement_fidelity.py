@@ -164,6 +164,8 @@ def test_precise_instructions_reach_acceptance_and_planned_evidence(instruction)
         ("Build a Python service. Do not use persistent rate limiting. State must not survive restart.", False, "per_user"),
         ("Build a Python library that writes persistent records to SQLite.", False, "per_user"),
         ("Build a Python service with rate limiting and persistent storage for records.", False, "per_user"),
+        ("Build a Python service. Use rate limiting and persistent storage for limiter counters.", True, "per_user"),
+        ("Build a Python service. Use rate limiting and do not use persistent storage for limiter counters.", False, "per_user"),
         ("Build a Python service with rate limiting. The limiter must not survive restart.", False, "per_user"),
     ],
 )

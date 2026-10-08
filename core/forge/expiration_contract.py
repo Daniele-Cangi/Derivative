@@ -31,11 +31,15 @@ def expiration_horizon_contract(spec: BuildSpec) -> dict[str, Any] | None:
     return contract.context.get("expiration_horizon") if contract is not None else None
 
 
-def expiration_horizon_days(spec: BuildSpec) -> int:
+def expiration_horizon_days(spec: BuildSpec) -> int | None:
     contract = expiration_horizon_contract(spec)
     if contract is None:
         return 90
     value = contract.get("threshold_days")
+    if value is None:
+        # Retain unresolved policy through planning/generation; validation owns
+        # the material-ambiguity failure. Never substitute the legacy default.
+        return None
     if type(value) is not int:
         raise ValueError("The expiration horizon is materially unspecified.")
     return value

@@ -458,6 +458,12 @@ class CliDomainAdapter(BaseDomainAdapter):
             )
         if "flags_contracts_within_horizon" in name:
             horizon = expiration_horizon_days(plan.build_spec)
+            if horizon is None:
+                return (
+                    "import pytest\n\n"
+                    "def test_flags_contracts_within_horizon():\n"
+                    "    pytest.fail('Expiration horizon is materially unspecified.')\n"
+                )
             return (
                 "from datetime import date, timedelta\n"
                 "from pathlib import Path\n"

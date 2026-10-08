@@ -10,10 +10,10 @@ from core.forge.validator_stage import ValidatorStage
 from core.forge.repair_support import behavioral_contract_seal, behavioral_generation_contracts
 
 
-def _numeric_plan(horizon):
+def _numeric_plan(horizon, extra=""):
     spec = RequirementCompiler().compile(
         "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, "
-        f"flags contracts expiring in less than {horizon} days, writes a summary CSV, and includes tests."
+        f"flags contracts expiring in less than {horizon} days, writes a summary CSV, and includes tests. {extra}"
     )
     planner = PlannerStage.__new__(PlannerStage)
     blueprint = planner._derive_implementation_blueprint(spec)
@@ -82,8 +82,27 @@ def test_numeric_bound_is_exposed_and_sealed_for_untrusted_generation():
 
 def test_conflicting_numeric_bounds_fail_closed_instead_of_selecting_a_default():
     spec = RequirementCompiler().compile(
-        "Build a Python CLI that flags contracts expiring in less than 30 days. "
+        "Build a Python CLI that reads CSV and flags contracts expiring in less than 30 days. "
         "Flags contracts expiring in less than 90 days."
     )
     assert spec.obligation_contract.context["expiration_horizon"]["threshold_days"] is None
     assert any("Materially unspecified expiration horizon" in flag for flag in spec.ambiguity_flags)
+
+
+@pytest.mark.parametrize("requirement", [
+    "Build a Python library that flags contracts expiring in less than 30 days.",
+    "Build a Python library that reads CSV and flags contracts expiring in less than 30 days.",
+    "Build a Python CLI that reads JSON and flags contracts expiring in less than 30 days.",
+])
+def test_csv_numeric_probe_does_not_apply_to_other_domains(requirement):
+    spec = RequirementCompiler().compile(requirement)
+    assert "expiration_horizon" not in spec.obligation_contract.context
+
+
+def test_conflicting_horizons_reach_fail_closed_validation_without_planning_exception():
+    spec, plan = _numeric_plan(30, "Flags contracts expiring in less than 90 days.")
+    artifact = CoderStage().generate(plan)
+    validation = ValidatorStage().validate(artifact, plan, spec)
+    assert not validation.passed
+    assert "underspecified_requirement" in validation.failure_signatures
+    assert "numeric_contract_unproven" in validation.failure_signatures

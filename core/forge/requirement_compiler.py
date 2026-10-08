@@ -88,7 +88,12 @@ class RequirementCompiler:
             functional_goals,
             acceptance_contract,
         )
-        expiration_horizon = compile_expiration_horizon(requirement_atoms)
+        expiration_horizon = (
+            compile_expiration_horizon(requirement_atoms)
+            if target_artifact_type == ArtifactTargetType.CLI
+            and self._has_positive_target_mention(mask_quoted_literals(normalized), r"\bcsv\b")
+            else None
+        )
         if expiration_horizon is not None:
             obligation_contract.context["expiration_horizon"] = expiration_horizon
             if expiration_horizon["threshold_days"] is None:
@@ -200,7 +205,7 @@ class RequirementCompiler:
         # Persistence of records or a negative mention does not prescribe durable
         # limiter state. Only qualifiers in a positive limiter clause apply.
         boundary = re.compile(r"(?<=[.!?])\s+|;\s*|,\s*|\s+and\s+", re.IGNORECASE)
-        rate_pattern = r"\brate[- ]limit(?:ing|er|ers)?\b"
+        rate_pattern = r"\brate[- ]limit(?:ing|er|ers)?\b|\blimiter\s+(?:state|counters?)\b"
         for clause in split_requirement_text(requirement, boundary):
             text = mask_quoted_literals(clause).lower()
             if not self._has_positive_target_mention(text, rate_pattern):
