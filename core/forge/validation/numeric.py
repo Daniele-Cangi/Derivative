@@ -42,17 +42,20 @@ class NumericContractChecker:
             observed = json.loads(result.stdout.strip())
         except (ValueError, TypeError):
             observed = None
-        expected = [str(offset < horizon) for offset in offsets]
+        expected = {str(offset): str(offset < horizon) for offset in offsets}
         passed = (
             result.returncode == 0
             and isinstance(observed, dict)
             and observed.get("function_flags") == expected
             and observed.get("cli_flags") == expected
+            and observed.get("function_row_count") == len(offsets)
+            and observed.get("cli_row_count") == len(offsets)
             and observed.get("cli_status") == 0
         )
         evidence = {"contracts": [{
             "contract": contract, "boundary_offsets": [horizon - 1, horizon, horizon + 1],
             "probe_offsets": offsets,
+            "correlation_key": "contract_id",
             "expected_flags": expected, "observed": observed, "passed": passed,
             "returncode": result.returncode, "stderr": result.stderr,
             "backend": result.backend, "isolation": result.isolation,
@@ -78,7 +81,7 @@ class NumericContractChecker:
             "    return [{'contract_id': str(n), 'expiration_date': (today + timedelta(days=n)).isoformat()} for n in offsets]\n"
             "rows = rows_for(date(2026, 1, 1))\n"
             "result = rules.flag_expiring_contracts(rows, today=date(2026, 1, 1))\n"
-            "function_flags = [row['is_expiring_within_horizon'] for row in result]\n"
+            "function_flags = {row['contract_id']: row['is_expiring_within_horizon'] for row in result}\n"
             "input_path = Path('.forge_numeric_contract_input.csv')\n"
             "output_path = Path('.forge_numeric_contract_output.csv')\n"
             "with input_path.open('w', encoding='utf-8', newline='') as handle:\n"
@@ -87,6 +90,8 @@ class NumericContractChecker:
             "    writer.writerows(rows_for(date.today()))\n"
             "status = entrypoint([str(input_path), str(output_path)])\n"
             "with output_path.open(encoding='utf-8', newline='') as handle:\n"
-            "    cli_flags = [row['is_expiring_within_horizon'] for row in csv.DictReader(handle)]\n"
-            "print(json.dumps({'function_flags': function_flags, 'cli_flags': cli_flags, 'cli_status': status}))\n"
+            "    cli_rows = list(csv.DictReader(handle))\n"
+            "cli_flags = {row['contract_id']: row['is_expiring_within_horizon'] for row in cli_rows}\n"
+            "print(json.dumps({'function_flags': function_flags, 'cli_flags': cli_flags, 'cli_status': status, "
+            "'function_row_count': len(result), 'cli_row_count': len(cli_rows)}))\n"
         )

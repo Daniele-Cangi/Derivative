@@ -226,6 +226,9 @@ def test_explicit_coverage_threshold_is_retained_and_requires_independent_measur
     "No code coverage target of 80 percent",
     "Don't require test coverage of 80 percent",
     "Test coverage of 80 percent is not required",
+    "Test coverage of 80 percent should not be required",
+    "Test coverage of 80 percent isn't required",
+    "Test coverage of 80 percent shouldn't be required",
 ])
 def test_negated_coverage_targets_do_not_create_positive_quality_obligations(text):
     from dataclasses import asdict
@@ -248,6 +251,8 @@ def test_negated_coverage_targets_do_not_create_positive_quality_obligations(tex
     "Without a test coverage target of 95 percent, require code coverage of 80 percent",
     "Do not require test coverage of 95 percent but require code coverage of 80 percent",
     "Do not mutate input and require test coverage of 80 percent",
+    "Test coverage of 80 percent should be required",
+    "Test coverage of 80 percent should not be ignored",
 ])
 def test_positive_coverage_targets_survive_unrelated_or_contrasted_negation(text):
     assert explicit_test_coverage_target(text) == 0.8

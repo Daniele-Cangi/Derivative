@@ -77,7 +77,11 @@ def _coverage_mention_is_negated(text: str, start: int, end: int) -> bool:
         prefix, re.IGNORECASE,
     )
     negated_suffix = re.match(
-        r"\s+(?:is|are)\s+(?:not\s+(?:required|needed|mandatory)|optional|unnecessary)\b",
+        r"\s+(?:(?:is|are)\s+not\s+|(?:is|are)n['’]t\s+|"
+        r"(?:should|must|shall|may|will|would|can|could|need)\s+not\s+be\s+|"
+        r"(?:should|must|would|could)n['’]t\s+be\s+)"
+        r"(?:required|needed|mandatory)\b|"
+        r"\s+(?:is|are)\s+(?:optional|unnecessary)\b",
         text[end:], re.IGNORECASE,
     )
     return bool(negated_prefix or negated_suffix)

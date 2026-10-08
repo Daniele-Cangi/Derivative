@@ -10,10 +10,11 @@ from core.forge.validator_stage import ValidatorStage
 from core.forge.repair_support import behavioral_contract_seal, behavioral_generation_contracts
 
 
-def _numeric_plan(horizon, extra=""):
+def _numeric_plan(horizon, extra="", expiration_clause=None):
+    clause = expiration_clause or f"flags contracts expiring in less than {horizon} days"
     spec = RequirementCompiler().compile(
         "Build a Python CLI that reads a CSV of contracts, extracts expiration dates, "
-        f"flags contracts expiring in less than {horizon} days, writes a summary CSV, and includes tests. {extra}"
+        f"{clause}, writes a summary CSV, and includes tests. {extra}"
     )
     planner = PlannerStage.__new__(PlannerStage)
     blueprint = planner._derive_implementation_blueprint(spec)
@@ -110,3 +111,57 @@ def test_conflicting_horizons_reach_fail_closed_validation_without_planning_exce
     assert not validation.passed
     assert "underspecified_requirement" in validation.failure_signatures
     assert "numeric_contract_unproven" in validation.failure_signatures
+
+
+@pytest.mark.parametrize("clause", [
+    "flags contracts that expire in less than 30 days",
+    "flags a contract expiring in less than 30 days",
+    "flags contracts which expire in less than 30 days",
+])
+def test_equivalent_expiration_clauses_bind_the_numeric_default(clause):
+    spec, plan = _numeric_plan(30, expiration_clause=clause)
+    contract = spec.obligation_contract.context["expiration_horizon"]
+    assert contract["threshold_days"] == 30
+    assert contract["requirement_ids"]
+    artifact = CoderStage().generate(plan)
+    validation = ValidatorStage().validate(artifact, plan, spec)
+    assert validation.passed, validation.failures
+    assert validation.layer2_result.evidence["numeric_contract_checks"]["contracts"][0]["passed"]
+
+
+@pytest.mark.parametrize("reordered_channel", ["function", "cli"])
+def test_numeric_probe_accepts_correct_flags_regardless_of_row_order(reordered_channel):
+    spec, plan = _numeric_plan(120)
+    artifact = CoderStage().generate(plan)
+    for generated in artifact.files:
+        if reordered_channel == "function" and generated.path == "src/expiration_rules.py":
+            assert "return flagged" in generated.content
+            generated.content = generated.content.replace(
+                "return flagged", "return sorted(flagged, key=lambda row: row['contract_id'])",
+            )
+        elif reordered_channel == "cli" and generated.path == "src/cli.py":
+            assert "write_summary_csv(flagged, args.output_csv)" in generated.content
+            generated.content = generated.content.replace(
+                "write_summary_csv(flagged, args.output_csv)",
+                "write_summary_csv(sorted(flagged, key=lambda row: row['contract_id']), args.output_csv)",
+            )
+    validation = ValidatorStage().validate(artifact, plan, spec)
+    assert validation.passed, validation.failures
+
+
+@pytest.mark.parametrize("returned_rows", ["flagged[:-1]", "flagged + [flagged[0]]"])
+@pytest.mark.parametrize("channel", ["function", "cli"])
+def test_order_independent_numeric_probe_still_rejects_missing_or_duplicate_rows(returned_rows, channel):
+    spec, plan = _numeric_plan(120)
+    artifact = CoderStage().generate(plan)
+    for generated in artifact.files:
+        if channel == "function" and generated.path == "src/expiration_rules.py":
+            generated.content = generated.content.replace("return flagged", f"return {returned_rows}")
+        elif channel == "cli" and generated.path == "src/cli.py":
+            generated.content = generated.content.replace(
+                "write_summary_csv(flagged, args.output_csv)",
+                f"write_summary_csv({returned_rows}, args.output_csv)",
+            )
+    validation = ValidatorStage().validate(artifact, plan, spec)
+    assert not validation.passed
+    assert "numeric_contract_mismatch" in validation.failure_signatures

@@ -10,7 +10,8 @@ def compile_expiration_horizon(atoms: Iterable[RequirementAtom]) -> dict[str, An
     matches = []
     for atom in atoms:
         match = re.match(
-            r"^flags?\s+contracts?\s+expiring\s+in\s+less\s+than\s+(-?\d+)\s+days?\b",
+            r"^flags?\s+(?:(?:a|the)\s+)?contracts?\s+"
+            r"(?:expiring|(?:that|which)\s+expires?)\s+in\s+less\s+than\s+(-?\d+)\s+days?\b",
             mask_quoted_literals(atom.text), re.IGNORECASE,
         )
         if match and atom.strength in {"hard", "universal"}:
