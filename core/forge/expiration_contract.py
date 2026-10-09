@@ -10,11 +10,26 @@ from core.forge.requirement_text import mask_quoted_literals, prose_mention_is_n
 # and expiration predicate are enough to require interpretation, not to prove a
 # value or comparison. Keep unsupported policies on the existing unresolved path.
 _EXPIRATION = r"\b(?:expires?|expired|expiring|expiration)\b"
-_DURATION = r"(?<![\w.])[+-]?\d+(?:\.\d+)?(?:\s+|-)days?\b"
+_NUMBER_WORD = (
+    r"(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+    r"twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)"
+)
+_DURATION = (
+    rf"(?<![\w.])(?:[+-]?\d+(?:\.\d+)?|{_NUMBER_WORD}(?:[\s-]+{_NUMBER_WORD})*)"
+    r"(?:\s+|-)(?:days?|weeks?|months?)\b"
+)
+# Cross a paired subordinate insertion only when the expiration comparison
+# resumes immediately afterwards. A comma introducing retention/logging is
+# still a property boundary. This is detection, not a parse of the insertion.
+_INSERTION = (
+    r",\s*(?:after|before|once|when|while|if)\b[^,.;!?]*,"
+    r"(?=\s*(?:in|within|under|inside|at|on|no|less|fewer|more)\b)"
+)
 # An "or" inside a comparison does not introduce a separate property.
 _BRIDGE = (
-    r"(?:(?![.,;!?]|\b(?:and|but|however|whereas|then)\b|"
-    r"\bor\b(?!\s+(?:before|after|below|above|equal)\b)).){0,100}?"
+    rf"(?:{_INSERTION}|(?![.,;!?]|\b(?:and|but|however|whereas|then)\b|"
+    r"\bor\b(?!\s+(?:before|after|below|above|equal)\b)).)*?"
 )
 _NUMERIC_EXPIRATION = re.compile(
     rf"(?:{_EXPIRATION}{_BRIDGE}{_DURATION}|{_DURATION}{_BRIDGE}{_EXPIRATION})",
