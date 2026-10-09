@@ -567,6 +567,8 @@ def _retry_route_for_validation(validation: ValidationArtifact) -> ForgeRoute:
     if validation.passed:
         return ForgeRoute.TERMINAL_VERIFIED
     signatures = set(validation.failure_signatures or [])
+    if signatures & {"artifact_integrity_violation", "artifact_path_violation"}:
+        return ForgeRoute.TERMINAL_VALIDATION_FAILED
     if "semantic_content_mismatch" in signatures:
         return ForgeRoute.TO_CODER
     planner_signatures = {

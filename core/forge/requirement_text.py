@@ -77,33 +77,71 @@ def explicit_test_coverage_target(requirement: str) -> float | None:
     )
     targets = [
         float(match.group("percent")) / 100 for match in matches
-        if not _coverage_mention_is_negated(text, match.start(), match.end())
+        if not prose_mention_is_negated(text, match.start(), match.end())
     ]
     return max(targets) if targets else None
 
 
-def _coverage_mention_is_negated(text: str, start: int, end: int) -> bool:
-    """Keep rejection of a percentage separate from positive target clauses."""
+def prose_mention_is_negated(text: str, start: int, end: int) -> bool:
+    """Recognize local rejections, not arbitrary natural-language implication.
+
+    Callers mask literal values first. Coordinated feature lists retain their
+    polarity; a new directive or contrasted clause starts a separate scope.
+    Under a positive directive, determiner "no" rejects its object, not later
+    objects joined with "and" or a comma. Predicate-wide rejections still apply
+    to their lists ("do not require A and B", "without A and B").
+    """
     prefix = re.split(r"[.;:!?]|\b(?:but|however|whereas)\b", text[:start], flags=re.IGNORECASE)[-1]
-    resets = list(re.finditer(
-        r"(?:\b(?:and|then)|,)\s+(?:requires?|includes?|provides?|uses?|enforces?|demands?)\b",
-        prefix, re.IGNORECASE,
-    ))
-    if resets:
-        prefix = prefix[resets[-1].end():]
-    prefix = re.sub(r"\bnot\s+only\b", "", prefix, flags=re.IGNORECASE)
-    negated_prefix = re.search(
+    directive_pattern = (
+        r"\b(?:requires?|includes?|provides?|uses?|enforces?|demands?|"
+        r"adds?|enables?|implements?|exposes?|offers?|runs?)\b"
+    )
+    negative_prefix_pattern = (
         r"\b(?:no|without|neither|nor|never|forbid(?:s|den)?|"
         r"(?:do|does|must|is|are)n['’]t|"
-        r"(?:must|shall|may|does|do|is|are)\s+not)\b",
-        prefix, re.IGNORECASE,
+        r"(?:must|shall|may|does|do|is|are)\s+not)\b"
     )
+    boundaries = list(re.finditer(r"(?:\b(?:and|then)|,)\s+", prefix, re.IGNORECASE))
+    for boundary in reversed(boundaries):
+        local_prefix = prefix[boundary.end():]
+        # A subject may stand between the coordinator and the new predicate:
+        # "and authentication must use JWT", or "integration tests are required".
+        # Keep the local prefix (including any local negation), not just the text
+        # after the verb. A bare coordinated noun list still inherits polarity.
+        new_predicate = re.search(directive_pattern, local_prefix, re.IGNORECASE)
+        required_suffix = re.match(
+            r"\s+(?:(?:authentication|auth)\s+)?(?:is|are)\s+"
+            r"(?:required|needed|mandatory)\b", text[end:], re.IGNORECASE,
+        )
+        if new_predicate or required_suffix:
+            prefix = local_prefix
+            break
+    object_rejection = re.search(rf"{directive_pattern}\s+no\b", prefix, re.IGNORECASE)
+    if object_rejection and not re.search(
+        negative_prefix_pattern, prefix[:object_rejection.start()], re.IGNORECASE,
+    ):
+        object_list = prefix[object_rejection.end():]
+        subsequent_objects = list(re.finditer(
+            r"(?:\band|,)\s+", object_list, re.IGNORECASE,
+        ))
+        # Another determiner "no" remains object-local, but an intervening
+        # "without", "neither" or predicate-wide rejection still owns its list.
+        intervening_rejection = any(
+            match.group().lower() != "no"
+            for match in re.finditer(negative_prefix_pattern, object_list, re.IGNORECASE)
+        )
+        if subsequent_objects and not intervening_rejection:
+            prefix = prefix[object_rejection.end() + subsequent_objects[-1].end():]
+    prefix = re.sub(r"\bnot\s+only\b", "", prefix, flags=re.IGNORECASE)
+    negated_prefix = re.search(negative_prefix_pattern, prefix, re.IGNORECASE)
     negated_suffix = re.match(
-        r"\s+(?:(?:is|are)\s+not\s+|(?:is|are)n['’]t\s+|"
+        r"\s+(?:(?:authentication|auth)\s+)?"
+        r"(?:(?:is|are)\s+not\s+|(?:is|are)n['’]t\s+|"
         r"(?:should|must|shall|may|will|would|can|could|need)\s+not\s+be\s+|"
         r"(?:should|must|would|could)n['’]t\s+be\s+)"
         r"(?:required|needed|mandatory)\b|"
         r"\s+(?:is|are)\s+(?:optional|unnecessary)\b",
         text[end:], re.IGNORECASE,
     )
-    return bool(negated_prefix or negated_suffix)
+    bare_rejection = re.search(r"\bnot\s+(?:an?\s+)?$", prefix, re.IGNORECASE)
+    return bool(negated_prefix or bare_rejection or negated_suffix)

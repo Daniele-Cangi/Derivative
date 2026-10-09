@@ -19,6 +19,7 @@ from core.forge.requirement_text import (
     explicit_test_coverage_target,
     mask_quoted_literals,
     normalize_requirement_text,
+    prose_mention_is_negated,
     requirement_clause_key,
     split_requirement_text,
 )
@@ -97,7 +98,12 @@ class RequirementCompiler:
         if expiration_horizon is not None:
             obligation_contract.context["expiration_horizon"] = expiration_horizon
             if expiration_horizon["threshold_days"] is None:
-                ambiguity_flags.append("Materially unspecified expiration horizon: conflicting numeric thresholds.")
+                reason = (
+                    "unsupported numeric wording"
+                    if expiration_horizon.get("unresolved_reason") == "unsupported_numeric_expiration_wording"
+                    else "conflicting numeric thresholds"
+                )
+                ambiguity_flags.append(f"Materially unspecified expiration horizon: {reason}.")
         quality_contract = self._extract_quality_contract(normalized)
 
         return BuildSpec(
@@ -127,7 +133,15 @@ class RequirementCompiler:
         )
 
     def _extract_quality_contract(self, requirement: str) -> QualityContract:
-        lowered = requirement.lower()
+        lowered = mask_quoted_literals(requirement).lower()
+
+        def positive(pattern: str) -> bool:
+            return any(
+                not prose_mention_is_negated(lowered, match.start(), match.end())
+                for match in re.finditer(pattern, lowered)
+            )
+
+        production = positive(r"\b(?:production(?:-grade)?|prod-ready)\b")
         quality = QualityContract(
             auth_level="plaintext",
             secrets_in_plaintext=True,
@@ -142,51 +156,47 @@ class RequirementCompiler:
         )
 
         # Auth quality
-        if any(token in lowered for token in ("jwt", "bearer token", "oauth")):
+        if positive(r"\b(?:jwts?|bearer\s+tokens?|oauth2?)\b"):
             quality.auth_level = "jwt"
             quality.secrets_in_plaintext = False
-        elif any(token in lowered for token in ("hashed", "bcrypt", "argon2")):
+        elif positive(r"\b(?:hashed|bcrypt|argon2)\b"):
             quality.auth_level = "hashed"
             quality.secrets_in_plaintext = False
-        elif any(token in lowered for token in ("api key", "api-key", "authentication")):
+        elif positive(r"\b(?:api[- ]keys?|authentication)\b"):
             quality.auth_level = "plaintext"
             quality.secrets_in_plaintext = True
-            if "secure" in lowered:
+            if positive(
+                r"\bsecure\s+(?:api[- ]keys?|authentication)\b|"
+                r"\b(?:api[- ]keys?|authentication)\s+(?:must\s+be\s+)?secure\b"
+            ):
                 quality.auth_level = "hashed"
                 quality.secrets_in_plaintext = False
 
         self._extract_rate_limit_quality(requirement, quality)
 
         # Persistence quality
-        if any(token in lowered for token in ("migrations", "versioned schema", "alembic")):
+        if positive(r"\b(?:migrations|versioned\s+schemas?|alembic)\b"):
             quality.schema_versioned = True
-        if any(token in lowered for token in ("audit log", "audit trail", "event log", "full audit trail")):
+        if positive(r"\b(?:audit\s+(?:logs?|trails?)|event\s+logs?)\b"):
             quality.audit_trail = True
-        if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
+        if production:
             quality.schema_versioned = True
             quality.audit_trail = True
 
         # Observability quality
-        if any(
-            token in lowered
-            for token in (
-                "health check",
-                "monitoring",
-                "observability",
-                "structured json logging",
-                "structured logging",
-                "structured error logging",
-            )
+        if positive(
+            r"\b(?:health\s+checks?|monitoring|observability|"
+            r"structured\s+(?:(?:json|error)\s+)?logging)\b"
         ):
             quality.health_endpoint = True
             quality.structured_logging = True
-        if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
+        if production:
             quality.health_endpoint = True
 
         # Test quality
-        if any(token in lowered for token in ("integration tests", "end-to-end", "e2e")):
+        if positive(r"\b(?:integration\s+tests|end-to-end|e2e)\b"):
             quality.integration_tests = True
-        if any(token in lowered for token in ("production", "prod-ready", "production-grade")):
+        if production:
             quality.test_coverage_target = 0.8
             quality.integration_tests = True
         explicit_coverage = explicit_test_coverage_target(requirement)
@@ -194,9 +204,9 @@ class RequirementCompiler:
             quality.test_coverage_target = explicit_coverage
 
         computed_level = quality.compute_level()
-        if any(token in lowered for token in ("microservice", "service", "rest", "api")) and computed_level < 5:
+        if positive(r"\b(?:microservices?|services?|rest|apis?)\b") and computed_level < 5:
             computed_level = 5
-        if any(token in lowered for token in ("production", "prod-ready", "production-grade")) and computed_level > 9:
+        if production and computed_level > 9:
             computed_level = 9
         quality.overall_level = computed_level
         return quality

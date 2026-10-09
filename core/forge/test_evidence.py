@@ -1,4 +1,5 @@
 import ast
+import copy
 from typing import Iterable, Mapping
 
 
@@ -141,9 +142,25 @@ def analyze_test_functions(
                 "function": function.name,
                 "source": ast.get_source_segment(content, function)
                 or ast.unparse(function),
+                "evidence_source": _executable_evidence_source(function),
             }
         )
     return evidence
+
+
+def _executable_evidence_source(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    """Exclude documentation from term matching, retaining executable literals.
+
+    Analyze the original tree for assertion locations; this separate copy is
+    only the text supplied to requirement recognizers.
+    """
+    class RemoveDocumentation(ast.NodeTransformer):
+        def visit_Expr(self, node: ast.Expr) -> ast.AST:
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                return ast.copy_location(ast.Pass(), node)
+            return self.generic_visit(node)
+
+    return ast.unparse(RemoveDocumentation().visit(copy.deepcopy(function)))
 
 
 def source_module_names(paths: Iterable[str]) -> set[str]:
@@ -180,7 +197,8 @@ def _test_function_semantic_state(
         target_names,
         target_module_aliases,
     )
-    calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
+    scope_nodes = list(_function_scope_nodes(function))
+    calls = [node for node in scope_nodes if isinstance(node, ast.Call)]
     target_calls = [
         call
         for call in calls
@@ -188,7 +206,7 @@ def _test_function_semantic_state(
     ]
     if not target_contract_declared:
         target_calls = calls
-    has_assertion = any(isinstance(node, ast.Assert) for node in ast.walk(function))
+    has_assertion = any(isinstance(node, ast.Assert) for node in scope_nodes)
     target_invoked = bool(target_calls)
     if not target_invoked:
         static_assertions = _static_target_assertion_records(
@@ -222,24 +240,20 @@ def _test_function_semantic_state(
             "has_assertion": True,
             "assertions": exception_assertions,
         }
-    observable_names = _observable_names(
-        function,
-        target_calls,
-        target_names,
-        target_module_aliases,
-    )
     observable_assertions = [
         {
             "line": getattr(node, "lineno", 0),
             "kind": "assert",
             "expression": ast.unparse(node.test),
         }
-        for node in ast.walk(function)
+        for node in scope_nodes
         if isinstance(node, ast.Assert) and _is_semantic_assertion(node)
         and _assertion_observes_target(
             node,
             target_calls,
-            observable_names,
+            _observable_names(
+                function, target_calls, node,
+            ),
             target_names,
             target_module_aliases,
         )
@@ -507,52 +521,84 @@ def _call_matches_target(
 def _observable_names(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
     target_calls: list[ast.Call],
-    target_names: set[str],
-    target_module_aliases: set[str],
+    assertion: ast.Assert,
 ) -> set[str]:
+    # Evidence belongs to the binding visible at this assertion, not to a name
+    # that happened to hold a target result earlier (or will hold one later).
+    target_calls = [
+        call for call in target_calls
+        if _source_position(call) < _source_position(assertion)
+    ]
+    if not target_calls:
+        return set()
     target_call_ids = {id(call) for call in target_calls}
-    observable = {
-        name
-        for call in target_calls
-        for expression in [*call.args, *(keyword.value for keyword in call.keywords)]
-        for name in _loaded_names(expression)
-    }
-    first_target_line = min(getattr(call, "lineno", 0) for call in target_calls)
-    assignments = sorted(
-        (
-            (node, value, targets)
-            for node in ast.walk(function)
-            for value, targets in [_assignment_value_and_targets(node)]
-            if value is not None and targets
-        ),
-        key=lambda item: getattr(item[0], "lineno", 0),
+    observable: set[str] = set()
+    # A call evaluates its arguments/RHS before assignment finishes. End offsets
+    # also preserve ordering for multiple statements on the same source line.
+    events = [(call, 0, None, set()) for call in target_calls]
+    events.extend(
+        (node, 1, value, targets)
+        for node in _function_scope_nodes(function)
+        for value, targets in [_assignment_value_and_targets(node)]
+        if value is not None and targets
+        and _source_position(node, end=True) < _source_position(assertion)
     )
-    changed = True
-    while changed:
-        changed = False
-        for node, value, targets in assignments:
-            derives_from_target = any(
-                id(call) in target_call_ids
-                or _call_matches_target(call, target_names, target_module_aliases)
-                for call in ast.walk(value)
-                if isinstance(call, ast.Call)
+    events.sort(key=lambda item: (_source_position(item[0], end=True), item[1]))
+    target_seen = False
+    for node, kind, value, targets in events:
+        if kind == 0:
+            target_seen = True
+            observable.update(
+                name for expression in [
+                    *node.args, *(keyword.value for keyword in node.keywords),
+                ]
+                for name in _loaded_names(expression)
             )
-            derives_from_observable = bool(_loaded_names(value) & observable)
-            observes_side_effect = (
-                getattr(node, "lineno", 0) >= first_target_line
-                and _contains_observer_call(value)
-            )
-            if not (
-                derives_from_target
-                or derives_from_observable
-                or observes_side_effect
-            ):
-                continue
-            new_names = targets - observable
-            if new_names:
-                observable.update(new_names)
-                changed = True
+            continue
+        derives_from_target = any(
+            id(call) in target_call_ids
+            for call in ast.walk(value)
+            if isinstance(call, ast.Call)
+        )
+        derives_from_observable = bool(_loaded_names(value) & observable)
+        observes_side_effect = target_seen and _contains_observer_call(value)
+        # Rebinding one name does not erase an alias that already captured its
+        # prior value. Attribute/subscript writes are not whole-name rebinding.
+        observable.difference_update(_rebound_names(node))
+        if derives_from_target or derives_from_observable or observes_side_effect:
+            observable.update(targets)
     return observable
+
+
+def _function_scope_nodes(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> Iterable[ast.AST]:
+    """Do not mix deferred or nested namespaces into the active test's bindings."""
+    pending = list(reversed(function.body))
+    while pending:
+        node = pending.pop()
+        yield node
+        if isinstance(node, (
+            ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+            ast.Lambda, ast.GeneratorExp,
+        )):
+            continue
+        pending.extend(reversed(list(ast.iter_child_nodes(node))))
+
+
+def _source_position(node: ast.AST, *, end: bool = False) -> tuple[int, int]:
+    return (
+        getattr(node, "end_lineno" if end else "lineno", 0),
+        getattr(node, "end_col_offset" if end else "col_offset", 0),
+    )
+
+
+def _rebound_names(node: ast.AST) -> set[str]:
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    return {
+        child.id for target in targets for child in ast.walk(target)
+        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+    }
 
 
 def _assignment_value_and_targets(
@@ -629,7 +675,7 @@ def _target_exception_assertion_records(
     target_contract_declared: bool,
 ) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
-    for node in ast.walk(function):
+    for node in _function_scope_nodes(function):
         if isinstance(node, (ast.With, ast.AsyncWith)) and _is_pytest_raises_context(node):
             if _statements_contain_target_call(
                 node.body,

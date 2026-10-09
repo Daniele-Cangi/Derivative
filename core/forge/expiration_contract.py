@@ -3,28 +3,74 @@ import re
 from typing import Any, Iterable
 
 from core.forge.contracts import BuildSpec, RequirementAtom
-from core.forge.requirement_text import mask_quoted_literals
+from core.forge.requirement_text import mask_quoted_literals, prose_mention_is_negated
+
+
+# Detection is deliberately broader than extraction: a nearby numeric duration
+# and expiration predicate are enough to require interpretation, not to prove a
+# value or comparison. Keep unsupported policies on the existing unresolved path.
+_EXPIRATION = r"\b(?:expires?|expired|expiring|expiration)\b"
+_DURATION = r"(?<![\w.])[+-]?\d+(?:\.\d+)?(?:\s+|-)days?\b"
+# An "or" inside a comparison does not introduce a separate property.
+_BRIDGE = (
+    r"(?:(?![.,;!?]|\b(?:and|but|however|whereas|then)\b|"
+    r"\bor\b(?!\s+(?:before|after|below|above|equal)\b)).){0,100}?"
+)
+_NUMERIC_EXPIRATION = re.compile(
+    rf"(?:{_EXPIRATION}{_BRIDGE}{_DURATION}|{_DURATION}{_BRIDGE}{_EXPIRATION})",
+    re.IGNORECASE,
+)
+
+
+def _has_numeric_expiration_policy(text: str) -> bool:
+    # Negative-looking comparatives are not rejected obligations.
+    # Mask it only for polarity analysis, preserving recognizer offsets.
+    polarity_text = re.sub(
+        r"\b(?:no\s+(?:more|less|fewer)\s+than|(?:do(?:es)?|must|shall|may)\s+not\s+exceed)\b",
+        lambda match: " " * len(match.group()), text, flags=re.IGNORECASE,
+    )
+    return any(
+        not prose_mention_is_negated(polarity_text, match.start(), match.end())
+        and not prose_mention_is_negated(polarity_text, match.end(), match.end())
+        for match in _NUMERIC_EXPIRATION.finditer(text)
+    )
 
 
 def compile_expiration_horizon(atoms: Iterable[RequirementAtom]) -> dict[str, Any] | None:
     matches = []
+    unresolved_ids = []
+    requirement_ids = []
     for atom in atoms:
+        if atom.strength not in {"hard", "universal"}:
+            continue
+        text = mask_quoted_literals(atom.text)
         match = re.match(
             r"^flags?\s+(?:(?:a|the)\s+)?contracts?\s+"
             r"(?:expiring|(?:that|which)\s+expires?)\s+in\s+less\s+than\s+(-?\d+)\s+days?\b",
-            mask_quoted_literals(atom.text), re.IGNORECASE,
+            text, re.IGNORECASE,
         )
-        if match and atom.strength in {"hard", "universal"}:
+        if match:
             matches.append((int(match.group(1)), atom.requirement_id))
-    if not matches:
+            requirement_ids.append(atom.requirement_id)
+        # The strict extractor recognizes a prefix, not necessarily the whole
+        # atom. A second policy in its remainder still needs interpretation.
+        remainder = text[match.end():] if match else text
+        if _has_numeric_expiration_policy(remainder):
+            unresolved_ids.append(atom.requirement_id)
+            if not match:
+                requirement_ids.append(atom.requirement_id)
+    if not matches and not unresolved_ids:
         return None
     values = {value for value, _ in matches}
-    return {
+    contract = {
         "observable_field": "is_expiring_within_horizon",
-        "comparison_relation": "less_than",
-        "threshold_days": next(iter(values)) if len(values) == 1 else None,
-        "requirement_ids": [requirement_id for _, requirement_id in matches],
+        "comparison_relation": None if unresolved_ids else "less_than",
+        "threshold_days": next(iter(values)) if len(values) == 1 and not unresolved_ids else None,
+        "requirement_ids": requirement_ids,
     }
+    if unresolved_ids:
+        contract["unresolved_reason"] = "unsupported_numeric_expiration_wording"
+    return contract
 
 
 def expiration_horizon_contract(spec: BuildSpec) -> dict[str, Any] | None:

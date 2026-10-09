@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from core.forge.artifact_files import ArtifactPathError, artifact_file_targets
 from core.forge.contracts import (
     BuildSpec,
     CodeArtifact,
@@ -78,6 +79,13 @@ class PackagingStage:
 
         base_package_id = self._package_id(build_spec.build_id, plan.plan_id, code_artifact.artifact_id)
         package_id, package_root = self._resolve_package_root(base_package_id)
+        try:
+            artifact_file_targets(code_artifact.files, package_root, reserved_names=(
+                "forge_package_manifest.json", "validation_evidence.json",
+                "code_artifact_manifest_dump.json",
+            ))
+        except ArtifactPathError as exc:
+            raise PackagingRefusedError(str(exc)) from exc
         code_artifact_digest = self._artifact_content_digest(code_artifact)
         artifact_manifest_bytes = canonical_json_bytes(
             self._to_jsonable(code_artifact.artifact_manifest)
@@ -207,8 +215,9 @@ class PackagingStage:
 
     def _write_code_artifact_files(self, package_root: Path, code_artifact: CodeArtifact) -> List[str]:
         packaged_files: List[str] = []
+        targets = artifact_file_targets(code_artifact.files, package_root)
         for generated_file in sorted(code_artifact.files, key=lambda item: item.path):
-            target = package_root / generated_file.path
+            target = targets[generated_file.path]
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(generated_file.content, encoding="utf-8")
             packaged_files.append(generated_file.path)

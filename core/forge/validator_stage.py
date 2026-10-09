@@ -4,6 +4,12 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List
 
+from core.forge.artifact_files import (
+    ArtifactPathError,
+    artifact_file_changes,
+    artifact_file_hashes,
+    artifact_file_targets,
+)
 from core.forge.contracts import (
     BuildSpec,
     CodeArtifact,
@@ -75,31 +81,51 @@ class ValidatorStage:
             ignore_cleanup_errors=True,
         ) as tmp_dir:
             workspace = Path(tmp_dir)
-            materialized = self._materialize_workspace(code_artifact, workspace)
+            try:
+                materialized = self._materialize_workspace(code_artifact, workspace)
+            except ArtifactPathError as exc:
+                return self._validation_refusal(
+                    contract_seal, "artifact_path_violation", str(exc),
+                    validated_artifact_seal,
+                )
             evidence["workspace"] = str(workspace)
             evidence["materialized_files"] = sorted(str(path) for path in materialized.values())
-
-            layer1 = self.runtime_layer.validate(
-                code_artifact,
-                plan,
-                build_spec,
-                materialized,
-                workspace,
-            )
-            layer2 = self.obligation_layer.validate(
-                code_artifact,
-                plan,
-                build_spec,
-                materialized,
-                workspace,
-            )
-            layer3 = self.adversarial_layer.validate(
-                code_artifact,
-                plan,
-                build_spec,
-                materialized,
-                workspace,
-            )
+            expected_hashes = artifact_file_hashes(materialized)
+            evidence["workspace_integrity"] = {
+                "digest_mode": "materialized_bytes_sha256",
+                "initial_file_hashes": expected_hashes,
+                "checkpoints": [],
+            }
+            layers = []
+            integrity_failed = False
+            for layer, layer_name in (
+                (self.runtime_layer, "layer1_syntax_import_run"),
+                (self.obligation_layer, "layer2_obligations_tests_acceptance"),
+                (self.adversarial_layer, "layer3_adversarial"),
+            ):
+                if integrity_failed:
+                    result = ValidationLayerResult(
+                        layer_name=layer_name, passed=False,
+                        evidence={"executed": False, "skip_reason": "artifact_integrity_violation"},
+                        metrics={"duration_ms": 0},
+                    )
+                else:
+                    result = layer.validate(code_artifact, plan, build_spec, materialized, workspace)
+                    changes = artifact_file_changes(materialized, expected_hashes, workspace)
+                    if artifact_validation_seal(code_artifact) != validated_artifact_seal:
+                        changes.append({"path": "<artifact>", "reason": "artifact_metadata_changed"})
+                    evidence["workspace_integrity"]["checkpoints"].append({
+                        "after_layer": layer_name, "passed": not changes, "changes": changes,
+                    })
+                    if changes:
+                        integrity_failed = True
+                        result.passed = False
+                        result.failures.append("Artifact files or identity changed during validation.")
+                        result.evidence.setdefault("failure_signatures", []).append(
+                            "artifact_integrity_violation"
+                        )
+                layers.append(result)
+            layer1, layer2, layer3 = layers
 
             for layer in (layer1, layer2, layer3):
                 failures.extend(layer.failures)
@@ -151,8 +177,15 @@ class ValidatorStage:
         self,
         contract_seal: Dict[str, object],
     ) -> ValidationArtifact:
-        signature = "sandbox_policy_violation"
-        failure = "Validation requires an isolated execution backend; local execution was refused."
+        return self._validation_refusal(
+            contract_seal, "sandbox_policy_violation",
+            "Validation requires an isolated execution backend; local execution was refused.",
+        )
+
+    def _validation_refusal(
+        self, contract_seal: Dict[str, object], signature: str, failure: str,
+        validated_artifact_seal: Dict[str, object] | None = None,
+    ) -> ValidationArtifact:
         policy_evidence = self.executor.policy.evidence()
         layers = [
             ValidationLayerResult(
@@ -197,6 +230,8 @@ class ValidatorStage:
             failure_category=FailureCategory.VALIDATION,
             next_route=None,
         )
+        if validated_artifact_seal is not None:
+            validation.evidence["validated_artifact_seal"] = validated_artifact_seal
         validation.integrity_seal = validation_artifact_seal(validation)
         return validation
 
@@ -205,9 +240,9 @@ class ValidatorStage:
         code_artifact: CodeArtifact,
         workspace: Path,
     ) -> Dict[str, Path]:
-        materialized: Dict[str, Path] = {}
+        materialized = artifact_file_targets(code_artifact.files, workspace)
         for generated_file in code_artifact.files:
-            target = workspace / generated_file.path
+            target = materialized[generated_file.path]
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(generated_file.content, encoding="utf-8")
             materialized[generated_file.path] = target
@@ -218,6 +253,8 @@ class ValidatorStage:
 
     def _classify_failure_category(self, signatures: List[str]) -> FailureCategory | None:
         signature_set = set(signatures)
+        if {"artifact_integrity_violation", "artifact_path_violation"} & signature_set:
+            return FailureCategory.VALIDATION
         if not signature_set:
             return None
         if "semantic_content_mismatch" in signature_set:

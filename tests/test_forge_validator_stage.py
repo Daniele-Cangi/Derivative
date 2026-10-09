@@ -740,6 +740,30 @@ def test_disconnected_assertion_does_not_count_as_acceptance_coverage(forge_pipe
     ]
 
 
+def test_rebound_return_value_does_not_certify_requirement_coverage(forge_pipeline):
+    artifact = copy.deepcopy(forge_pipeline["artifact"])
+    plan = forge_pipeline["plan"]
+    spec = forge_pipeline["build_spec"]
+    generated = _find_file(artifact, "tests/test_extracts_expiration_dates.py")
+    assert generated is not None
+    call = "parsed = parse_expiration_date('2026-01-15')"
+    assert call in generated.content
+    generated.content = generated.content.replace(
+        call, call + "\n    from datetime import date\n    parsed = date(2026, 1, 15)",
+    )
+    source = {item.path: item.content for item in forge_pipeline["artifact"].files if item.path.startswith("src/")}
+    assert source == {item.path: item.content for item in artifact.files if item.path.startswith("src/")}
+
+    result = forge_pipeline["validator"].validate(artifact, plan, spec)
+
+    assert result.passed is False
+    assert "disconnected_assertion" in result.failure_signatures
+    assert "missing_requirement_assertion_evidence" in result.failure_signatures
+    atom = next(item for item in spec.requirement_atoms if "extracts expiration dates" in item.text.lower())
+    assert result.layer2_result.evidence["requirement_semantic_checks"]["requirements"][atom.requirement_id]["assertion_evidence"]["passed"] is False
+    assert result.layer3_result.evidence["semantic_requirement_test_coverage"]["requirements"][atom.requirement_id]["assertion_evidence"]["passed"] is False
+
+
 def test_requirement_term_must_share_function_with_causal_assertion(forge_pipeline):
     validator: ValidatorStage = forge_pipeline["validator"]
     artifact: CodeArtifact = copy.deepcopy(forge_pipeline["artifact"])
