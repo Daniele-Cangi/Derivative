@@ -77,20 +77,37 @@ def explicit_test_coverage_target(requirement: str) -> float | None:
     )
     targets = [
         float(match.group("percent")) / 100 for match in matches
-        if not _coverage_mention_is_negated(text, match.start(), match.end())
+        if not prose_mention_is_negated(text, match.start(), match.end())
     ]
     return max(targets) if targets else None
 
 
-def _coverage_mention_is_negated(text: str, start: int, end: int) -> bool:
-    """Keep rejection of a percentage separate from positive target clauses."""
+def prose_mention_is_negated(text: str, start: int, end: int) -> bool:
+    """Recognize local rejections, not arbitrary natural-language implication.
+
+    Callers mask literal values first. Coordinated feature lists retain their
+    polarity; a new directive or contrasted clause starts a separate scope.
+    """
     prefix = re.split(r"[.;:!?]|\b(?:but|however|whereas)\b", text[:start], flags=re.IGNORECASE)[-1]
-    resets = list(re.finditer(
-        r"(?:\b(?:and|then)|,)\s+(?:requires?|includes?|provides?|uses?|enforces?|demands?)\b",
-        prefix, re.IGNORECASE,
-    ))
-    if resets:
-        prefix = prefix[resets[-1].end():]
+    boundaries = list(re.finditer(r"(?:\b(?:and|then)|,)\s+", prefix, re.IGNORECASE))
+    for boundary in reversed(boundaries):
+        local_prefix = prefix[boundary.end():]
+        # A subject may stand between the coordinator and the new predicate:
+        # "and authentication must use JWT", or "integration tests are required".
+        # Keep the local prefix (including any local negation), not just the text
+        # after the verb. A bare coordinated noun list still inherits polarity.
+        new_predicate = re.search(
+            r"\b(?:requires?|includes?|provides?|uses?|enforces?|demands?|"
+            r"adds?|enables?|implements?|exposes?|offers?|runs?)\b",
+            local_prefix, re.IGNORECASE,
+        )
+        required_suffix = re.match(
+            r"\s+(?:(?:authentication|auth)\s+)?(?:is|are)\s+"
+            r"(?:required|needed|mandatory)\b", text[end:], re.IGNORECASE,
+        )
+        if new_predicate or required_suffix:
+            prefix = local_prefix
+            break
     prefix = re.sub(r"\bnot\s+only\b", "", prefix, flags=re.IGNORECASE)
     negated_prefix = re.search(
         r"\b(?:no|without|neither|nor|never|forbid(?:s|den)?|"
@@ -99,11 +116,13 @@ def _coverage_mention_is_negated(text: str, start: int, end: int) -> bool:
         prefix, re.IGNORECASE,
     )
     negated_suffix = re.match(
-        r"\s+(?:(?:is|are)\s+not\s+|(?:is|are)n['’]t\s+|"
+        r"\s+(?:(?:authentication|auth)\s+)?"
+        r"(?:(?:is|are)\s+not\s+|(?:is|are)n['’]t\s+|"
         r"(?:should|must|shall|may|will|would|can|could|need)\s+not\s+be\s+|"
         r"(?:should|must|would|could)n['’]t\s+be\s+)"
         r"(?:required|needed|mandatory)\b|"
         r"\s+(?:is|are)\s+(?:optional|unnecessary)\b",
         text[end:], re.IGNORECASE,
     )
-    return bool(negated_prefix or negated_suffix)
+    bare_rejection = re.search(r"\bnot\s+(?:an?\s+)?$", prefix, re.IGNORECASE)
+    return bool(negated_prefix or bare_rejection or negated_suffix)
