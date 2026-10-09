@@ -26,7 +26,7 @@ def _has_numeric_expiration_policy(text: str) -> bool:
     # Negative-looking comparatives are not rejected obligations.
     # Mask it only for polarity analysis, preserving recognizer offsets.
     polarity_text = re.sub(
-        r"\b(?:no\s+(?:more|less|fewer)\s+than|does\s+not\s+exceed)\b",
+        r"\b(?:no\s+(?:more|less|fewer)\s+than|(?:do(?:es)?|must|shall|may)\s+not\s+exceed)\b",
         lambda match: " " * len(match.group()), text, flags=re.IGNORECASE,
     )
     return any(
@@ -52,9 +52,13 @@ def compile_expiration_horizon(atoms: Iterable[RequirementAtom]) -> dict[str, An
         if match:
             matches.append((int(match.group(1)), atom.requirement_id))
             requirement_ids.append(atom.requirement_id)
-        elif _has_numeric_expiration_policy(text):
+        # The strict extractor recognizes a prefix, not necessarily the whole
+        # atom. A second policy in its remainder still needs interpretation.
+        remainder = text[match.end():] if match else text
+        if _has_numeric_expiration_policy(remainder):
             unresolved_ids.append(atom.requirement_id)
-            requirement_ids.append(atom.requirement_id)
+            if not match:
+                requirement_ids.append(atom.requirement_id)
     if not matches and not unresolved_ids:
         return None
     values = {value for value, _ in matches}

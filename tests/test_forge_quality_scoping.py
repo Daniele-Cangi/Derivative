@@ -183,3 +183,52 @@ def test_positive_numeric_coverage_remains_fail_closed(clause):
     failures, evidence = QualityContractChecker().check({}, artifact, spec)
     assert failures
     assert evidence["checks"]["explicit_coverage_target_evidenced"] is False
+
+
+@pytest.mark.parametrize("clause", [
+    "Require no plaintext storage and JWT authentication.",
+    "Include no plaintext storage and JWT authentication.",
+    "Require no audit trail and JWT authentication.",
+    "Require no plaintext storage, JWT authentication and integration tests.",
+    "Do not mutate input and require no plaintext storage and JWT authentication.",
+    "Require no plaintext storage, without audit logs and require JWT authentication.",
+])
+def test_object_local_no_does_not_reject_a_positive_coordinated_feature(clause):
+    spec = RequirementCompiler().compile("Build a Python CLI. " + clause)
+    assert spec.quality_contract.auth_level == "jwt"
+    assert spec.quality_contract.secrets_in_plaintext is False
+    artifact = CodeArtifact(
+        artifact_id="mixed-polarity", plan_id="mixed-polarity",
+        artifact_manifest={"quality_contract": asdict(spec.quality_contract)},
+    )
+    failures, _ = QualityContractChecker().check({}, artifact, spec)
+    assert failures  # Recognized JWT still needs implementation evidence.
+
+
+@pytest.mark.parametrize("clause", [
+    "Do not require audit logs and JWT authentication.",
+    "Require no audit logs and no JWT authentication.",
+    "Require neither audit logs nor JWT authentication.",
+    "Require no audit logs or JWT authentication.",
+    "Without audit logs and JWT authentication.",
+    "Do not require no audit logs and JWT authentication.",
+    'Require no audit logs and print "JWT authentication".',
+    "Require no plaintext storage, without audit logs and JWT authentication.",
+    "Require no plaintext storage and without audit logs and JWT authentication.",
+])
+def test_mixed_polarity_fix_keeps_list_wide_and_local_rejections(clause):
+    quality = RequirementCompiler().compile("Build a Python CLI. " + clause).quality_contract
+    assert quality.auth_level == "plaintext"
+    assert quality.audit_trail is False
+
+
+@pytest.mark.parametrize("clause", [
+    "Require no audit trail and integration tests.",
+    "Require no audit trail, migrations and integration tests.",
+    "Require no JWT authentication and integration tests.",
+])
+def test_object_local_rejection_remains_local_across_quality_groups(clause):
+    quality = RequirementCompiler().compile("Build a Python CLI. " + clause).quality_contract
+    assert quality.integration_tests is True
+    assert quality.audit_trail is False
+    assert quality.auth_level == "plaintext"

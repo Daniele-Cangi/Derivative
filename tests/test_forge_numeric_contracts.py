@@ -189,6 +189,11 @@ UNSUPPORTED_EXPIRATION_CLAUSES = [
     "flags contracts whose expiration does not exceed 30 days",
     "flags contracts expiring on or before 30 days from now",
     "flags contracts expiring in less than or equal to 30 days",
+    "flags contracts expiring in less than 30 days and reports contracts expiring within 90 days",
+    "flags contracts whose expiration must not exceed 30 days",
+    "flags contracts whose expiration shall not exceed 30 days",
+    "flags contracts whose expiration may not exceed 30 days",
+    "flags contracts whose expiration dates do not exceed 30 days",
 ]
 
 
@@ -207,7 +212,7 @@ def test_uninterpreted_numeric_expiration_is_unresolved_not_defaulted(clause):
     assert behavioral_generation_contracts(plan)["numeric_constraints"] == [contract]
 
 
-@pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES[:4])
+@pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES[:4] + UNSUPPORTED_EXPIRATION_CLAUSES[17:20])
 @pytest.mark.parametrize("backend", [
     "local",
     pytest.param("docker", marks=pytest.mark.skipif(
@@ -288,4 +293,42 @@ def test_no_numeric_expiration_obligation_retains_legacy_default():
 ])
 def test_uninterpreted_expiration_detection_remains_scoped_to_csv_cli(requirement):
     spec = RequirementCompiler().compile(requirement)
+    assert "expiration_horizon" not in spec.obligation_contract.context
+
+
+@pytest.mark.parametrize("tail", [
+    "and reports contracts expiring within 90 days",
+    "and reports contracts expiring within 30 days",
+    "but reports contracts expiring within 90 days",
+])
+def test_recognized_prefix_does_not_hide_a_second_policy_in_the_same_atom(tail):
+    spec, _ = _numeric_plan(30, expiration_clause="flags contracts expiring in less than 30 days " + tail)
+    numeric_atoms = [atom for atom in spec.requirement_atoms if "30 days" in atom.text]
+    assert len(numeric_atoms) == 1
+    assert tail in numeric_atoms[0].text
+    contract = spec.obligation_contract.context["expiration_horizon"]
+    assert contract["threshold_days"] is None
+    assert contract["comparison_relation"] is None
+    assert contract["requirement_ids"] == [numeric_atoms[0].requirement_id]
+
+
+@pytest.mark.parametrize("tail", [
+    'and prints "contracts expiring within 90 days"',
+    "and retains logs for 90 days",
+    "and does not report contracts expiring within 90 days",
+])
+def test_recognized_prefix_does_not_borrow_unrelated_literal_or_rejected_policies(tail):
+    spec, _ = _numeric_plan(30, expiration_clause="flags contracts expiring in less than 30 days " + tail)
+    contract = spec.obligation_contract.context["expiration_horizon"]
+    assert contract["threshold_days"] == 30
+    assert contract["comparison_relation"] == "less_than"
+    assert "unresolved_reason" not in contract
+
+
+@pytest.mark.parametrize("modal", ["must", "shall", "may", "does"])
+def test_outer_rejection_is_not_masked_with_a_prohibitive_comparison(modal):
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI that reads CSV and writes a summary CSV. "
+        f"Do not flag contracts whose expiration {modal} not exceed 30 days."
+    )
     assert "expiration_horizon" not in spec.obligation_contract.context
