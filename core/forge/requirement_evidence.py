@@ -33,7 +33,7 @@ def requirement_assertion_evidence(
             ):
                 if not function["semantic"]:
                     continue
-                function_source = str(function["source"])
+                function_source = str(function["evidence_source"])
                 matched_terms = [
                     term
                     for term in terms
