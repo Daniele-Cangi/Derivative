@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -18,6 +19,7 @@ from core.forge.coder_stage import CoderStage
 from core.forge.contracts import FeasiblePlan
 from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
+from core.forge.packaging_stage import PackagingStage
 from forge import run_forge
 
 
@@ -276,3 +278,11 @@ def test_real_validator_executes_generated_artifact_inside_docker(tmp_path):
     assert validation.evidence["execution_policy"]["isolated"] is True
     assert validation.evidence["executed_tests"]["backend"] == "docker"
     assert validation.evidence["executed_tests"]["isolation"]["network_mode"] == "none"
+    integrity = validation.evidence["workspace_integrity"]
+    assert len(integrity["checkpoints"]) == 3
+    assert all(check["passed"] for check in integrity["checkpoints"])
+    assert set(integrity["initial_file_hashes"]) == {file.path for file in artifact.files}
+    packaged = PackagingStage(str(tmp_path / "packages")).package(spec, plan, artifact, validation)
+    for file in artifact.files:
+        digest = hashlib.sha256((Path(packaged.package_root) / file.path).read_bytes()).hexdigest()
+        assert digest == integrity["initial_file_hashes"][file.path]
