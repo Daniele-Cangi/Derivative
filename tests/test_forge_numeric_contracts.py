@@ -212,7 +212,38 @@ def test_uninterpreted_numeric_expiration_is_unresolved_not_defaulted(clause):
     assert behavioral_generation_contracts(plan)["numeric_constraints"] == [contract]
 
 
-@pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES[:4] + UNSUPPORTED_EXPIRATION_CLAUSES[17:20])
+RESIDUAL_EXPIRATION_CLAUSES = [
+    "flags contracts expiring, after the reader has normalised the date column, in less than 30 days",
+    "flags contracts expiring after the reader has normalised the date column using the configured locale "
+    "with the documented validation settings for the current input format in less than 30 days",
+    "flags contracts expiring in less than thirty days",
+    "flags contracts expiring in less than 1 month",
+    "flags contracts expiring in less than 2 weeks",
+]
+
+
+@pytest.mark.parametrize("clause", RESIDUAL_EXPIRATION_CLAUSES + [
+    "flags contracts expiring within twenty-one days",
+    "flags contracts expiring within one hundred days",
+    "flags contracts within two weeks of expiration",
+])
+def test_residual_expiration_policy_is_unresolved_with_source_traceability(clause):
+    spec, plan = _numeric_plan(30, expiration_clause=clause)
+    contract = spec.obligation_contract.context.get("expiration_horizon")
+    assert contract is not None
+    assert contract["threshold_days"] is None
+    assert contract["comparison_relation"] is None
+    assert contract["unresolved_reason"] == "unsupported_numeric_expiration_wording"
+    assert contract["requirement_ids"] == [
+        atom.requirement_id for atom in spec.requirement_atoms if clause in atom.text
+    ]
+    assert contract["requirement_ids"]
+    assert expiration_horizon_days(spec) is None
+    assert behavioral_generation_contracts(plan)["numeric_constraints"] == [contract]
+
+
+@pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES[:4] + UNSUPPORTED_EXPIRATION_CLAUSES[17:20]
+                         + RESIDUAL_EXPIRATION_CLAUSES)
 @pytest.mark.parametrize("backend", [
     "local",
     pytest.param("docker", marks=pytest.mark.skipif(
@@ -249,6 +280,8 @@ def test_issue32_uninterpreted_horizon_fails_closed_through_generation_validatio
 @pytest.mark.parametrize("unknown", [
     "Flags contracts expiring within 30 days.",
     "Flags contracts expiring within 90 days.",
+    "Flags contracts expiring within thirty days.",
+    "Flags contracts expiring within two weeks.",
 ])
 def test_supported_bound_cannot_hide_an_uninterpreted_numeric_expiration(unknown):
     spec, _ = _numeric_plan(30, extra=unknown)
@@ -271,6 +304,14 @@ def test_supported_bound_cannot_hide_an_uninterpreted_numeric_expiration(unknown
     "Extract expiration dates and retain logs for 30 days.",
     "Extract expiration dates, retain logs for 30 days.",
     "Expiration dates must not be interpreted as within 30 days.",
+    "Extract expiration dates, retain logs for two weeks.",
+    "Extract expiration dates, after reading the CSV, retain logs for 30 days.",
+    "Extract expiration dates and retain logs for one month.",
+    "Extract expiration dates, after retaining logs for 30 days, write a summary CSV.",
+    'Print the literal "flags contracts expiring within thirty days".',
+    "Should flag contracts expiring within two weeks.",
+    "Do not flag contracts expiring within one month.",
+    "Never flag contracts expiring, after reading the CSV, within thirty days.",
 ])
 def test_unrelated_soft_negated_or_quoted_duration_is_not_an_expiration_bound(extra):
     spec = RequirementCompiler().compile(
@@ -300,6 +341,8 @@ def test_uninterpreted_expiration_detection_remains_scoped_to_csv_cli(requiremen
     "and reports contracts expiring within 90 days",
     "and reports contracts expiring within 30 days",
     "but reports contracts expiring within 90 days",
+    "and reports contracts expiring within thirty days",
+    "and reports contracts expiring within two weeks",
 ])
 def test_recognized_prefix_does_not_hide_a_second_policy_in_the_same_atom(tail):
     spec, _ = _numeric_plan(30, expiration_clause="flags contracts expiring in less than 30 days " + tail)
