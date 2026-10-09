@@ -1,4 +1,5 @@
 import copy
+import os
 
 import pytest
 
@@ -8,6 +9,9 @@ from core.forge.planner_stage import PlannerStage
 from core.forge.requirement_compiler import RequirementCompiler
 from core.forge.validator_stage import ValidatorStage
 from core.forge.repair_support import behavioral_contract_seal, behavioral_generation_contracts
+from core.forge.expiration_contract import expiration_horizon_days
+from core.forge.execution import DockerSandboxExecutor
+from core.forge.packaging_stage import PackagingRefusedError, PackagingStage
 
 
 def _numeric_plan(horizon, extra="", expiration_clause=None):
@@ -165,3 +169,123 @@ def test_order_independent_numeric_probe_still_rejects_missing_or_duplicate_rows
     validation = ValidatorStage().validate(artifact, plan, spec)
     assert not validation.passed
     assert "numeric_contract_mismatch" in validation.failure_signatures
+
+
+UNSUPPORTED_EXPIRATION_CLAUSES = [
+    "flags contracts expiring within 30 days",
+    "flags contracts that expire in under 30 days",
+    "flags contracts whose expiration is fewer than 30 days away",
+    "identifies contracts expiring in less than 30 days",
+    "reports contracts expiring in less than 30 days",
+    "flags any contract expiring in less than 30 days",
+    "flags contracts expiring at most 30 days",
+    "flags contracts expiring no more than 30 days",
+    "flags contracts expiring inside 30 days",
+    "flags contracts expiring 30 days from now",
+    "flags contracts expiring in less than 30.5 days",
+    "sets the expiration horizon to 30 days",
+    "flags contracts within 30 days of expiration",
+    "flags contracts no more than 30 days before expiration",
+    "flags contracts whose expiration does not exceed 30 days",
+    "flags contracts expiring on or before 30 days from now",
+    "flags contracts expiring in less than or equal to 30 days",
+]
+
+
+@pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES)
+def test_uninterpreted_numeric_expiration_is_unresolved_not_defaulted(clause):
+    spec, plan = _numeric_plan(30, expiration_clause=clause)
+    contract = spec.obligation_contract.context.get("expiration_horizon")
+    assert contract is not None
+    assert contract["threshold_days"] is None
+    assert contract["comparison_relation"] is None
+    assert contract["unresolved_reason"] == "unsupported_numeric_expiration_wording"
+    assert contract["requirement_ids"] == [atom.requirement_id for atom in spec.requirement_atoms if "30" in atom.text]
+    assert expiration_horizon_days(spec) is None
+    assert any("Materially unspecified expiration horizon: unsupported numeric wording" in flag
+               for flag in spec.ambiguity_flags)
+    assert behavioral_generation_contracts(plan)["numeric_constraints"] == [contract]
+
+
+@pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES[:4])
+@pytest.mark.parametrize("backend", [
+    "local",
+    pytest.param("docker", marks=pytest.mark.skipif(
+        os.environ.get("FORGE_RUN_DOCKER_TESTS") != "1",
+        reason="real Docker sandbox tests are CI-gated",
+    )),
+])
+def test_issue32_uninterpreted_horizon_fails_closed_through_generation_validation(clause, backend, tmp_path):
+    spec, plan = _numeric_plan(30, expiration_clause=clause)
+    artifact = CoderStage().generate(plan)
+    contents = {generated.path: generated.content for generated in artifact.files}
+    assert "horizon_days: int = None" in contents["src/expiration_rules.py"]
+    assert "default=None" in contents["src/cli.py"]
+    validator = (
+        ValidatorStage(executor=DockerSandboxExecutor(), require_isolation=True)
+        if backend == "docker" else ValidatorStage()
+    )
+    validation = validator.validate(artifact, plan, spec)
+    assert not validation.passed
+    assert "underspecified_requirement" in validation.failure_signatures
+    assert "numeric_contract_unproven" in validation.failure_signatures
+    checks = validation.layer2_result.evidence["numeric_contract_checks"]["contracts"]
+    assert len(checks) == 1
+    assert checks[0]["passed"] is False
+    assert checks[0]["reason"] == "probe_unavailable"
+    assert validation.evidence["executed_tests"]["backend"] == backend
+    if backend == "docker":
+        assert validation.evidence["execution_policy"]["isolated"] is True
+    with pytest.raises(PackagingRefusedError, match="passed ValidationArtifact"):
+        PackagingStage(str(tmp_path / "packages")).package(spec, plan, artifact, validation)
+    assert not (tmp_path / "packages").exists()
+
+
+@pytest.mark.parametrize("unknown", [
+    "Flags contracts expiring within 30 days.",
+    "Flags contracts expiring within 90 days.",
+])
+def test_supported_bound_cannot_hide_an_uninterpreted_numeric_expiration(unknown):
+    spec, _ = _numeric_plan(30, extra=unknown)
+    contract = spec.obligation_contract.context["expiration_horizon"]
+    assert contract["threshold_days"] is None
+    assert contract["comparison_relation"] is None
+    assert len(contract["requirement_ids"]) == 2
+    assert expiration_horizon_days(spec) is None
+
+
+@pytest.mark.parametrize("extra", [
+    "Do not flag contracts expiring within 30 days.",
+    "Never flag contracts expiring within 30 days.",
+    "Do not flag contracts within 30 days of expiration.",
+    "Should flag contracts expiring within 30 days.",
+    'Print the literal "flags contracts expiring within 30 days".',
+    'Print the literal "flags contracts expiring in less than 30 days".',
+    'Label expiration records "within 30 days".',
+    "Retain logs for 30 days.",
+    "Extract expiration dates and retain logs for 30 days.",
+    "Extract expiration dates, retain logs for 30 days.",
+    "Expiration dates must not be interpreted as within 30 days.",
+])
+def test_unrelated_soft_negated_or_quoted_duration_is_not_an_expiration_bound(extra):
+    spec = RequirementCompiler().compile(
+        "Build a Python CLI that reads CSV and writes a summary CSV. " + extra
+    )
+    assert "expiration_horizon" not in spec.obligation_contract.context
+    assert expiration_horizon_days(spec) == 90
+    assert not any("Materially unspecified expiration horizon" in flag for flag in spec.ambiguity_flags)
+
+
+def test_no_numeric_expiration_obligation_retains_legacy_default():
+    spec, _ = _numeric_plan(90, expiration_clause="flags expiring contracts")
+    assert "expiration_horizon" not in spec.obligation_contract.context
+    assert expiration_horizon_days(spec) == 90
+
+
+@pytest.mark.parametrize("requirement", [
+    "Build a Python library that reads CSV and flags contracts expiring within 30 days.",
+    "Build a Python CLI that reads JSON and flags contracts expiring within 30 days.",
+])
+def test_uninterpreted_expiration_detection_remains_scoped_to_csv_cli(requirement):
+    spec = RequirementCompiler().compile(requirement)
+    assert "expiration_horizon" not in spec.obligation_contract.context

@@ -98,7 +98,12 @@ class RequirementCompiler:
         if expiration_horizon is not None:
             obligation_contract.context["expiration_horizon"] = expiration_horizon
             if expiration_horizon["threshold_days"] is None:
-                ambiguity_flags.append("Materially unspecified expiration horizon: conflicting numeric thresholds.")
+                reason = (
+                    "unsupported numeric wording"
+                    if expiration_horizon.get("unresolved_reason") == "unsupported_numeric_expiration_wording"
+                    else "conflicting numeric thresholds"
+                )
+                ambiguity_flags.append(f"Materially unspecified expiration horizon: {reason}.")
         quality_contract = self._extract_quality_contract(normalized)
 
         return BuildSpec(
