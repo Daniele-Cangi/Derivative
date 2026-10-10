@@ -17,7 +17,9 @@ _NUMBER_WORD = (
 )
 _DURATION = (
     rf"(?<![\w.])(?:[+-]?\d+(?:\.\d+)?|{_NUMBER_WORD}(?:[\s-]+{_NUMBER_WORD})*)"
-    r"(?:\s+|-)(?:days?|weeks?|months?)\b"
+    # Qualified days and years signal an explicit policy, not a conversion
+    # to the strict extractor's integer-day horizon.
+    r"(?:\s+|-)(?:(?:(?:business|calendar)\s+)?days?|weeks?|months?|years?)\b"
 )
 # Cross a paired subordinate insertion only when the expiration comparison
 # resumes immediately afterwards. A comma introducing retention/logging is

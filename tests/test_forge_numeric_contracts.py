@@ -222,10 +222,20 @@ RESIDUAL_EXPIRATION_CLAUSES = [
 ]
 
 
-@pytest.mark.parametrize("clause", RESIDUAL_EXPIRATION_CLAUSES + [
+QUALIFIED_EXPIRATION_CLAUSES = [
+    "flags contracts expiring in less than 3 business days",
+    "flags contracts expiring in less than 90 calendar days",
+    "flags contracts expiring in less than 1 year",
+]
+
+
+@pytest.mark.parametrize("clause", RESIDUAL_EXPIRATION_CLAUSES + QUALIFIED_EXPIRATION_CLAUSES + [
     "flags contracts expiring within twenty-one days",
     "flags contracts expiring within one hundred days",
     "flags contracts within two weeks of expiration",
+    "flags contracts expiring within three business days",
+    "flags contracts within ninety calendar days of expiration",
+    "flags contracts expiring within two years",
 ])
 def test_residual_expiration_policy_is_unresolved_with_source_traceability(clause):
     spec, plan = _numeric_plan(30, expiration_clause=clause)
@@ -243,7 +253,7 @@ def test_residual_expiration_policy_is_unresolved_with_source_traceability(claus
 
 
 @pytest.mark.parametrize("clause", UNSUPPORTED_EXPIRATION_CLAUSES[:4] + UNSUPPORTED_EXPIRATION_CLAUSES[17:20]
-                         + RESIDUAL_EXPIRATION_CLAUSES)
+                         + RESIDUAL_EXPIRATION_CLAUSES + QUALIFIED_EXPIRATION_CLAUSES)
 @pytest.mark.parametrize("backend", [
     "local",
     pytest.param("docker", marks=pytest.mark.skipif(
@@ -282,6 +292,9 @@ def test_issue32_uninterpreted_horizon_fails_closed_through_generation_validatio
     "Flags contracts expiring within 90 days.",
     "Flags contracts expiring within thirty days.",
     "Flags contracts expiring within two weeks.",
+    "Flags contracts expiring within three business days.",
+    "Flags contracts expiring within ninety calendar days.",
+    "Flags contracts expiring within one year.",
 ])
 def test_supported_bound_cannot_hide_an_uninterpreted_numeric_expiration(unknown):
     spec, _ = _numeric_plan(30, extra=unknown)
@@ -312,6 +325,18 @@ def test_supported_bound_cannot_hide_an_uninterpreted_numeric_expiration(unknown
     "Should flag contracts expiring within two weeks.",
     "Do not flag contracts expiring within one month.",
     "Never flag contracts expiring, after reading the CSV, within thirty days.",
+    "Extract expiration dates and retain logs for 3 business days.",
+    "Extract expiration dates, retain logs for 90 calendar days.",
+    "Extract expiration dates and retain logs for 1 year.",
+    'Print the literal "flags contracts expiring within 3 business days".',
+    'Label expiration records "within 90 calendar days".',
+    'Print the literal "flags contracts expiring within 1 year".',
+    "Should flag contracts expiring within 3 business days.",
+    "Should flag contracts expiring within 90 calendar days.",
+    "Should flag contracts expiring within 1 year.",
+    "Do not flag contracts expiring within 3 business days.",
+    "Never flag contracts expiring within 90 calendar days.",
+    "Do not flag contracts expiring within 1 year.",
 ])
 def test_unrelated_soft_negated_or_quoted_duration_is_not_an_expiration_bound(extra):
     spec = RequirementCompiler().compile(
@@ -343,6 +368,9 @@ def test_uninterpreted_expiration_detection_remains_scoped_to_csv_cli(requiremen
     "but reports contracts expiring within 90 days",
     "and reports contracts expiring within thirty days",
     "and reports contracts expiring within two weeks",
+    "and reports contracts expiring within three business days",
+    "and reports contracts expiring within ninety calendar days",
+    "and reports contracts expiring within one year",
 ])
 def test_recognized_prefix_does_not_hide_a_second_policy_in_the_same_atom(tail):
     spec, _ = _numeric_plan(30, expiration_clause="flags contracts expiring in less than 30 days " + tail)
